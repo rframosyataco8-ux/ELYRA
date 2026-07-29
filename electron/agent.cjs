@@ -1,13 +1,15 @@
 /**
  * ELYRA Agent — LLM-powered intelligence with tool use.
- * Default: Groq free tier (llama-3.3-70b-versatile)
+ * Default provider: Groq (llama-3.3-70b-versatile)
  */
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
+
+// Default Groq credentials (user-provided). Override via ~/.elyra/config.json or env.
+const DEFAULT_GROQ_KEY = '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';
+const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
+const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = `Eres ELYRA, una asistente de escritorio extremadamente capaz, inteligente y proactiva. Hablas español de forma natural, clara y humana (nunca robótica ni excesivamente formal).
 
@@ -101,22 +103,42 @@ function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
 }
 
+function ensureDefaultConfig() {
+  const p = getConfigPath();
+  const dir = path.dirname(p);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (!fs.existsSync(p)) {
+    const cfg = {
+      apiKey: DEFAULT_GROQ_KEY,
+      baseUrl: DEFAULT_BASE_URL,
+      model: DEFAULT_MODEL,
+    };
+    fs.writeFileSync(p, JSON.stringify(cfg, null, 2), 'utf-8');
+    return cfg;
+  }
+  return null;
+}
+
 function getConfig() {
+  // Ensure config file exists with Groq defaults on first run
+  ensureDefaultConfig();
+
   try {
     const p = getConfigPath();
     if (fs.existsSync(p)) {
       const c = JSON.parse(fs.readFileSync(p, 'utf-8'));
       return {
-        apiKey: c.apiKey || process.env.ELYRA_API_KEY || process.env.GROQ_API_KEY || '',
-        baseUrl: c.baseUrl || process.env.ELYRA_BASE_URL || 'https://api.groq.com/openai/v1',
-        model: c.model || process.env.ELYRA_MODEL || 'llama-3.3-70b-versatile',
+        apiKey: c.apiKey || process.env.ELYRA_API_KEY || process.env.GROQ_API_KEY || DEFAULT_GROQ_KEY,
+        baseUrl: c.baseUrl || process.env.ELYRA_BASE_URL || DEFAULT_BASE_URL,
+        model: c.model || process.env.ELYRA_MODEL || DEFAULT_MODEL,
       };
     }
   } catch {}
+
   return {
-    apiKey: process.env.ELYRA_API_KEY || process.env.GROQ_API_KEY || '',
-    baseUrl: process.env.ELYRA_BASE_URL || 'https://api.groq.com/openai/v1',
-    model: process.env.ELYRA_MODEL || 'llama-3.3-70b-versatile',
+    apiKey: process.env.ELYRA_API_KEY || process.env.GROQ_API_KEY || DEFAULT_GROQ_KEY,
+    baseUrl: process.env.ELYRA_BASE_URL || DEFAULT_BASE_URL,
+    model: process.env.ELYRA_MODEL || DEFAULT_MODEL,
   };
 }
 
@@ -129,7 +151,6 @@ function saveConfig(partial) {
   return next;
 }
 
-/** Resolve user-friendly paths like Informes/x.html → Documents/Informes/x.html */
 function resolveUserPath(filePath) {
   if (!filePath) return path.join(os.homedir(), 'Documents', 'elyra-output.txt');
   if (path.isAbsolute(filePath)) return filePath;
@@ -143,7 +164,6 @@ function resolveUserPath(filePath) {
     return path.join(docs, normalized);
   }
 
-  // Default under Documents
   return path.join(docs, filePath);
 }
 
@@ -218,10 +238,8 @@ async function executeTool(tool, helpers) {
         const q = params.query || '';
         if (!q) return { ok: false, result: 'Falta query' };
 
-        // Multi-source lightweight search
         const results = [];
 
-        // 1) DuckDuckGo HTML
         try {
           const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
           const res = await fetch(url, {
@@ -248,7 +266,6 @@ async function executeTool(tool, helpers) {
           results.push(`(DuckDuckGo error: ${e.message})`);
         }
 
-        // 2) Wikipedia summary (Spanish then English)
         try {
           for (const lang of ['es', 'en']) {
             const wikiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`;
@@ -347,8 +364,12 @@ async function executeTool(tool, helpers) {
         let p = params.path;
         if (!p) return { ok: false, result: 'Falta path' };
         if (!path.isAbsolute(p)) p = resolveUserPath(p);
-        // Also try common locations
-        const candidates = [p, path.join(os.homedir(), 'Documents', params.path), path.join(os.homedir(), 'Downloads', params.path), path.join(os.homedir(), 'Desktop', params.path)];
+        const candidates = [
+          p,
+          path.join(os.homedir(), 'Documents', params.path),
+          path.join(os.homedir(), 'Downloads', params.path),
+          path.join(os.homedir(), 'Desktop', params.path),
+        ];
         let found = null;
         for (const c of candidates) {
           if (c && fs.existsSync(c) && fs.statSync(c).isFile()) {
@@ -358,7 +379,9 @@ async function executeTool(tool, helpers) {
         }
         if (!found) return { ok: false, result: `No existe el archivo: ${params.path}` };
         const stat = fs.statSync(found);
-        if (stat.size > 800_000) return { ok: false, result: `Archivo muy grande (${Math.round(stat.size / 1024)} KB). Máximo ~800 KB.` };
+        if (stat.size > 800_000) {
+          return { ok: false, result: `Archivo muy grande (${Math.round(stat.size / 1024)} KB). Máximo ~800 KB.` };
+        }
         const content = fs.readFileSync(found, 'utf-8');
         return { ok: true, result: `Archivo: ${found}\n\n${content.slice(0, 20000)}` };
       }
@@ -444,7 +467,6 @@ async function runAgent(userMessage, history, helpers) {
   }
 
   if (!finalText) {
-    // Last assistant message stripped
     const last = messages.filter((m) => m.role === 'assistant').pop();
     finalText = last ? stripTools(last.content) : 'He completado las acciones posibles.';
   }
@@ -455,19 +477,7 @@ async function runAgent(userMessage, history, helpers) {
 function fallbackResponse(_input) {
   return {
     response:
-      'Para que pueda entender cualquier cosa y hacer tareas complejas necesito una API key gratuita de Groq (tarda 1 minuto).\n\n' +
-      '1. Entra en https://console.groq.com y crea una cuenta\n' +
-      '2. Ve a API Keys y crea una key\n' +
-      '3. Crea el archivo: ' +
-      getConfigPath() +
-      '\n' +
-      '4. Pon esto dentro:\n\n' +
-      '{\n' +
-      '  "apiKey": "gsk_tu_key_aqui",\n' +
-      '  "baseUrl": "https://api.groq.com/openai/v1",\n' +
-      '  "model": "llama-3.3-70b-versatile"\n' +
-      '}\n\n' +
-      'Luego reinicia ELYRA. Mientras tanto puedo abrir apps, carpetas y decirte la hora.',
+      'No pude conectar con el modelo de lenguaje. Revisa tu conexión a internet o la API key de Groq en ~/.elyra/config.json',
     intelligent: false,
   };
 }
@@ -479,4 +489,5 @@ module.exports = {
   fallbackResponse,
   callLLM,
   getConfigPath,
+  ensureDefaultConfig,
 };
