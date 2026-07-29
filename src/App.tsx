@@ -36,14 +36,24 @@ export default function App() {
 
   const processInput = useCallback(
     async (text: string) => {
-      if (processingRef.current) return;
+      const cleaned = (text || '').trim();
+      if (!cleaned || processingRef.current) return;
+
+      // Evitar bucles por eco residual
+      const lastElyra = [...messagesRef.current].reverse().find((m) => m.role === 'elyra');
+      if (lastElyra) {
+        const a = cleaned.toLowerCase();
+        const b = lastElyra.text.toLowerCase();
+        if (a.length < 20 && b.includes(a)) return;
+      }
+
       processingRef.current = true;
-      addMessage('user', text);
+      addMessage('user', cleaned);
       setThinking(true);
       try {
         if (isDesktop && window.elyra) {
           const history = messagesRef.current.slice(-12).map((m) => ({ role: m.role, text: m.text }));
-          const result = await window.elyra.agentChat(text, history);
+          const result = await window.elyra.agentChat(cleaned, history);
           let reply = (result.response || '').trim();
           if (/rate limit|"error".*429|org_[a-z0-9]+/i.test(reply)) {
             reply = 'El servicio está saturado un momento. Espera un poco y lo intentamos otra vez.';
@@ -64,14 +74,11 @@ export default function App() {
       } finally {
         setThinking(false);
         processingRef.current = false;
-        // Escucha continua: vuelve a escuchar tras responder
+        // Escucha continua solo DESPUÉS de hablar + pausa anti-eco
         if (continuousRef.current) {
           setTimeout(() => {
-            try {
-              // se engancha vía ref en el efecto de continuous
-              window.dispatchEvent(new CustomEvent('elyra-relisten'));
-            } catch {}
-          }, 600);
+            window.dispatchEvent(new CustomEvent('elyra-relisten'));
+          }, 1800);
         }
       }
     },
@@ -85,11 +92,13 @@ export default function App() {
 
   useEffect(() => {
     const onRelisten = () => {
-      if (continuousRef.current && !processingRef.current) startListening();
+      if (continuousRef.current && !processingRef.current && !speaking) {
+        startListening();
+      }
     };
     window.addEventListener('elyra-relisten', onRelisten);
     return () => window.removeEventListener('elyra-relisten', onRelisten);
-  }, [startListening]);
+  }, [startListening, speaking]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -102,18 +111,6 @@ export default function App() {
   useEffect(() => {
     if (!booted || !isDesktop) return;
     window.elyra?.agentConfigGet().then((c) => setHasApiKey(c.hasKey));
-    window.elyra?.memoryGet().then((mem) => {
-      if (mem.history?.length) {
-        setMessages(
-          mem.history.slice(-30).map((h: any, i: number) => ({
-            id: `h-${i}`,
-            role: h.role === 'user' ? 'user' : 'elyra',
-            text: h.text,
-            timestamp: new Date(h.at || Date.now()).getTime(),
-          })),
-        );
-      }
-    });
   }, [booted]);
 
   useEffect(() => {
@@ -131,11 +128,14 @@ export default function App() {
   }, [addMessage, speak]);
 
   const handleToggleListen = () => {
-    if (listening) stopListening();
-    else {
-      stopSpeaking();
-      startListening();
+    if (listening) {
+      stopListening();
+      return;
     }
+    if (speaking || thinking) return; // no grabar mientras habla o piensa
+    stopSpeaking();
+    // Pequeña pausa para que el altavoz no entre en la grabación
+    setTimeout(() => startListening(), 200);
   };
 
   const handleSend = async () => {
@@ -158,7 +158,7 @@ export default function App() {
     : listening
     ? continuous
       ? 'Escucha continua'
-      : 'Escuchando...'
+      : 'Escuchando... habla y pulsa de nuevo'
     : 'Lista';
 
   return (
@@ -172,7 +172,6 @@ export default function App() {
             {isDesktop && <span>· Escritorio</span>}
             {naturalTts && <span className="text-emerald-400/50">· Voz Dalia</span>}
             {hasApiKey && <span className="text-violet-400/50">· IA</span>}
-            {continuous && <span className="text-amber-300/50">· Autónomo</span>}
           </div>
           <div className="flex items-center gap-1 no-drag">
             {isDesktop && (
@@ -197,10 +196,18 @@ export default function App() {
               <>
                 <div className="text-center space-y-1 mb-2">
                   <h2 className="text-2xl font-semibold text-white">Hola, Fabricio</h2>
-                  <p className="text-sm text-sky-300/50">Dime qué hacemos.</p>
+                  <p className="text-sm text-sky-300/50">
+                    {listening ? 'Habla ahora… luego pulsa el micrófono otra vez' : 'Dime qué hacemos.'}
+                  </p>
                   <div className="inline-flex items-center gap-2 mt-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20">
-                    {thinking ? <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" /> : (
-                      <span className={`w-1.5 h-1.5 rounded-full ${speaking || listening ? 'bg-sky-400 animate-pulse' : 'bg-emerald-400'}`} />
+                    {thinking ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                    ) : (
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          speaking || listening ? 'bg-sky-400 animate-pulse' : 'bg-emerald-400'
+                        }`}
+                      />
                     )}
                     <span className="text-xs text-sky-300/80">{statusLabel}</span>
                   </div>
@@ -228,63 +235,41 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-sky-100">Escucha continua</p>
-                      <p className="text-[11px] text-sky-400/50">Tras responder, vuelve a escuchar sola</p>
+                      <p className="text-[11px] text-sky-400/50">Se reactiva sola tras responder (puede captar eco)</p>
                     </div>
                     <button
-                      onClick={() => {
-                        setContinuous((v) => !v);
-                        if (!continuous) {
-                          stopSpeaking();
-                          startListening();
-                        } else stopListening();
-                      }}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${
-                        continuous ? 'bg-sky-500' : 'bg-sky-900'
-                      }`}
+                      onClick={() => setContinuous((v) => !v)}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${continuous ? 'bg-sky-500' : 'bg-sky-900'}`}
                     >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
-                          continuous ? 'translate-x-5' : ''
-                        }`}
-                      />
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${continuous ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
-                  <div className="text-[12px] text-sky-400/60 space-y-1 pt-2 border-t border-sky-500/10">
-                    <p>Voz: es-MX-DaliaNeural (edge-tts)</p>
-                    <p>IA: Groq · fallback automático de modelos</p>
-                    <p>Atajo: Ctrl+Shift+E</p>
-                  </div>
+                  <p className="text-[12px] text-sky-400/60">
+                    Consejo: baja el volumen del PC o usa auriculares para mejor reconocimiento.
+                  </p>
                 </div>
               </div>
             )}
 
-            {/* Input siempre visible */}
             <div className="w-full max-w-xl mx-auto mt-auto pt-3">
               {error && <p className="text-red-400/70 text-xs text-center mb-2">{error}</p>}
-              <div className="flex items-center gap-2 rounded-full bg-[#0a1525]/95 border border-sky-500/25 px-3 py-2 shadow-[0_0_30px_rgba(14,165,233,0.08)]">
+              <div className="flex items-center gap-2 rounded-full bg-[#0a1525]/95 border border-sky-500/25 px-3 py-2">
                 <button
                   onClick={handleToggleListen}
-                  disabled={thinking}
+                  disabled={thinking || speaking}
                   className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
                     listening
                       ? 'bg-sky-500/35 text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.4)]'
                       : 'text-sky-400/60 hover:bg-sky-500/10'
-                  }`}
-                  title="Micrófono"
+                  } disabled:opacity-40`}
+                  title={listening ? 'Detener y enviar' : 'Hablar'}
                 >
                   <Mic className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => {
-                    const next = !continuous;
-                    setContinuous(next);
-                    if (next) {
-                      stopSpeaking();
-                      startListening();
-                    } else stopListening();
-                  }}
+                  onClick={() => setContinuous((v) => !v)}
                   className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    continuous ? 'text-amber-300 bg-amber-500/15' : 'text-sky-500/40 hover:text-sky-400'
+                    continuous ? 'text-amber-300 bg-amber-500/15' : 'text-sky-500/40'
                   }`}
                   title="Escucha continua"
                 >
@@ -295,7 +280,7 @@ export default function App() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder="Habla conmigo o escribe…"
+                  placeholder={listening ? 'Escuchando… pulsa el mic para enviar' : 'Habla o escribe…'}
                   className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
                 />
                 <button
@@ -324,9 +309,7 @@ export default function App() {
             </span>
             <span>{formatUptime(uptime)}</span>
           </span>
-          <span>
-            {currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-          </span>
+          <span>{currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
         </footer>
       </div>
     </div>
