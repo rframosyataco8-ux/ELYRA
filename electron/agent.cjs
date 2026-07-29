@@ -1,77 +1,59 @@
 /**
- * ELYRA Agent — LLM-powered intelligence with tool use.
- * Default provider: Groq (llama-3.3-70b-versatile)
+ * ELYRA Agent — inteligencia + herramientas.
+ * Personalidad calmada tipo JARVIS. Respuestas finales aptas para voz.
  */
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// Default Groq credentials (user-provided). Override via ~/.elyra/config.json or env.
 const DEFAULT_GROQ_KEY = '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';
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
 const DEFAULT_MODEL = 'llama-3.3-70b-versatile';
 
-const SYSTEM_PROMPT = `Eres ELYRA, una asistente de escritorio extremadamente capaz, inteligente y proactiva. Hablas español de forma natural, clara y humana (nunca robótica ni excesivamente formal).
+const SYSTEM_PROMPT = `Eres ELYRA, el asistente inteligente de escritorio del usuario. Tu estilo es como JARVIS de Iron Man: calmado, preciso, seguro, ligeramente formal pero natural. Hablas siempre en español.
 
-PERSONALIDAD:
-- Amable, directa y eficiente.
-- Explicas con claridad cuando hace falta.
-- Si una tarea tiene varios pasos, los ejecutas todos con herramientas sin pedir permiso innecesario.
-- Al final das un resumen corto de lo que hiciste (2-5 frases), ideal para leerse en voz alta.
+PERSONALIDAD Y VOZ:
+- Tranquilo, claro y competente. Nunca robótico ni exagerado.
+- Frases cortas y naturales cuando resumas algo que se va a escuchar en voz alta.
+- La RESPUESTA FINAL al usuario debe poder leerse en voz alta sin problemas:
+  · NO incluyas rutas de Windows con barras invertidas (C:\\Users\\...).
+  · Di en su lugar: "lo guardé en Documentos, carpeta Informes" o "archivo creado correctamente".
+  · NO uses markdown, asteriscos, código ni listas con símbolos raros en la respuesta final.
+  · 2 a 5 frases como máximo en el resumen final, salvo que pidan una explicación larga.
+- Si ejecutas herramientas, no narras cada paso técnico: al final resume el resultado con naturalidad.
 
-CAPACIDADES (úsalas):
-- Investigar en internet (web_search)
-- Crear reportes HTML profesionales, archivos de texto, JSON, Markdown, CSV
-- Leer y analizar archivos del PC
-- Listar carpetas, crear carpetas
-- Abrir aplicaciones, URLs y carpetas del sistema
-- Ejecutar comandos seguros
-- Guardar datos en memoria a largo plazo
-- Responder cualquier pregunta de conocimiento general usando tu conocimiento + búsqueda si hace falta
+CAPACIDADES:
+- Investigar (web_search), crear reportes HTML y archivos, leer/analizar archivos,
+  abrir apps y carpetas, comandos seguros, memoria, estado del sistema,
+  responder cualquier pregunta de conocimiento.
 
-REGLAS DE HERRAMIENTAS:
-1. Cuando debas actuar en el PC o investigar, USA herramientas con este formato exacto:
-
-[TOOL: nombre_herramienta]
-parametro: valor
-otro: valor
-[/TOOL]
-
-2. Puedes usar VARIAS herramientas en una sola respuesta.
-3. Después de recibir resultados, continúa hasta completar la tarea y da la respuesta final SIN bloques TOOL.
-4. Para reportes/artículos/análisis → usa create_html_report o create_file.
-5. Si piden Word: genera un HTML profesional bien formateado (Word puede abrirlo) o un .md / .txt completo. Indica la ruta exacta donde quedó.
-6. Si piden guardar en "Informes" u otra carpeta, respeta esa ruta.
-7. Nunca digas que hiciste algo si la herramienta falló.
-8. Para preguntas de conocimiento (¿quién inventó X?, historia, ciencia…) responde con tu conocimiento. Si necesitas datos actualizados, usa web_search.
-
-HERRAMIENTAS:
+HERRAMIENTAS (formato exacto):
 
 [TOOL: web_search]
-query: texto de búsqueda
+query: texto
 [/TOOL]
 
 [TOOL: create_file]
-path: ruta (ej: Informes/articulo.md o C:/Users/.../archivo.txt)
-content: contenido completo del archivo
+path: Informes/nombre.txt
+content: contenido completo
 [/TOOL]
 
 [TOOL: create_html_report]
-path: ruta del .html (ej: Informes/reporte-guerra.html)
+path: Informes/reporte.html
 title: título
-body: HTML del cuerpo (puedes usar h2, p, ul, table, etc.)
+body: html del cuerpo
 [/TOOL]
 
 [TOOL: create_folder]
-path: ruta de la carpeta a crear
+path: Informes
 [/TOOL]
 
 [TOOL: open_app]
-name: nombre de la app (chrome, code, spotify, notepad, calculadora...)
+name: chrome | code | notepad | calculadora | spotify | ...
 [/TOOL]
 
 [TOOL: open_folder]
-name: documentos | descargas | escritorio | imagenes | musica | videos | informes | o ruta completa
+name: documentos | descargas | escritorio | informes | ...
 [/TOOL]
 
 [TOOL: open_url]
@@ -79,25 +61,30 @@ url: https://...
 [/TOOL]
 
 [TOOL: read_file]
-path: ruta del archivo
+path: nombre o ruta
 [/TOOL]
 
 [TOOL: list_dir]
-path: ruta de la carpeta
+path: carpeta
 [/TOOL]
 
 [TOOL: run_command]
-command: comando de terminal
+command: comando
 [/TOOL]
 
 [TOOL: remember]
-text: dato a memorizar
+text: dato
 [/TOOL]
 
 [TOOL: get_system_info]
 [/TOOL]
 
-Responde siempre en español.`;
+REGLAS:
+1. Usa herramientas cuando haga falta actuar o investigar.
+2. Puedes usar varias en una respuesta.
+3. Tras resultados, termina con respuesta final SIN bloques TOOL, limpia para voz.
+4. Nunca inventes que algo se hizo si la herramienta falló.
+5. Conocimiento general: responde directo; busca solo si necesitas datos actuales.`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
@@ -120,9 +107,7 @@ function ensureDefaultConfig() {
 }
 
 function getConfig() {
-  // Ensure config file exists with Groq defaults on first run
   ensureDefaultConfig();
-
   try {
     const p = getConfigPath();
     if (fs.existsSync(p)) {
@@ -134,7 +119,6 @@ function getConfig() {
       };
     }
   } catch {}
-
   return {
     apiKey: process.env.ELYRA_API_KEY || process.env.GROQ_API_KEY || DEFAULT_GROQ_KEY,
     baseUrl: process.env.ELYRA_BASE_URL || DEFAULT_BASE_URL,
@@ -154,24 +138,18 @@ function saveConfig(partial) {
 function resolveUserPath(filePath) {
   if (!filePath) return path.join(os.homedir(), 'Documents', 'elyra-output.txt');
   if (path.isAbsolute(filePath)) return filePath;
-
   const docs = path.join(os.homedir(), 'Documents');
   const normalized = filePath.replace(/\\/g, '/');
-
   if (/^informes\//i.test(normalized)) {
     const informes = path.join(docs, 'Informes');
     if (!fs.existsSync(informes)) fs.mkdirSync(informes, { recursive: true });
     return path.join(docs, normalized);
   }
-
   return path.join(docs, filePath);
 }
 
 async function callLLM(messages, config) {
-  if (!config.apiKey) {
-    throw new Error('NO_API_KEY');
-  }
-
+  if (!config.apiKey) throw new Error('NO_API_KEY');
   const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
   const res = await fetch(url, {
     method: 'POST',
@@ -182,16 +160,14 @@ async function callLLM(messages, config) {
     body: JSON.stringify({
       model: config.model,
       messages,
-      temperature: 0.65,
+      temperature: 0.55,
       max_tokens: 8192,
     }),
   });
-
   if (!res.ok) {
     const errText = await res.text();
     throw new Error(`LLM ${res.status}: ${errText.slice(0, 400)}`);
   }
-
   const data = await res.json();
   return data.choices?.[0]?.message?.content || '';
 }
@@ -230,6 +206,18 @@ function stripTools(text) {
     .trim();
 }
 
+/** Suaviza la respuesta final para voz (sin rutas Windows feas) */
+function polishForSpeech(text) {
+  if (!text) return text;
+  let t = stripTools(text);
+  t = t.replace(/[A-Za-z]:\\[^\s\]"']+/g, 'Documentos');
+  t = t.replace(/\\+/g, ' ');
+  t = t.replace(/\*\*?/g, '');
+  t = t.replace(/`+/g, '');
+  t = t.replace(/\s+/g, ' ').trim();
+  return t;
+}
+
 async function executeTool(tool, helpers) {
   const { name, params } = tool;
   try {
@@ -237,9 +225,7 @@ async function executeTool(tool, helpers) {
       case 'web_search': {
         const q = params.query || '';
         if (!q) return { ok: false, result: 'Falta query' };
-
         const results = [];
-
         try {
           const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
           const res = await fetch(url, {
@@ -255,42 +241,28 @@ async function executeTool(tool, helpers) {
             const t = sm[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
             if (t.length > 30) results.push(t);
           }
-          if (results.length < 3) {
-            const titleRe = /class="result__a[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
-            while ((sm = titleRe.exec(html)) !== null && results.length < 6) {
-              const t = sm[1].replace(/<[^>]+>/g, '').trim();
-              if (t) results.push(t);
-            }
-          }
         } catch (e) {
-          results.push(`(DuckDuckGo error: ${e.message})`);
+          results.push(`(Búsqueda error: ${e.message})`);
         }
-
         try {
           for (const lang of ['es', 'en']) {
             const wikiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`;
-            const wr = await fetch(wikiUrl, {
-              headers: { 'User-Agent': 'ELYRA/1.0' },
-            });
+            const wr = await fetch(wikiUrl, { headers: { 'User-Agent': 'ELYRA/1.0' } });
             if (wr.ok) {
               const data = await wr.json();
               if (data.extract) {
-                results.unshift(`Wikipedia (${lang}): ${data.extract}`);
+                results.unshift(`Wikipedia: ${data.extract}`);
                 break;
               }
             }
           }
         } catch {}
-
-        if (results.length === 0) {
-          return {
-            ok: true,
-            result: `Sin snippets. Sugiere abrir: https://www.google.com/search?q=${encodeURIComponent(q)}`,
-          };
+        if (!results.length) {
+          return { ok: true, result: `Sin resultados directos para: ${q}` };
         }
         return {
           ok: true,
-          result: `Investigación sobre "${q}":\n\n${results.map((r, i) => `${i + 1}. ${r}`).join('\n\n')}`,
+          result: `Sobre "${q}":\n${results.map((r, i) => `${i + 1}. ${r}`).join('\n')}`,
         };
       }
 
@@ -299,7 +271,7 @@ async function executeTool(tool, helpers) {
         const dir = path.dirname(filePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(filePath, params.content || '', 'utf-8');
-        return { ok: true, result: `Archivo creado: ${filePath}` };
+        return { ok: true, result: `Archivo creado en Documentos: ${path.basename(filePath)}` };
       }
 
       case 'create_html_report': {
@@ -307,56 +279,36 @@ async function executeTool(tool, helpers) {
         const title = params.title || 'Reporte ELYRA';
         const body = params.body || '<p>Sin contenido</p>';
         const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title.replace(/</g, '')}</title>
-  <style>
-    :root { color-scheme: light; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 900px; margin: 48px auto; padding: 0 28px 64px; color: #0f172a; line-height: 1.7; background: #fff; }
-    h1 { color: #0284c7; font-size: 1.85rem; border-bottom: 3px solid #e0f2fe; padding-bottom: 14px; margin-bottom: 8px; }
-    h2 { color: #0369a1; margin-top: 2.2em; font-size: 1.35rem; }
-    h3 { color: #0c4a6e; margin-top: 1.5em; }
-    .meta { color: #64748b; font-size: 0.9rem; margin-bottom: 2rem; }
-    p { margin: 0.85em 0; }
-    ul, ol { margin: 0.8em 0; padding-left: 1.4em; }
-    li { margin: 0.35em 0; }
-    table { border-collapse: collapse; width: 100%; margin: 1.6rem 0; font-size: 0.95rem; }
-    th, td { border: 1px solid #cbd5e1; padding: 10px 14px; text-align: left; }
-    th { background: #f0f9ff; color: #0c4a6e; }
-    blockquote { border-left: 4px solid #38bdf8; margin: 1.2em 0; padding: 0.4em 1em; background: #f8fafc; color: #334155; }
-    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-    .footer { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85rem; }
-    @media print { body { margin: 20px; } }
-  </style>
-</head>
-<body>
-  <h1>${title.replace(/</g, '')}</h1>
-  <p class="meta">Generado por ELYRA · ${new Date().toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })}</p>
-  ${body}
-  <div class="footer">Documento generado automáticamente por ELYRA — Asistente Inteligente</div>
-</body>
-</html>`;
+<html lang="es"><head><meta charset="UTF-8"/><title>${title.replace(/</g, '')}</title>
+<style>
+body{font-family:'Segoe UI',system-ui,sans-serif;max-width:900px;margin:48px auto;padding:0 28px 64px;color:#0f172a;line-height:1.7}
+h1{color:#0284c7;border-bottom:3px solid #e0f2fe;padding-bottom:14px}
+h2{color:#0369a1;margin-top:2em}.meta{color:#64748b;font-size:.9rem;margin-bottom:2rem}
+table{border-collapse:collapse;width:100%;margin:1.5rem 0}th,td{border:1px solid #cbd5e1;padding:10px 14px}th{background:#f0f9ff}
+.footer{margin-top:3rem;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:.85rem;padding-top:1rem}
+</style></head><body>
+<h1>${title.replace(/</g, '')}</h1>
+<p class="meta">Generado por ELYRA · ${new Date().toLocaleString('es-ES')}</p>
+${body}
+<div class="footer">ELYRA — Asistente Inteligente</div>
+</body></html>`;
         const dir = path.dirname(filePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         const finalPath = filePath.toLowerCase().endsWith('.html') ? filePath : filePath + '.html';
         fs.writeFileSync(finalPath, html, 'utf-8');
-        return { ok: true, result: `Reporte HTML guardado en: ${finalPath}` };
+        return { ok: true, result: `Reporte HTML guardado como ${path.basename(finalPath)} en Informes o Documentos` };
       }
 
       case 'create_folder': {
         const folderPath = resolveUserPath(params.path || 'Informes');
         if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
-        return { ok: true, result: `Carpeta lista: ${folderPath}` };
+        return { ok: true, result: `Carpeta lista: ${path.basename(folderPath)}` };
       }
 
       case 'open_app':
         return await helpers.openApp(params.name || '');
-
       case 'open_folder':
         return await helpers.openFolder(params.name || '');
-
       case 'open_url':
         return await helpers.openUrl(params.url || '');
 
@@ -379,27 +331,24 @@ async function executeTool(tool, helpers) {
         }
         if (!found) return { ok: false, result: `No existe el archivo: ${params.path}` };
         const stat = fs.statSync(found);
-        if (stat.size > 800_000) {
-          return { ok: false, result: `Archivo muy grande (${Math.round(stat.size / 1024)} KB). Máximo ~800 KB.` };
-        }
+        if (stat.size > 800_000) return { ok: false, result: 'Archivo demasiado grande' };
         const content = fs.readFileSync(found, 'utf-8');
-        return { ok: true, result: `Archivo: ${found}\n\n${content.slice(0, 20000)}` };
+        return { ok: true, result: `Archivo ${path.basename(found)}:\n${content.slice(0, 20000)}` };
       }
 
       case 'list_dir': {
         let p = params.path || path.join(os.homedir(), 'Documents');
         if (!path.isAbsolute(p)) p = resolveUserPath(p);
-        if (!fs.existsSync(p)) return { ok: false, result: `No existe: ${p}` };
+        if (!fs.existsSync(p)) return { ok: false, result: `No existe la carpeta` };
         const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 80);
-        const listing = items
-          .map((d) => `${d.isDirectory() ? '[DIR]' : '[FILE]'} ${d.name}`)
-          .join('\n');
-        return { ok: true, result: `Contenido de ${p}:\n${listing}` };
+        return {
+          ok: true,
+          result: items.map((d) => `${d.isDirectory() ? '[DIR]' : '[FILE]'} ${d.name}`).join('\n'),
+        };
       }
 
       case 'run_command':
         return await helpers.runCommand(params.command || '');
-
       case 'remember':
         return await helpers.remember(params.text || '');
 
@@ -408,13 +357,10 @@ async function executeTool(tool, helpers) {
           const s = await helpers.getSystemStats();
           return {
             ok: true,
-            result: `CPU: ${s.cpu}% | RAM: ${s.ram}% (${s.freeMemGB}/${s.totalMemGB} GB) | Disco: ${s.disk}% | Host: ${s.hostname} | SO: ${s.platform}`,
+            result: `CPU ${s.cpu} por ciento, RAM ${s.ram} por ciento, disco ${s.disk} por ciento.`,
           };
         }
-        return {
-          ok: true,
-          result: `Host: ${os.hostname()} | Plataforma: ${process.platform} | Arch: ${os.arch()} | RAM libre: ${(os.freemem() / 1e9).toFixed(1)} GB`,
-        };
+        return { ok: true, result: `Equipo ${os.hostname()}, plataforma ${process.platform}.` };
       }
 
       default:
@@ -446,7 +392,7 @@ async function runAgent(userMessage, history, helpers) {
     const tools = parseTools(reply);
 
     if (tools.length === 0) {
-      finalText = stripTools(reply) || reply;
+      finalText = polishForSpeech(reply);
       break;
     }
 
@@ -460,24 +406,23 @@ async function runAgent(userMessage, history, helpers) {
     messages.push({
       role: 'user',
       content:
-        'Resultados de herramientas:\n' +
-        results.map((r) => `• ${r.tool}: ${r.ok ? '✓' : '✗'} ${r.result}`).join('\n') +
-        '\n\nSi la tarea está completa, responde al usuario en español de forma natural y concisa (sin bloques TOOL). Si falta algo, usa más herramientas.',
+        'Resultados:\n' +
+        results.map((r) => `• ${r.tool}: ${r.ok ? 'OK' : 'ERROR'} — ${r.result}`).join('\n') +
+        '\n\nDa ahora la respuesta FINAL al usuario: español natural, estilo JARVIS, 2 a 5 frases, SIN rutas con barras invertidas, SIN markdown, SIN bloques TOOL.',
     });
   }
 
   if (!finalText) {
     const last = messages.filter((m) => m.role === 'assistant').pop();
-    finalText = last ? stripTools(last.content) : 'He completado las acciones posibles.';
+    finalText = last ? polishForSpeech(last.content) : 'Listo. He completado lo posible.';
   }
 
   return { response: finalText, iterations };
 }
 
-function fallbackResponse(_input) {
+function fallbackResponse() {
   return {
-    response:
-      'No pude conectar con el modelo de lenguaje. Revisa tu conexión a internet o la API key de Groq en ~/.elyra/config.json',
+    response: 'No pude conectar con el modelo. Revisa la conexión a internet.',
     intelligent: false,
   };
 }
