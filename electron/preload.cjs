@@ -20,6 +20,17 @@ contextBridge.exposeInMainWorld('elyra', {
   sttTranscribe: (payload) => ipcRenderer.invoke('stt-transcribe', payload),
   sttListenPython: (seconds) => ipcRenderer.invoke('stt-listen-python', seconds),
 
+  // Control PC
+  pcVolume: (action, value) => ipcRenderer.invoke('pc-volume', { action, value }),
+  pcMedia: (action) => ipcRenderer.invoke('pc-media', { action }),
+  pcBrightness: (action, value) => ipcRenderer.invoke('pc-brightness', { action, value }),
+  pcClipboard: (action, text) => ipcRenderer.invoke('pc-clipboard', { action, text }),
+  pcScreenshot: () => ipcRenderer.invoke('pc-screenshot'),
+  pcListProcesses: () => ipcRenderer.invoke('pc-list-processes'),
+  pcKillProcess: (name) => ipcRenderer.invoke('pc-kill-process', name),
+  pcWindows: (action) => ipcRenderer.invoke('pc-windows', { action }),
+  pcInput: (action, payload) => ipcRenderer.invoke('pc-input', { action, ...payload }),
+
   agentChat: (message, history) => ipcRenderer.invoke('agent-chat', { message, history }),
   agentConfigGet: () => ipcRenderer.invoke('agent-config-get'),
   agentConfigSet: (partial) => ipcRenderer.invoke('agent-config-set', partial),
@@ -32,6 +43,13 @@ contextBridge.exposeInMainWorld('elyra', {
     const handler = (_e, value) => cb(value);
     ipcRenderer.on('autonomous-mode', handler);
     return () => ipcRenderer.removeListener('autonomous-mode', handler);
+  },
+
+  // Barge-in: Ctrl+Espacio
+  onBargeIn: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('elyra-barge-in', handler);
+    return () => ipcRenderer.removeListener('elyra-barge-in', handler);
   },
 
   isDesktop: true,
