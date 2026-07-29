@@ -8,6 +8,7 @@ const execAsync = promisify(exec);
 
 const { synthesizeToBase64, checkEdgeTts, VOICE } = require('./tts.cjs');
 const { runAgent, getConfig, saveConfig, fallbackResponse, ensureDefaultConfig } = require('./agent.cjs');
+const { runPythonStt } = require('./stt-python-ipc.cjs');
 
 let mainWindow = null;
 let tray = null;
@@ -34,21 +35,16 @@ function createWindow() {
     show: false,
   });
 
-  if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-  }
+  if (isDev) mainWindow.loadURL('http://localhost:5173');
+  else mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
-
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
       mainWindow.hide();
     }
   });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -57,70 +53,30 @@ function createWindow() {
 function createTray() {
   const icon = nativeImage.createEmpty();
   tray = new Tray(icon);
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Mostrar ELYRA',
-      click: () => {
-        mainWindow?.show();
-        mainWindow?.focus();
-      },
-    },
-    {
-      label: 'Modo autónomo',
-      type: 'checkbox',
-      checked: true,
-      click: (item) => mainWindow?.webContents.send('autonomous-mode', item.checked),
-    },
-    { type: 'separator' },
-    {
-      label: 'Salir',
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      },
-    },
-  ]);
-  tray.setToolTip('ELYRA — Asistente Inteligente');
-  tray.setContextMenu(contextMenu);
-  tray.on('double-click', () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-  });
+  tray.setToolTip('ELYRA');
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Mostrar', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+      { type: 'separator' },
+      { label: 'Salir', click: () => { isQuitting = true; app.quit(); } },
+    ]),
+  );
+  tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
 }
 
 async function openAppHelper(appName) {
   try {
     const name = (appName || '').toLowerCase().trim();
     const appMap = {
-      notepad: 'notepad.exe',
-      calculadora: 'calc.exe',
-      calculator: 'calc.exe',
-      paint: 'mspaint.exe',
-      cmd: 'cmd.exe',
-      terminal: process.platform === 'win32' ? 'wt.exe' : 'gnome-terminal',
-      explorer: 'explorer.exe',
-      'explorador de archivos': 'explorer.exe',
-      chrome: process.platform === 'win32' ? 'chrome' : 'google-chrome',
-      edge: 'msedge',
-      firefox: 'firefox',
-      spotify: 'spotify',
-      discord: 'discord',
-      code: 'code',
-      vscode: 'code',
-      'visual studio code': 'code',
-      word: 'winword',
-      excel: 'excel',
-      powerpoint: 'powerpnt',
-      outlook: 'outlook',
+      notepad: 'notepad.exe', calculadora: 'calc.exe', calculator: 'calc.exe',
+      paint: 'mspaint.exe', cmd: 'cmd.exe', explorer: 'explorer.exe',
+      chrome: 'chrome', edge: 'msedge', firefox: 'firefox', spotify: 'spotify',
+      discord: 'discord', code: 'code', vscode: 'code', word: 'winword', excel: 'excel',
     };
     const target = appMap[name] || name;
-    if (process.platform === 'win32') {
-      await execAsync(`start "" "${target}"`, { shell: true });
-    } else if (process.platform === 'darwin') {
-      await execAsync(`open -a "${target}"`);
-    } else {
-      spawn(target, [], { detached: true, stdio: 'ignore' }).unref();
-    }
+    if (process.platform === 'win32') await execAsync(`start "" "${target}"`, { shell: true });
+    else if (process.platform === 'darwin') await execAsync(`open -a "${target}"`);
+    else spawn(target, [], { detached: true, stdio: 'ignore' }).unref();
     return { ok: true, result: `Abriendo ${appName}`, message: `Abriendo ${appName}` };
   } catch (err) {
     return { ok: false, result: err.message, message: `No pude abrir "${appName}"` };
@@ -131,24 +87,15 @@ async function openFolderHelper(folder) {
   try {
     const home = os.homedir();
     const map = {
-      documentos: path.join(home, 'Documents'),
-      documents: path.join(home, 'Documents'),
-      descargas: path.join(home, 'Downloads'),
-      downloads: path.join(home, 'Downloads'),
-      escritorio: path.join(home, 'Desktop'),
-      desktop: path.join(home, 'Desktop'),
-      imagenes: path.join(home, 'Pictures'),
-      pictures: path.join(home, 'Pictures'),
-      musica: path.join(home, 'Music'),
-      music: path.join(home, 'Music'),
-      videos: path.join(home, 'Videos'),
-      informes: path.join(home, 'Documents', 'Informes'),
+      documentos: path.join(home, 'Documents'), documents: path.join(home, 'Documents'),
+      descargas: path.join(home, 'Downloads'), downloads: path.join(home, 'Downloads'),
+      escritorio: path.join(home, 'Desktop'), desktop: path.join(home, 'Desktop'),
+      imagenes: path.join(home, 'Pictures'), musica: path.join(home, 'Music'),
+      videos: path.join(home, 'Videos'), informes: path.join(home, 'Documents', 'Informes'),
     };
     const key = (folder || '').toLowerCase();
     let target = map[key] || folder;
-    if (key === 'informes' && !fs.existsSync(target)) {
-      fs.mkdirSync(target, { recursive: true });
-    }
+    if (key === 'informes' && !fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
     await shell.openPath(target);
     return { ok: true, result: `Abriendo ${folder}`, message: `Abriendo carpeta ${folder}` };
   } catch (err) {
@@ -159,7 +106,7 @@ async function openFolderHelper(folder) {
 async function openUrlHelper(url) {
   try {
     await shell.openExternal(url);
-    return { ok: true, result: `URL abierta` };
+    return { ok: true, result: 'URL abierta' };
   } catch (err) {
     return { ok: false, result: String(err) };
   }
@@ -168,14 +115,8 @@ async function openUrlHelper(url) {
 async function runCommandHelper(command) {
   try {
     const blocked = [/rm\s+-rf\s+\//, /format\s+/i, /del\s+\/s/i, /shutdown/i, /mkfs/i];
-    if (blocked.some((re) => re.test(command))) {
-      return { ok: false, result: 'Comando bloqueado por seguridad.' };
-    }
-    const { stdout, stderr } = await execAsync(command, {
-      timeout: 20000,
-      maxBuffer: 1024 * 512,
-      shell: true,
-    });
+    if (blocked.some((re) => re.test(command))) return { ok: false, result: 'Comando bloqueado por seguridad.' };
+    const { stdout, stderr } = await execAsync(command, { timeout: 20000, maxBuffer: 1024 * 512, shell: true });
     return { ok: true, result: (stdout || stderr || 'OK').slice(0, 3000) };
   } catch (err) {
     return { ok: false, result: err.message };
@@ -185,7 +126,6 @@ async function runCommandHelper(command) {
 function getMemoryPath() {
   return path.join(app.getPath('userData'), 'elyra-memory.json');
 }
-
 function readMemory() {
   try {
     const p = getMemoryPath();
@@ -193,7 +133,6 @@ function readMemory() {
   } catch {}
   return { notes: [], facts: [], history: [] };
 }
-
 function writeMemory(data) {
   try {
     fs.writeFileSync(getMemoryPath(), JSON.stringify(data, null, 2), 'utf-8');
@@ -202,23 +141,18 @@ function writeMemory(data) {
     return false;
   }
 }
-
 async function rememberHelper(text) {
   const mem = readMemory();
   mem.notes.push({ id: Date.now().toString(), text, at: new Date().toISOString() });
   writeMemory(mem);
-  return { ok: true, result: `Guardado en memoria` };
+  return { ok: true, result: 'Guardado en memoria' };
 }
-
 async function recallHelper() {
   const mem = readMemory();
   const notes = (mem.notes || []).slice(-20).map((n) => n.text);
   const facts = (mem.facts || []).slice(-20).map((f) => f.text);
   if (!notes.length && !facts.length) return { ok: true, result: 'No hay notas en memoria todavía.' };
-  return {
-    ok: true,
-    result: `Notas: ${notes.join(' | ') || 'ninguna'}. Hechos: ${facts.join(' | ') || 'ninguno'}.`,
-  };
+  return { ok: true, result: `Notas: ${notes.join(' | ') || 'ninguna'}. Hechos: ${facts.join(' | ') || 'ninguno'}.` };
 }
 
 const agentHelpers = {
@@ -236,19 +170,16 @@ ipcMain.handle('get-system-stats', async () => {
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
     const usedMem = totalMem - freeMem;
-    let cpuUsage = 0;
+    let cpuUsage = 15;
     try {
       if (process.platform === 'win32') {
         const { stdout } = await execAsync('wmic cpu get loadpercentage /value');
         const match = stdout.match(/LoadPercentage=(\d+)/);
         if (match) cpuUsage = parseInt(match[1], 10);
       } else {
-        const load = os.loadavg()[0];
-        cpuUsage = Math.min(100, Math.round((load / cpus.length) * 100));
+        cpuUsage = Math.min(100, Math.round((os.loadavg()[0] / cpus.length) * 100));
       }
-    } catch {
-      cpuUsage = Math.round(Math.random() * 30 + 10);
-    }
+    } catch {}
     let diskUsage = 50;
     try {
       if (process.platform === 'win32') {
@@ -256,13 +187,8 @@ ipcMain.handle('get-system-stats', async () => {
         const free = parseInt((stdout.match(/FreeSpace=(\d+)/) || [])[1] || '0', 10);
         const size = parseInt((stdout.match(/Size=(\d+)/) || [])[1] || '1', 10);
         if (size > 0) diskUsage = Math.round(((size - free) / size) * 100);
-      } else {
-        const { stdout } = await execAsync("df -k / | tail -1 | awk '{print $5}'");
-        diskUsage = parseInt(stdout.replace('%', '').trim(), 10) || 50;
       }
-    } catch {
-      diskUsage = 55;
-    }
+    } catch {}
     return {
       cpu: cpuUsage,
       ram: Math.round((usedMem / totalMem) * 100),
@@ -271,8 +197,8 @@ ipcMain.handle('get-system-stats', async () => {
       platform: process.platform,
       hostname: os.hostname(),
       uptime: os.uptime(),
-      totalMemGB: +(totalMem / 1024 / 1024 / 1024).toFixed(1),
-      freeMemGB: +(freeMem / 1024 / 1024 / 1024).toFixed(1),
+      totalMemGB: +(totalMem / 1e9).toFixed(1),
+      freeMemGB: +(freeMem / 1e9).toFixed(1),
     };
   } catch {
     return { cpu: 15, ram: 45, disk: 50, net: 10 };
@@ -282,12 +208,11 @@ ipcMain.handle('get-system-stats', async () => {
 ipcMain.handle('open-app', async (_e, name) => openAppHelper(name));
 ipcMain.handle('open-path', async (_e, p) => {
   const result = await shell.openPath(p);
-  return result ? { ok: false, message: result } : { ok: true, message: `Abierto` };
+  return result ? { ok: false, message: result } : { ok: true, message: 'Abierto' };
 });
 ipcMain.handle('open-url', async (_e, url) => openUrlHelper(url));
 ipcMain.handle('open-folder', async (_e, folder) => openFolderHelper(folder));
 ipcMain.handle('run-command', async (_e, cmd) => runCommandHelper(cmd));
-
 ipcMain.handle('memory-get', () => readMemory());
 ipcMain.handle('memory-add-note', (_e, note) => {
   const mem = readMemory();
@@ -312,77 +237,50 @@ ipcMain.handle('memory-clear', () => {
   writeMemory({ notes: [], facts: [], history: [] });
   return { ok: true };
 });
-
 ipcMain.handle('tts-speak', async (_e, text) => {
   try {
-    const dataUrl = await synthesizeToBase64(text);
-    return { ok: true, dataUrl };
+    return { ok: true, dataUrl: await synthesizeToBase64(text) };
   } catch (err) {
     return { ok: false, error: err.message, fallback: true };
   }
 });
+ipcMain.handle('tts-status', () => ({ edgeTts: checkEdgeTts(), voice: VOICE }));
 
-ipcMain.handle('tts-status', () => ({
-  edgeTts: checkEdgeTts(),
-  voice: VOICE,
-}));
-
-/**
- * STT con Groq Whisper — fiable en Electron (a diferencia de Web Speech API).
- * Recibe audio en base64 desde el renderer.
- */
 ipcMain.handle('stt-transcribe', async (_e, payload) => {
   try {
     const { base64, mimeType } = payload || {};
     if (!base64) return { ok: false, error: 'Sin audio' };
-
     ensureDefaultConfig();
     const config = getConfig();
     if (!config.apiKey) return { ok: false, error: 'Sin API key' };
-
     const buffer = Buffer.from(base64, 'base64');
     const ext = (mimeType || '').includes('mp4') ? 'mp4' : (mimeType || '').includes('ogg') ? 'ogg' : 'webm';
-    const tmpFile = path.join(os.tmpdir(), `elyra-stt-${Date.now()}.${ext}`);
-    fs.writeFileSync(tmpFile, buffer);
-
-    // Node 18+ FormData + Blob / File
     const form = new FormData();
-    const blob = new Blob([buffer], { type: mimeType || 'audio/webm' });
-    form.append('file', blob, `audio.${ext}`);
+    form.append('file', new Blob([buffer], { type: mimeType || 'audio/webm' }), `audio.${ext}`);
     form.append('model', 'whisper-large-v3');
     form.append('language', 'es');
     form.append('response_format', 'json');
     form.append('temperature', '0');
-
     const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-      },
+      headers: { Authorization: `Bearer ${config.apiKey}` },
       body: form,
     });
-
-    try {
-      fs.unlinkSync(tmpFile);
-    } catch {}
-
     if (!res.ok) {
       const errText = await res.text();
-      // Si Whisper no está disponible, mensaje claro
-      if (res.status === 429) {
-        return { ok: false, error: 'Límite de uso. Espera un momento e intenta de nuevo.' };
-      }
+      if (res.status === 429) return { ok: false, error: 'Límite de uso. Espera un momento.' };
       return { ok: false, error: `STT ${res.status}: ${errText.slice(0, 200)}` };
     }
-
     const data = await res.json();
     const text = (data.text || '').trim();
-    if (!text) return { ok: false, error: 'No detecté palabras. Habla un poco más cerca del micrófono.' };
+    if (!text) return { ok: false, error: 'No detecté palabras. Habla más cerca del micrófono.' };
     return { ok: true, text };
   } catch (err) {
     return { ok: false, error: err.message || 'Error de reconocimiento' };
   }
 });
+
+ipcMain.handle('stt-listen-python', async (_e, seconds) => runPythonStt(seconds || 5));
 
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   ensureDefaultConfig();
@@ -396,17 +294,10 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
     const result = await runAgent(message, history || [], agentHelpers);
     return { response: result.response, intelligent: true };
   } catch (err) {
-    const msg = String(err.message || err);
-    if (/429|rate limit/i.test(msg)) {
-      return {
-        response: 'El servicio de inteligencia está saturado un momento. Espera medio minuto y vuelve a intentarlo.',
-        intelligent: false,
-      };
+    if (/429|rate limit/i.test(String(err.message))) {
+      return { response: 'El servicio está saturado un momento. Espera y vuelve a intentar.', intelligent: false };
     }
-    return {
-      response: 'No pude completar eso ahora. Revisa tu conexión e inténtalo de nuevo.',
-      intelligent: false,
-    };
+    return { response: 'No pude completar eso ahora. Revisa tu conexión.', intelligent: false };
   }
 });
 
@@ -414,14 +305,12 @@ ipcMain.handle('agent-config-get', () => {
   const c = getConfig();
   return { hasKey: !!c.apiKey, baseUrl: c.baseUrl, model: c.model };
 });
-
 ipcMain.handle('agent-config-set', (_e, partial) => saveConfig(partial));
 
 async function trySimpleIntent(input) {
   const text = input.toLowerCase().trim();
   if (/\b(abre|abrir)\b/.test(text)) {
-    const folderKeys = ['documentos', 'descargas', 'escritorio', 'imágenes', 'imagenes', 'música', 'musica', 'videos', 'informes'];
-    for (const f of folderKeys) {
+    for (const f of ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos']) {
       if (text.includes(f)) {
         const r = await openFolderHelper(f);
         return { response: r.message || r.result, intelligent: false };
@@ -429,17 +318,12 @@ async function trySimpleIntent(input) {
     }
     const m = text.match(/(?:abre|abrir)\s+(?:la\s+|el\s+)?(.+)/);
     if (m) {
-      const name = m[1].replace(/\s+(por favor|please)$/i, '').trim();
-      const r = await openAppHelper(name);
+      const r = await openAppHelper(m[1].replace(/\s+(por favor|please)$/i, '').trim());
       return { response: r.message || r.result, intelligent: false };
     }
   }
   if (/\b(qué hora|que hora|hora es)\b/.test(text)) {
-    const now = new Date();
-    return {
-      response: `Son las ${now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}.`,
-      intelligent: false,
-    };
+    return { response: `Son las ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}.`, intelligent: false };
   }
   return null;
 }
@@ -453,22 +337,12 @@ ipcMain.on('window-close', () => mainWindow?.hide());
 
 app.whenReady().then(() => {
   ensureDefaultConfig();
-
-  // Permisos de micrófono (crítico para voz en Electron)
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    if (permission === 'media' || permission === 'microphone' || permission === 'audioCapture') {
-      callback(true);
-      return;
-    }
-    callback(false);
+    callback(permission === 'media' || permission === 'microphone' || permission === 'audioCapture');
   });
-  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
-    if (permission === 'media' || permission === 'microphone' || permission === 'audioCapture') {
-      return true;
-    }
-    return false;
-  });
-
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
+    permission === 'media' || permission === 'microphone' || permission === 'audioCapture',
+  );
   try {
     const cfgPath = path.join(os.homedir(), '.elyra', 'config.json');
     if (fs.existsSync(cfgPath)) {
@@ -479,7 +353,6 @@ app.whenReady().then(() => {
       }
     }
   } catch {}
-
   createWindow();
   createTray();
   globalShortcut.register('CommandOrControl+Shift+E', () => {
@@ -488,10 +361,6 @@ app.whenReady().then(() => {
       mainWindow?.show();
       mainWindow?.focus();
     }
-  });
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    else mainWindow?.show();
   });
 });
 
