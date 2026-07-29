@@ -1,7 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('elyra', {
-  // System
   getSystemStats: () => ipcRenderer.invoke('get-system-stats'),
   openApp: (name) => ipcRenderer.invoke('open-app', name),
   openPath: (p) => ipcRenderer.invoke('open-path', p),
@@ -9,19 +8,25 @@ contextBridge.exposeInMainWorld('elyra', {
   openFolder: (folder) => ipcRenderer.invoke('open-folder', folder),
   runCommand: (cmd) => ipcRenderer.invoke('run-command', cmd),
 
-  // Memory
   memoryGet: () => ipcRenderer.invoke('memory-get'),
   memoryAddNote: (note) => ipcRenderer.invoke('memory-add-note', note),
   memoryAddFact: (fact) => ipcRenderer.invoke('memory-add-fact', fact),
   memorySaveHistory: (entry) => ipcRenderer.invoke('memory-save-history', entry),
   memoryClear: () => ipcRenderer.invoke('memory-clear'),
 
-  // Window
+  // Natural TTS — returns { ok, file } path to mp3
+  ttsSpeak: (text) => ipcRenderer.invoke('tts-speak', text),
+  ttsStatus: () => ipcRenderer.invoke('tts-status'),
+
+  // Intelligent agent
+  agentChat: (message, history) => ipcRenderer.invoke('agent-chat', { message, history }),
+  agentConfigGet: () => ipcRenderer.invoke('agent-config-get'),
+  agentConfigSet: (partial) => ipcRenderer.invoke('agent-config-set', partial),
+
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
 
-  // Events
   onAutonomousMode: (cb) => {
     const handler = (_e, value) => cb(value);
     ipcRenderer.on('autonomous-mode', handler);

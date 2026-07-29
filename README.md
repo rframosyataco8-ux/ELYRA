@@ -1,69 +1,80 @@
 # ELYRA — Asistente Inteligente de Escritorio
 
-Asistente de voz y texto con control real del PC, memoria local y interfaz futurista.
+Asistente de voz natural + inteligencia con LLM. Controla tu PC, investiga, crea documentos y entiende lenguaje libre.
 
-## Nombre
+## Voz natural
 
-**ELYRA** — nombre original, no utilizado en otros asistentes conocidos.
+Usa **edge-tts** (voces neuronales de Microsoft, español):
 
-## Características
+```bash
+pip install edge-tts
+```
 
-- **Aplicación de escritorio** (Electron)
-- Globo de red **interactivo** (reacciona al hablar / escuchar)
-- Control del PC: abrir apps, carpetas, URLs
-- Memoria local persistente (notas y hechos)
-- Estadísticas reales de CPU / RAM / Disco
-- Voz (escuchar + hablar) en español
-- Bandeja del sistema (sigue en segundo plano)
-- Atajo global: `Ctrl+Shift+E` para mostrar/ocultar
-- Ventana sin marco (frameless) con controles propios
+Voz por defecto: `es-ES-ElviraNeural` (muy natural).
+
+Si no está instalado, usa la mejor voz del sistema como respaldo.
+
+**Siempre responde con voz** (tanto si escribes como si hablas).
+
+## Inteligencia real (LLM)
+
+Para que entienda cualquier cosa (no solo comandos fijos):
+
+1. Crea la carpeta y archivo de config:
+
+```bash
+mkdir %USERPROFILE%\.elyra
+```
+
+2. Crea `config.json` dentro:
+
+```json
+{
+  "apiKey": "tu-api-key",
+  "baseUrl": "https://api.openai.com/v1",
+  "model": "gpt-4o-mini"
+}
+```
+
+### APIs compatibles
+
+| Proveedor | baseUrl | Ejemplo modelo |
+|-----------|---------|----------------|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| Groq (gratis/rápido) | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` |
+| xAI Grok | `https://api.x.ai/v1` | `grok-2-latest` |
+| Ollama local | `http://localhost:11434/v1` | `llama3.2` |
+
+Con la API key configurada puedes pedir cosas como:
+
+- "¿Quién inventó el WiFi?"
+- "Busca información sobre la Segunda Guerra Mundial y crea un artículo HTML en la carpeta Informes"
+- "Analiza el archivo datos.csv y hazme un reporte gerencial en HTML"
+- "Abre Chrome" / "Abre la carpeta Descargas"
+- "Recuerda que la reunión es el viernes"
 
 ## Instalación
 
 ```bash
 npm install
+pip install edge-tts
 ```
 
-## Desarrollo
+## Ejecutar (escritorio)
 
 ```bash
-# Solo interfaz (navegador)
-npm run dev
-
-# App de escritorio completa
 npm run dev:electron
 ```
 
-## Build / instalador
+## Atajos
 
-```bash
-npm run build:electron
-```
-
-El instalador se genera en la carpeta `release/`.
-
-## Ejemplos de comandos
-
-- "Abre Chrome"
-- "Abre Visual Studio Code"
-- "Abre la carpeta Descargas"
-- "Busca el clima de hoy"
-- "Recuerda que mi reunión es el viernes"
-- "Qué recuerdas"
-- "Estado del sistema"
-- "Calcula 25 * 4"
-- "Qué hora es"
+- `Ctrl+Shift+E` — mostrar / ocultar
+- Cerrar ventana → queda en bandeja del sistema
 
 ## Arquitectura
 
-- **Renderer**: React + TypeScript + Tailwind (interfaz)
-- **Main process**: Electron (acceso real al SO)
-- **Preload**: bridge seguro vía `contextBridge`
-- **Memoria**: archivo JSON en `userData` del sistema
-
-## Próximas mejoras posibles
-
-- Integración con LLM (comprensión total de lenguaje natural)
-- Más acciones de sistema (volumen, brillo, capturas)
-- Plugins / extensiones
-- Wake-word ("Hey ELYRA")
+- **Electron** — acceso real al sistema operativo
+- **edge-tts** — voz neuronal natural en español
+- **Agente LLM** — entiende lenguaje libre + herramientas (buscar, crear archivos, abrir apps, leer archivos, memoria)
+- **React + Tailwind** — interfaz futurista con globo interactivo

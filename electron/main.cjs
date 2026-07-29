@@ -4,8 +4,10 @@ const { exec, spawn } = require('child_process');
 const os = require('os');
 const fs = require('fs');
 const { promisify } = require('util');
-
 const execAsync = promisify(exec);
+
+const { synthesizeToFile, checkEdgeTts } = require('./tts.cjs');
+const { runAgent, getConfig, saveConfig, fallbackResponse } = require('./agent.cjs');
 
 let mainWindow = null;
 let tray = null;
@@ -38,9 +40,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
+  mainWindow.once('ready-to-show', () => mainWindow.show());
 
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
@@ -61,19 +61,15 @@ function createTray() {
     {
       label: 'Mostrar ELYRA',
       click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-        }
+        mainWindow?.show();
+        mainWindow?.focus();
       },
     },
     {
       label: 'Modo autónomo',
       type: 'checkbox',
       checked: true,
-      click: (item) => {
-        mainWindow?.webContents.send('autonomous-mode', item.checked);
-      },
+      click: (item) => mainWindow?.webContents.send('autonomous-mode', item.checked),
     },
     { type: 'separator' },
     {
@@ -92,63 +88,10 @@ function createTray() {
   });
 }
 
-ipcMain.handle('get-system-stats', async () => {
-  try {
-    const cpus = os.cpus();
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const usedMem = totalMem - freeMem;
-
-    let cpuUsage = 0;
-    try {
-      if (process.platform === 'win32') {
-        const { stdout } = await execAsync('wmic cpu get loadpercentage /value');
-        const match = stdout.match(/LoadPercentage=(\d+)/);
-        if (match) cpuUsage = parseInt(match[1], 10);
-      } else {
-        const load = os.loadavg()[0];
-        cpuUsage = Math.min(100, Math.round((load / cpus.length) * 100));
-      }
-    } catch {
-      cpuUsage = Math.round(Math.random() * 30 + 10);
-    }
-
-    let diskUsage = 50;
-    try {
-      if (process.platform === 'win32') {
-        const { stdout } = await execAsync('wmic logicaldisk where DeviceID="C:" get FreeSpace,Size /value');
-        const free = parseInt((stdout.match(/FreeSpace=(\d+)/) || [])[1] || '0', 10);
-        const size = parseInt((stdout.match(/Size=(\d+)/) || [])[1] || '1', 10);
-        if (size > 0) diskUsage = Math.round(((size - free) / size) * 100);
-      } else {
-        const { stdout } = await execAsync("df -k / | tail -1 | awk '{print $5}'");
-        diskUsage = parseInt(stdout.replace('%', '').trim(), 10) || 50;
-      }
-    } catch {
-      diskUsage = 55;
-    }
-
-    return {
-      cpu: cpuUsage,
-      ram: Math.round((usedMem / totalMem) * 100),
-      disk: diskUsage,
-      net: Math.round(Math.random() * 25 + 5),
-      platform: process.platform,
-      hostname: os.hostname(),
-      uptime: os.uptime(),
-      arch: os.arch(),
-      totalMemGB: +(totalMem / 1024 / 1024 / 1024).toFixed(1),
-      freeMemGB: +(freeMem / 1024 / 1024 / 1024).toFixed(1),
-    };
-  } catch (err) {
-    return { cpu: 15, ram: 45, disk: 50, net: 10, error: String(err) };
-  }
-});
-
-ipcMain.handle('open-app', async (_event, appName) => {
+// ── Helpers shared with agent ───────────────────────────────
+async function openAppHelper(appName) {
   try {
     const name = (appName || '').toLowerCase().trim();
-
     const appMap = {
       notepad: 'notepad.exe',
       calculadora: 'calc.exe',
@@ -171,9 +114,7 @@ ipcMain.handle('open-app', async (_event, appName) => {
       powerpoint: 'powerpnt',
       outlook: 'outlook',
     };
-
     const target = appMap[name] || name;
-
     if (process.platform === 'win32') {
       await execAsync(`start "" "${target}"`, { shell: true });
     } else if (process.platform === 'darwin') {
@@ -181,33 +122,13 @@ ipcMain.handle('open-app', async (_event, appName) => {
     } else {
       spawn(target, [], { detached: true, stdio: 'ignore' }).unref();
     }
-
-    return { ok: true, message: `Abriendo ${appName}` };
+    return { ok: true, result: `Abriendo ${appName}`, message: `Abriendo ${appName}` };
   } catch (err) {
-    return { ok: false, message: `No pude abrir "${appName}": ${err.message}` };
+    return { ok: false, result: err.message, message: `No pude abrir "${appName}"` };
   }
-});
+}
 
-ipcMain.handle('open-path', async (_event, targetPath) => {
-  try {
-    const result = await shell.openPath(targetPath);
-    if (result) return { ok: false, message: result };
-    return { ok: true, message: `Abierto: ${targetPath}` };
-  } catch (err) {
-    return { ok: false, message: String(err) };
-  }
-});
-
-ipcMain.handle('open-url', async (_event, url) => {
-  try {
-    await shell.openExternal(url);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, message: String(err) };
-  }
-});
-
-ipcMain.handle('open-folder', async (_event, folder) => {
+async function openFolderHelper(folder) {
   try {
     const home = os.homedir();
     const map = {
@@ -222,31 +143,45 @@ ipcMain.handle('open-folder', async (_event, folder) => {
       musica: path.join(home, 'Music'),
       music: path.join(home, 'Music'),
       videos: path.join(home, 'Videos'),
+      informes: path.join(home, 'Documents', 'Informes'),
     };
-    const target = map[folder.toLowerCase()] || folder;
+    const key = (folder || '').toLowerCase();
+    let target = map[key] || folder;
+    if (key === 'informes' && !fs.existsSync(target)) {
+      fs.mkdirSync(target, { recursive: true });
+    }
     await shell.openPath(target);
-    return { ok: true, message: `Abriendo carpeta ${folder}` };
+    return { ok: true, result: `Abriendo ${folder}`, message: `Abriendo carpeta ${folder}` };
   } catch (err) {
-    return { ok: false, message: String(err) };
+    return { ok: false, result: err.message, message: String(err) };
   }
-});
+}
 
-ipcMain.handle('run-command', async (_event, command) => {
+async function openUrlHelper(url) {
+  try {
+    await shell.openExternal(url);
+    return { ok: true, result: `URL abierta: ${url}` };
+  } catch (err) {
+    return { ok: false, result: String(err) };
+  }
+}
+
+async function runCommandHelper(command) {
   try {
     const blocked = [/rm\s+-rf\s+\//, /format\s+/i, /del\s+\/s/i, /shutdown/i, /mkfs/i];
     if (blocked.some((re) => re.test(command))) {
-      return { ok: false, message: 'Comando bloqueado por seguridad.' };
+      return { ok: false, result: 'Comando bloqueado por seguridad.' };
     }
     const { stdout, stderr } = await execAsync(command, {
-      timeout: 15000,
+      timeout: 20000,
       maxBuffer: 1024 * 512,
       shell: true,
     });
-    return { ok: true, stdout: stdout.slice(0, 2000), stderr: stderr.slice(0, 500) };
+    return { ok: true, result: (stdout || stderr || 'OK').slice(0, 3000) };
   } catch (err) {
-    return { ok: false, message: err.message, stdout: err.stdout || '', stderr: err.stderr || '' };
+    return { ok: false, result: err.message };
   }
-});
+}
 
 function getMemoryPath() {
   return path.join(app.getPath('userData'), 'elyra-memory.json');
@@ -255,9 +190,7 @@ function getMemoryPath() {
 function readMemory() {
   try {
     const p = getMemoryPath();
-    if (fs.existsSync(p)) {
-      return JSON.parse(fs.readFileSync(p, 'utf-8'));
-    }
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'));
   } catch {}
   return { notes: [], facts: [], history: [] };
 }
@@ -271,34 +204,184 @@ function writeMemory(data) {
   }
 }
 
-ipcMain.handle('memory-get', () => readMemory());
+async function rememberHelper(text) {
+  const mem = readMemory();
+  mem.notes.push({ id: Date.now().toString(), text, at: new Date().toISOString() });
+  writeMemory(mem);
+  return { ok: true, result: `Guardado en memoria: ${text}` };
+}
 
-ipcMain.handle('memory-add-note', (_event, note) => {
+const agentHelpers = {
+  openApp: openAppHelper,
+  openFolder: openFolderHelper,
+  openUrl: openUrlHelper,
+  runCommand: runCommandHelper,
+  remember: rememberHelper,
+};
+
+// ── IPC ─────────────────────────────────────────────────────
+ipcMain.handle('get-system-stats', async () => {
+  try {
+    const cpus = os.cpus();
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    let cpuUsage = 0;
+    try {
+      if (process.platform === 'win32') {
+        const { stdout } = await execAsync('wmic cpu get loadpercentage /value');
+        const match = stdout.match(/LoadPercentage=(\d+)/);
+        if (match) cpuUsage = parseInt(match[1], 10);
+      } else {
+        const load = os.loadavg()[0];
+        cpuUsage = Math.min(100, Math.round((load / cpus.length) * 100));
+      }
+    } catch {
+      cpuUsage = Math.round(Math.random() * 30 + 10);
+    }
+    let diskUsage = 50;
+    try {
+      if (process.platform === 'win32') {
+        const { stdout } = await execAsync('wmic logicaldisk where DeviceID="C:" get FreeSpace,Size /value');
+        const free = parseInt((stdout.match(/FreeSpace=(\d+)/) || [])[1] || '0', 10);
+        const size = parseInt((stdout.match(/Size=(\d+)/) || [])[1] || '1', 10);
+        if (size > 0) diskUsage = Math.round(((size - free) / size) * 100);
+      } else {
+        const { stdout } = await execAsync("df -k / | tail -1 | awk '{print $5}'");
+        diskUsage = parseInt(stdout.replace('%', '').trim(), 10) || 50;
+      }
+    } catch {
+      diskUsage = 55;
+    }
+    return {
+      cpu: cpuUsage,
+      ram: Math.round((usedMem / totalMem) * 100),
+      disk: diskUsage,
+      net: Math.round(Math.random() * 25 + 5),
+      platform: process.platform,
+      hostname: os.hostname(),
+      uptime: os.uptime(),
+      totalMemGB: +(totalMem / 1024 / 1024 / 1024).toFixed(1),
+      freeMemGB: +(freeMem / 1024 / 1024 / 1024).toFixed(1),
+    };
+  } catch {
+    return { cpu: 15, ram: 45, disk: 50, net: 10 };
+  }
+});
+
+ipcMain.handle('open-app', async (_e, name) => openAppHelper(name));
+ipcMain.handle('open-path', async (_e, p) => {
+  const result = await shell.openPath(p);
+  return result ? { ok: false, message: result } : { ok: true, message: `Abierto: ${p}` };
+});
+ipcMain.handle('open-url', async (_e, url) => openUrlHelper(url));
+ipcMain.handle('open-folder', async (_e, folder) => openFolderHelper(folder));
+ipcMain.handle('run-command', async (_e, cmd) => runCommandHelper(cmd));
+
+ipcMain.handle('memory-get', () => readMemory());
+ipcMain.handle('memory-add-note', (_e, note) => {
   const mem = readMemory();
   mem.notes.push({ id: Date.now().toString(), text: note, at: new Date().toISOString() });
   writeMemory(mem);
   return { ok: true };
 });
-
-ipcMain.handle('memory-add-fact', (_event, fact) => {
+ipcMain.handle('memory-add-fact', (_e, fact) => {
   const mem = readMemory();
   mem.facts.push({ id: Date.now().toString(), text: fact, at: new Date().toISOString() });
   writeMemory(mem);
   return { ok: true };
 });
-
-ipcMain.handle('memory-save-history', (_event, entry) => {
+ipcMain.handle('memory-save-history', (_e, entry) => {
   const mem = readMemory();
   mem.history.push(entry);
   if (mem.history.length > 200) mem.history = mem.history.slice(-200);
   writeMemory(mem);
   return { ok: true };
 });
-
 ipcMain.handle('memory-clear', () => {
   writeMemory({ notes: [], facts: [], history: [] });
   return { ok: true };
 });
+
+// Natural TTS
+ipcMain.handle('tts-speak', async (_e, text) => {
+  try {
+    const file = await synthesizeToFile(text, { rate: '+8%', pitch: '+0Hz' });
+    return { ok: true, file };
+  } catch (err) {
+    return { ok: false, error: err.message, fallback: true };
+  }
+});
+
+ipcMain.handle('tts-status', () => ({
+  edgeTts: checkEdgeTts(),
+  voice: 'es-ES-ElviraNeural',
+}));
+
+// Intelligent agent
+ipcMain.handle('agent-chat', async (_e, { message, history }) => {
+  const config = getConfig();
+  if (!config.apiKey) {
+    // Try simple local patterns first for common tasks, else guide to config
+    const simple = await trySimpleIntent(message);
+    if (simple) return simple;
+    return fallbackResponse(message);
+  }
+  try {
+    const result = await runAgent(message, history || [], agentHelpers);
+    return { response: result.response, intelligent: true };
+  } catch (err) {
+    return { response: `Error del modelo: ${err.message}`, intelligent: false };
+  }
+});
+
+ipcMain.handle('agent-config-get', () => {
+  const c = getConfig();
+  return { hasKey: !!c.apiKey, baseUrl: c.baseUrl, model: c.model };
+});
+
+ipcMain.handle('agent-config-set', (_e, partial) => saveConfig(partial));
+
+/** Quick intents without LLM for basic desktop actions */
+async function trySimpleIntent(input) {
+  const text = input.toLowerCase().trim();
+
+  if (/\b(abre|abrir)\b/.test(text)) {
+    const folderKeys = ['documentos', 'descargas', 'escritorio', 'imágenes', 'imagenes', 'música', 'musica', 'videos', 'informes'];
+    for (const f of folderKeys) {
+      if (text.includes(f)) {
+        const r = await openFolderHelper(f);
+        return { response: r.message || r.result, intelligent: false };
+      }
+    }
+    const m = text.match(/(?:abre|abrir)\s+(?:la\s+|el\s+)?(.+)/);
+    if (m) {
+      const name = m[1].replace(/\s+(por favor|please)$/i, '').trim();
+      const sites = {
+        youtube: 'https://www.youtube.com',
+        google: 'https://www.google.com',
+        gmail: 'https://mail.google.com',
+        github: 'https://github.com',
+      };
+      if (sites[name]) {
+        await openUrlHelper(sites[name]);
+        return { response: `Abriendo ${name}.`, intelligent: false };
+      }
+      const r = await openAppHelper(name);
+      return { response: r.message || r.result, intelligent: false };
+    }
+  }
+
+  if (/\b(qué hora|que hora|hora es)\b/.test(text)) {
+    const now = new Date();
+    return {
+      response: `Son las ${now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}.`,
+      intelligent: false,
+    };
+  }
+
+  return null;
+}
 
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
 ipcMain.on('window-maximize', () => {
@@ -310,26 +393,20 @@ ipcMain.on('window-close', () => mainWindow?.hide());
 app.whenReady().then(() => {
   createWindow();
   createTray();
-
   globalShortcut.register('CommandOrControl+Shift+E', () => {
-    if (mainWindow?.isVisible()) {
-      mainWindow.hide();
-    } else {
+    if (mainWindow?.isVisible()) mainWindow.hide();
+    else {
       mainWindow?.show();
       mainWindow?.focus();
     }
   });
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
     else mainWindow?.show();
   });
 });
 
-app.on('window-all-closed', () => {
-  // Keep running in tray
-});
-
+app.on('window-all-closed', () => {});
 app.on('before-quit', () => {
   isQuitting = true;
   globalShortcut.unregisterAll();
