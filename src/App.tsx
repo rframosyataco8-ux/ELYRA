@@ -39,7 +39,6 @@ export default function App() {
       const cleaned = (text || '').trim();
       if (!cleaned || processingRef.current) return;
 
-      // Evitar bucles por eco residual
       const lastElyra = [...messagesRef.current].reverse().find((m) => m.role === 'elyra');
       if (lastElyra) {
         const a = cleaned.toLowerCase();
@@ -74,27 +73,32 @@ export default function App() {
       } finally {
         setThinking(false);
         processingRef.current = false;
-        // Escucha continua solo DESPUÉS de hablar + pausa anti-eco
         if (continuousRef.current) {
-          setTimeout(() => {
-            window.dispatchEvent(new CustomEvent('elyra-relisten'));
-          }, 1800);
+          setTimeout(() => window.dispatchEvent(new CustomEvent('elyra-relisten')), 1800);
         }
       }
     },
     [addMessage],
   );
 
-  const { speak, stopSpeaking, startListening, stopListening, speaking, listening, supported, error, naturalTts } =
-    useVoice({ onCommand: processInput });
+  const {
+    speak,
+    stopSpeaking,
+    startListening,
+    stopListening,
+    speaking,
+    listening,
+    supported,
+    error,
+    naturalTts,
+    amplitude,
+  } = useVoice({ onCommand: processInput });
 
   speakRef.current = speak;
 
   useEffect(() => {
     const onRelisten = () => {
-      if (continuousRef.current && !processingRef.current && !speaking) {
-        startListening();
-      }
+      if (continuousRef.current && !processingRef.current && !speaking) startListening();
     };
     window.addEventListener('elyra-relisten', onRelisten);
     return () => window.removeEventListener('elyra-relisten', onRelisten);
@@ -132,9 +136,8 @@ export default function App() {
       stopListening();
       return;
     }
-    if (speaking || thinking) return; // no grabar mientras habla o piensa
+    if (speaking || thinking) return;
     stopSpeaking();
-    // Pequeña pausa para que el altavoz no entre en la grabación
     setTimeout(() => startListening(), 200);
   };
 
@@ -158,7 +161,7 @@ export default function App() {
     : listening
     ? continuous
       ? 'Escucha continua'
-      : 'Escuchando... habla y pulsa de nuevo'
+      : 'Escuchando…'
     : 'Lista';
 
   return (
@@ -197,7 +200,7 @@ export default function App() {
                 <div className="text-center space-y-1 mb-2">
                   <h2 className="text-2xl font-semibold text-white">Hola, Fabricio</h2>
                   <p className="text-sm text-sky-300/50">
-                    {listening ? 'Habla ahora… luego pulsa el micrófono otra vez' : 'Dime qué hacemos.'}
+                    {listening ? 'Habla ahora… al callarte envío solo' : 'Dime qué hacemos. Ctrl+Espacio corta la voz.'}
                   </p>
                   <div className="inline-flex items-center gap-2 mt-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20">
                     {thinking ? (
@@ -213,7 +216,12 @@ export default function App() {
                   </div>
                 </div>
                 <div className="flex-1 flex items-center justify-center min-h-0">
-                  <NetworkGlobe speaking={speaking || thinking} listening={listening} size={340} />
+                  <NetworkGlobe
+                    speaking={speaking || thinking}
+                    listening={listening}
+                    size={340}
+                    amplitude={amplitude}
+                  />
                 </div>
                 <div className="max-w-xl mx-auto w-full mb-2 max-h-24 overflow-hidden">
                   <ConversationLog messages={messages.slice(-4)} compact />
@@ -235,7 +243,7 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-sky-100">Escucha continua</p>
-                      <p className="text-[11px] text-sky-400/50">Se reactiva sola tras responder (puede captar eco)</p>
+                      <p className="text-[11px] text-sky-400/50">Se reactiva sola tras responder</p>
                     </div>
                     <button
                       onClick={() => setContinuous((v) => !v)}
@@ -244,8 +252,10 @@ export default function App() {
                       <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${continuous ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
-                  <p className="text-[12px] text-sky-400/60">
-                    Consejo: baja el volumen del PC o usa auriculares para mejor reconocimiento.
+                  <p className="text-[12px] text-sky-400/60 leading-relaxed">
+                    Ctrl+Espacio: interrumpir voz · Ctrl+Shift+E: mostrar/ocultar
+                    <br />
+                    API key en: %USERPROFILE%\.elyra\config.json
                   </p>
                 </div>
               </div>
@@ -253,6 +263,7 @@ export default function App() {
 
             <div className="w-full max-w-xl mx-auto mt-auto pt-3">
               {error && <p className="text-red-400/70 text-xs text-center mb-2">{error}</p>}
+              {!supported && null}
               <div className="flex items-center gap-2 rounded-full bg-[#0a1525]/95 border border-sky-500/25 px-3 py-2">
                 <button
                   onClick={handleToggleListen}
@@ -262,7 +273,7 @@ export default function App() {
                       ? 'bg-sky-500/35 text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.4)]'
                       : 'text-sky-400/60 hover:bg-sky-500/10'
                   } disabled:opacity-40`}
-                  title={listening ? 'Detener y enviar' : 'Hablar'}
+                  title={listening ? 'Detener' : 'Hablar'}
                 >
                   <Mic className="w-4 h-4" />
                 </button>
@@ -280,7 +291,7 @@ export default function App() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder={listening ? 'Escuchando… pulsa el mic para enviar' : 'Habla o escribe…'}
+                  placeholder={listening ? 'Escuchando…' : 'Habla o escribe…'}
                   className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
                 />
                 <button

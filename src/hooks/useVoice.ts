@@ -48,6 +48,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const [supported, setSupported] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [naturalTts, setNaturalTts] = useState(false);
+  const [amplitude, setAmplitude] = useState(0);
 
   const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -62,6 +63,9 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const ignoreUntilRef = useRef(0);
   const listeningModeRef = useRef<'whisper' | 'webspeech' | 'python' | null>(null);
   const vadTimerRef = useRef<number | null>(null);
+  const ampRafRef = useRef<number>(0);
+  const ampCtxRef = useRef<AudioContext | null>(null);
+  const ampAnalyserRef = useRef<AnalyserNode | null>(null);
   onCommandRef.current = onCommand;
 
   useEffect(() => {
@@ -73,8 +77,59 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     mediaStreamRef.current = null;
   };
 
+  const stopAmplitudeMonitor = useCallback(() => {
+    if (ampRafRef.current) {
+      cancelAnimationFrame(ampRafRef.current);
+      ampRafRef.current = 0;
+    }
+    try {
+      ampCtxRef.current?.close();
+    } catch {}
+    ampCtxRef.current = null;
+    ampAnalyserRef.current = null;
+    setAmplitude(0);
+  }, []);
+
+  const startAmplitudeMonitor = useCallback(
+    (audio: HTMLAudioElement) => {
+      stopAmplitudeMonitor();
+      try {
+        const ctx = new AudioContext();
+        const source = ctx.createMediaElementSource(audio);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        analyser.connect(ctx.destination);
+        ampCtxRef.current = ctx;
+        ampAnalyserRef.current = analyser;
+        const data = new Uint8Array(analyser.frequencyBinCount);
+
+        const tick = () => {
+          if (!ampAnalyserRef.current) return;
+          ampAnalyserRef.current.getByteTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) {
+            const v = (data[i] - 128) / 128;
+            sum += v * v;
+          }
+          const rms = Math.sqrt(sum / data.length);
+          // Suavizar 0–1
+          const level = Math.min(1, rms * 4.5);
+          setAmplitude((prev) => prev * 0.55 + level * 0.45);
+          ampRafRef.current = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch {
+        // Algunos entornos bloquean createMediaElementSource si el audio ya suena
+        setAmplitude(0.35);
+      }
+    },
+    [stopAmplitudeMonitor],
+  );
+
   const stopSpeaking = useCallback(() => {
     speakTokenRef.current += 1;
+    stopAmplitudeMonitor();
     if (audioRef.current) {
       try {
         audioRef.current.onended = null;
@@ -88,7 +143,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     speakingRef.current = false;
     setSpeaking(false);
     ignoreUntilRef.current = Date.now() + 900;
-  }, []);
+  }, [stopAmplitudeMonitor]);
 
   function speakBrowser(text: string, token: number) {
     if (!('speechSynthesis' in window) || token !== speakTokenRef.current) return;
@@ -107,12 +162,14 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       if (token === speakTokenRef.current) {
         speakingRef.current = true;
         setSpeaking(true);
+        setAmplitude(0.4);
       }
     };
     utterance.onend = utterance.onerror = () => {
       if (token === speakTokenRef.current) {
         speakingRef.current = false;
         setSpeaking(false);
+        setAmplitude(0);
         ignoreUntilRef.current = Date.now() + 1200;
       }
     };
@@ -150,9 +207,11 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             speakingRef.current = true;
             setSpeaking(true);
             const audio = new Audio(result.dataUrl);
+            audio.crossOrigin = 'anonymous';
             audioRef.current = audio;
             audio.onended = () => {
               if (token === speakTokenRef.current) {
+                stopAmplitudeMonitor();
                 speakingRef.current = false;
                 setSpeaking(false);
                 audioRef.current = null;
@@ -161,12 +220,15 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             };
             audio.onerror = () => {
               if (token === speakTokenRef.current) {
+                stopAmplitudeMonitor();
                 speakingRef.current = false;
                 setSpeaking(false);
                 ignoreUntilRef.current = Date.now() + 800;
                 speakBrowser(text, token);
               }
             };
+            // Monitor ANTES de play para capturar el stream
+            startAmplitudeMonitor(audio);
             await audio.play();
             return;
           }
@@ -174,14 +236,13 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       }
       if (token === speakTokenRef.current) speakBrowser(text, token);
     },
-    [stopSpeaking],
+    [stopSpeaking, startAmplitudeMonitor, stopAmplitudeMonitor],
   );
 
   const acceptTranscript = useCallback((raw: string) => {
     const text = (raw || '').trim();
     if (!text) return;
     if (Date.now() < ignoreUntilRef.current || speakingRef.current) return;
-
     const n = normalize(text);
     const last = lastSpokenNormRef.current;
     if (last) {
@@ -190,9 +251,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     onCommandRef.current?.(text);
   }, []);
 
-  /**
-   * Whisper + VAD: detecta cuándo hablas y cuándo hay silencio para cortar solo.
-   */
   const startWhisperListening = useCallback(async () => {
     try {
       if (speakingRef.current || Date.now() < ignoreUntilRef.current - 400) {
@@ -211,7 +269,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       });
       mediaStreamRef.current = stream;
 
-      // VAD con AnalyserNode
       const audioCtx = new AudioContext();
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
@@ -231,8 +288,8 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       let silenceMs = 0;
       let totalMs = 0;
       const TICK = 80;
-      const SPEECH_THRESHOLD = 12; // volumen medio
-      const SILENCE_TO_STOP = 900; // ms de silencio tras hablar
+      const SPEECH_THRESHOLD = 12;
+      const SILENCE_TO_STOP = 900;
       const MAX_MS = 7000;
       const MIN_SPEECH_MS = 350;
 
@@ -254,14 +311,11 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         listeningModeRef.current = null;
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         stopMediaTracks();
-
         if (speakingRef.current || Date.now() < ignoreUntilRef.current) return;
-
         if (!speechStarted || blob.size < 1500) {
           setError('No capturé tu voz. Habla un poco más fuerte y cerca del micrófono.');
           return;
         }
-
         try {
           const buffer = await blob.arrayBuffer();
           const bytes = new Uint8Array(buffer);
@@ -297,19 +351,14 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         }
         const rms = Math.sqrt(sum / data.length) * 100;
         totalMs += TICK;
-
         if (rms > SPEECH_THRESHOLD) {
           speechStarted = true;
           silenceMs = 0;
         } else if (speechStarted) {
           silenceMs += TICK;
         }
-
-        if (speechStarted && silenceMs >= SILENCE_TO_STOP && totalMs > MIN_SPEECH_MS + SILENCE_TO_STOP) {
-          finish();
-        } else if (totalMs >= MAX_MS) {
-          finish();
-        }
+        if (speechStarted && silenceMs >= SILENCE_TO_STOP && totalMs > MIN_SPEECH_MS + SILENCE_TO_STOP) finish();
+        else if (totalMs >= MAX_MS) finish();
       }, TICK);
 
       return true;
@@ -326,7 +375,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     }
   }, [acceptTranscript]);
 
-  /** Fallback Python (sounddevice + Whisper) */
   const startPythonListening = useCallback(async () => {
     if (!window.elyra?.sttListenPython) return false;
     try {
@@ -386,17 +434,14 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       setError('Espera a que termine de hablar.');
       return;
     }
-    // 1) Whisper + VAD en escritorio
     if (isDesktop() && window.elyra?.sttTranscribe) {
       const ok = await startWhisperListening();
       if (ok) return;
     }
-    // 2) Python opcional
     if (isDesktop() && window.elyra?.sttListenPython) {
       const ok = await startPythonListening();
       if (ok) return;
     }
-    // 3) Web Speech
     if (!startWebSpeechListening()) {
       setError('No hay reconocimiento de voz disponible.');
       setSupported(false);
@@ -419,6 +464,15 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     setListening(false);
     listeningModeRef.current = null;
   }, []);
+
+  // Barge-in global (Ctrl+Espacio desde main)
+  useEffect(() => {
+    if (!isDesktop() || !window.elyra?.onBargeIn) return;
+    return window.elyra.onBargeIn(() => {
+      stopSpeaking();
+      stopListening();
+    });
+  }, [stopSpeaking, stopListening]);
 
   useEffect(() => {
     setSupported(true);
@@ -447,5 +501,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     supported,
     error,
     naturalTts,
+    amplitude,
   };
 }

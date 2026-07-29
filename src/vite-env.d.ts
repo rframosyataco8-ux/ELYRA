@@ -26,6 +26,15 @@ interface ElyraAPI {
   ttsStatus: () => Promise<{ edgeTts: boolean | string; voice: string }>;
   sttTranscribe: (payload: { base64: string; mimeType: string }) => Promise<{ ok: boolean; text?: string; error?: string }>;
   sttListenPython: (seconds?: number) => Promise<{ ok: boolean; text?: string; error?: string }>;
+  pcVolume: (action: string, value?: number | string) => Promise<{ ok: boolean; result?: string }>;
+  pcMedia: (action: string) => Promise<{ ok: boolean; result?: string }>;
+  pcBrightness: (action: string, value?: number | string) => Promise<{ ok: boolean; result?: string }>;
+  pcClipboard: (action: string, text?: string) => Promise<{ ok: boolean; result?: string }>;
+  pcScreenshot: () => Promise<{ ok: boolean; result?: string }>;
+  pcListProcesses: () => Promise<{ ok: boolean; result?: string }>;
+  pcKillProcess: (name: string) => Promise<{ ok: boolean; result?: string }>;
+  pcWindows: (action: string) => Promise<{ ok: boolean; result?: string }>;
+  pcInput: (action: string, payload?: { text?: string }) => Promise<{ ok: boolean; result?: string }>;
   agentChat: (message: string, history: { role: string; text: string }[]) => Promise<{ response: string; intelligent?: boolean }>;
   agentConfigGet: () => Promise<{ hasKey: boolean; baseUrl: string; model: string }>;
   agentConfigSet: (partial: { apiKey?: string; baseUrl?: string; model?: string }) => Promise<any>;
@@ -33,6 +42,7 @@ interface ElyraAPI {
   maximize: () => void;
   close: () => void;
   onAutonomousMode: (cb: (value: boolean) => void) => () => void;
+  onBargeIn: (cb: () => void) => () => void;
   isDesktop: boolean;
 }
 
