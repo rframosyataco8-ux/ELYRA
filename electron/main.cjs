@@ -7,10 +7,11 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 
 const { synthesizeToBase64, checkEdgeTts, VOICE } = require('./tts.cjs');
-const { runAgent, getConfig, saveConfig, fallbackResponse, ensureDefaultConfig } = require('./agent.cjs');
+const { runAgent, getConfig, saveConfig, fallbackResponse, ensureDefaultConfig, normalizeUserIntent } = require('./agent.cjs');
 const { runPythonStt } = require('./stt-python-ipc.cjs');
 const { openApp: openAppReliable } = require('./apps.cjs');
 const pc = require('./pc-control.cjs');
+const { transcribeBuffer } = require('./stt.cjs');
 
 let mainWindow = null;
 let tray = null;
@@ -254,7 +255,6 @@ ipcMain.handle('tts-speak', async (_e, text) => {
 });
 ipcMain.handle('tts-status', () => ({ edgeTts: checkEdgeTts(), voice: VOICE }));
 
-// PC control
 ipcMain.handle('pc-volume', async (_e, { action, value }) => pc.volume(action, value));
 ipcMain.handle('pc-media', async (_e, { action }) => pc.media(action));
 ipcMain.handle('pc-brightness', async (_e, { action, value }) => pc.brightness(action, value));
@@ -269,45 +269,24 @@ ipcMain.handle('stt-transcribe', async (_e, payload) => {
   try {
     const { base64, mimeType } = payload || {};
     if (!base64) return { ok: false, error: 'Sin audio' };
-    ensureDefaultConfig();
-    const config = getConfig();
-    if (!config.apiKey) return { ok: false, error: 'Sin API key en ~/.elyra/config.json' };
     const buffer = Buffer.from(base64, 'base64');
-    const ext = (mimeType || '').includes('mp4') ? 'mp4' : (mimeType || '').includes('ogg') ? 'ogg' : 'webm';
-    const form = new FormData();
-    form.append('file', new Blob([buffer], { type: mimeType || 'audio/webm' }), `audio.${ext}`);
-    form.append('model', 'whisper-large-v3-turbo');
-    form.append('language', 'es');
-    form.append('response_format', 'json');
-    form.append('temperature', '0');
-    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${config.apiKey}` },
-      body: form,
-    });
-    if (!res.ok) {
-      if (res.status === 429) return { ok: false, error: 'Límite de uso. Espera un momento.' };
-      return { ok: false, error: `STT ${res.status}` };
-    }
-    const data = await res.json();
-    const text = (data.text || '').trim();
-    if (!text) return { ok: false, error: 'No detecté palabras.' };
-    return { ok: true, text };
+    return await transcribeBuffer(buffer, mimeType || 'audio/webm');
   } catch (err) {
     return { ok: false, error: err.message || 'Error de reconocimiento' };
   }
 });
 
-ipcMain.handle('stt-listen-python', async (_e, seconds) => runPythonStt(seconds || 5));
+ipcMain.handle('stt-listen-python', async (_e, seconds) => runPythonStt(seconds || 6));
 
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   ensureDefaultConfig();
-  const quick = await trySimpleIntent(message);
+  const fixed = typeof normalizeUserIntent === 'function' ? normalizeUserIntent(message) : message;
+  const quick = await trySimpleIntent(fixed);
   if (quick) return quick;
   const config = getConfig();
   if (!config.apiKey) return fallbackResponse(message);
   try {
-    const result = await runAgent(message, history || [], agentHelpers);
+    const result = await runAgent(fixed, history || [], agentHelpers);
     return { response: result.response, intelligent: true };
   } catch (err) {
     if (/429|rate limit/i.test(String(err.message))) {
@@ -326,30 +305,41 @@ ipcMain.handle('agent-config-set', (_e, partial) => saveConfig(partial));
 async function trySimpleIntent(input) {
   const text = (input || '').toLowerCase().trim();
 
-  // Volumen / media / captura rápidos
-  if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
+  if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text) || /\bvolumen\s+arriba\b/.test(text)) {
     const r = await pc.volume('up');
     return { response: r.result, intelligent: false };
   }
-  if (/\b(baja|bajar)\s+(el\s+)?volumen\b/.test(text)) {
+  if (/\b(baja|bajar)\s+(el\s+)?volumen\b/.test(text) || /\bvolumen\s+abajo\b/.test(text)) {
     const r = await pc.volume('down');
     return { response: r.result, intelligent: false };
   }
-  if (/\b(silencia|mute|silencio)\b/.test(text)) {
+  if (/\b(silencia|mute|silencio|calla el volumen)\b/.test(text)) {
     const r = await pc.volume('mute');
     return { response: r.result, intelligent: false };
   }
-  if (/\b(captura|screenshot|captura de pantalla)\b/.test(text)) {
+  if (/\b(captura|screenshot|captura de pantalla|hazme una foto de la pantalla)\b/.test(text)) {
     const r = await pc.screenshot();
     return { response: r.result, intelligent: false };
   }
-  if (/\b(bloquea|bloquear)\s+(la\s+)?(sesión|pc|pantalla)\b/.test(text)) {
+  if (/\b(bloquea|bloquear)\s+(la\s+)?(sesión|pc|pantalla|equipo)\b/.test(text)) {
     const r = await pc.windows('lock');
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(pausa|play|reproduce|siguiente canción|siguiente pista|anterior)\b/.test(text)) {
+    if (/siguiente/.test(text)) {
+      const r = await pc.media('next');
+      return { response: r.result, intelligent: false };
+    }
+    if (/anterior/.test(text)) {
+      const r = await pc.media('prev');
+      return { response: r.result, intelligent: false };
+    }
+    const r = await pc.media('play');
     return { response: r.result, intelligent: false };
   }
 
   const openMatch = text.match(
-    /\b(?:abre|abrir|abre\s+me|abrir\s+me|lanza|ejecuta)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
+    /\b(?:abre|abrir|abre\s+me|abrir\s+me|lanza|ejecuta|abre\s+el|abre\s+la)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
   if (openMatch || /\b(abre|abrir)\b/.test(text)) {
     const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos'];
@@ -387,6 +377,17 @@ async function trySimpleIntent(input) {
       intelligent: false,
     };
   }
+  if (/\b(qué día|que dia|fecha de hoy|qué fecha)\b/.test(text)) {
+    return {
+      response: `Hoy es ${new Date().toLocaleDateString('es-ES', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })}.`,
+      intelligent: false,
+    };
+  }
   return null;
 }
 
@@ -417,7 +418,6 @@ app.whenReady().then(() => {
     }
   });
 
-  // Barge-in: interrumpir voz
   globalShortcut.register('CommandOrControl+Space', () => {
     mainWindow?.webContents.send('elyra-barge-in');
   });
