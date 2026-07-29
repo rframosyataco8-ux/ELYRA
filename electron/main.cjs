@@ -34,7 +34,6 @@ function createWindow() {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
-    // mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   }
@@ -56,7 +55,6 @@ function createWindow() {
 }
 
 function createTray() {
-  // Simple tray without custom icon for now
   const icon = nativeImage.createEmpty();
   tray = new Tray(icon);
   const contextMenu = Menu.buildFromTemplate([
@@ -94,7 +92,6 @@ function createTray() {
   });
 }
 
-// ─── System stats ───────────────────────────────────────────
 ipcMain.handle('get-system-stats', async () => {
   try {
     const cpus = os.cpus();
@@ -102,7 +99,6 @@ ipcMain.handle('get-system-stats', async () => {
     const freeMem = os.freemem();
     const usedMem = totalMem - freeMem;
 
-    // CPU usage approximation
     let cpuUsage = 0;
     try {
       if (process.platform === 'win32') {
@@ -110,7 +106,6 @@ ipcMain.handle('get-system-stats', async () => {
         const match = stdout.match(/LoadPercentage=(\d+)/);
         if (match) cpuUsage = parseInt(match[1], 10);
       } else {
-        // Linux / macOS simple load
         const load = os.loadavg()[0];
         cpuUsage = Math.min(100, Math.round((load / cpus.length) * 100));
       }
@@ -118,11 +113,10 @@ ipcMain.handle('get-system-stats', async () => {
       cpuUsage = Math.round(Math.random() * 30 + 10);
     }
 
-    // Disk (Windows / Linux)
     let diskUsage = 50;
     try {
       if (process.platform === 'win32') {
-        const { stdout } = await execAsync('wmic logicaldisk where "DeviceID='C:'" get FreeSpace,Size /value');
+        const { stdout } = await execAsync('wmic logicaldisk where DeviceID="C:" get FreeSpace,Size /value');
         const free = parseInt((stdout.match(/FreeSpace=(\d+)/) || [])[1] || '0', 10);
         const size = parseInt((stdout.match(/Size=(\d+)/) || [])[1] || '1', 10);
         if (size > 0) diskUsage = Math.round(((size - free) / size) * 100);
@@ -138,7 +132,7 @@ ipcMain.handle('get-system-stats', async () => {
       cpu: cpuUsage,
       ram: Math.round((usedMem / totalMem) * 100),
       disk: diskUsage,
-      net: Math.round(Math.random() * 25 + 5), // Network is harder without extra deps
+      net: Math.round(Math.random() * 25 + 5),
       platform: process.platform,
       hostname: os.hostname(),
       uptime: os.uptime(),
@@ -151,13 +145,11 @@ ipcMain.handle('get-system-stats', async () => {
   }
 });
 
-// ─── Open application / path / URL ──────────────────────────
 ipcMain.handle('open-app', async (_event, appName) => {
   try {
     const name = (appName || '').toLowerCase().trim();
 
     const appMap = {
-      // Windows
       notepad: 'notepad.exe',
       calculadora: 'calc.exe',
       calculator: 'calc.exe',
@@ -183,7 +175,6 @@ ipcMain.handle('open-app', async (_event, appName) => {
     const target = appMap[name] || name;
 
     if (process.platform === 'win32') {
-      // Try start command (works for most apps and .exe)
       await execAsync(`start "" "${target}"`, { shell: true });
     } else if (process.platform === 'darwin') {
       await execAsync(`open -a "${target}"`);
@@ -240,10 +231,8 @@ ipcMain.handle('open-folder', async (_event, folder) => {
   }
 });
 
-// ─── Execute shell command (restricted) ─────────────────────
 ipcMain.handle('run-command', async (_event, command) => {
   try {
-    // Basic safety: block dangerous patterns
     const blocked = [/rm\s+-rf\s+\//, /format\s+/i, /del\s+\/s/i, /shutdown/i, /mkfs/i];
     if (blocked.some((re) => re.test(command))) {
       return { ok: false, message: 'Comando bloqueado por seguridad.' };
@@ -259,13 +248,15 @@ ipcMain.handle('run-command', async (_event, command) => {
   }
 });
 
-// ─── Memory (local file) ────────────────────────────────────
-const memoryPath = path.join(app.getPath('userData'), 'elyra-memory.json');
+function getMemoryPath() {
+  return path.join(app.getPath('userData'), 'elyra-memory.json');
+}
 
 function readMemory() {
   try {
-    if (fs.existsSync(memoryPath)) {
-      return JSON.parse(fs.readFileSync(memoryPath, 'utf-8'));
+    const p = getMemoryPath();
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, 'utf-8'));
     }
   } catch {}
   return { notes: [], facts: [], history: [] };
@@ -273,7 +264,7 @@ function readMemory() {
 
 function writeMemory(data) {
   try {
-    fs.writeFileSync(memoryPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.writeFileSync(getMemoryPath(), JSON.stringify(data, null, 2), 'utf-8');
     return true;
   } catch {
     return false;
@@ -309,7 +300,6 @@ ipcMain.handle('memory-clear', () => {
   return { ok: true };
 });
 
-// ─── Window controls ────────────────────────────────────────
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
 ipcMain.on('window-maximize', () => {
   if (mainWindow?.isMaximized()) mainWindow.unmaximize();
@@ -317,12 +307,10 @@ ipcMain.on('window-maximize', () => {
 });
 ipcMain.on('window-close', () => mainWindow?.hide());
 
-// ─── App lifecycle ──────────────────────────────────────────
 app.whenReady().then(() => {
   createWindow();
   createTray();
 
-  // Global shortcut to show/hide
   globalShortcut.register('CommandOrControl+Shift+E', () => {
     if (mainWindow?.isVisible()) {
       mainWindow.hide();
@@ -339,9 +327,7 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    // Keep running in tray
-  }
+  // Keep running in tray
 });
 
 app.on('before-quit', () => {
