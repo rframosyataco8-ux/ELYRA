@@ -1,5 +1,5 @@
 /**
- * Apertura fiable de aplicaciones en Windows / macOS / Linux
+ * Apertura fiable de apps y sitios web en Windows
  */
 const path = require('path');
 const fs = require('fs');
@@ -20,8 +20,33 @@ const OFFICE_REL = [
   ['Microsoft Office', 'root', 'Office15'],
   ['Microsoft Office', 'Office16'],
   ['Microsoft Office', 'Office15'],
-  ['Microsoft Office', 'Office14'],
 ];
+
+/** Sitios web conocidos → URL (NUNCA como .exe) */
+const WEB_SITES = {
+  youtube: 'https://www.youtube.com',
+  yt: 'https://www.youtube.com',
+  google: 'https://www.google.com',
+  gmail: 'https://mail.google.com',
+  maps: 'https://maps.google.com',
+  drive: 'https://drive.google.com',
+  docs: 'https://docs.google.com',
+  facebook: 'https://www.facebook.com',
+  instagram: 'https://www.instagram.com',
+  twitter: 'https://x.com',
+  x: 'https://x.com',
+  whatsapp: 'https://web.whatsapp.com',
+  netflix: 'https://www.netflix.com',
+  github: 'https://github.com',
+  chatgpt: 'https://chatgpt.com',
+  gemini: 'https://gemini.google.com',
+  wikipedia: 'https://es.wikipedia.org',
+  amazon: 'https://www.amazon.com',
+  twitch: 'https://www.twitch.tv',
+  linkedin: 'https://www.linkedin.com',
+  reddit: 'https://www.reddit.com',
+  tiktok: 'https://www.tiktok.com',
+};
 
 function findOfficeExe(exeName) {
   for (const root of OFFICE_ROOTS) {
@@ -29,43 +54,48 @@ function findOfficeExe(exeName) {
       const full = path.join(root, ...rel, exeName);
       if (fs.existsSync(full)) return full;
     }
-    // Office Click-to-Run genérico
-    const c2r = path.join(root, 'Microsoft Office', 'root', 'Office16', exeName);
-    if (fs.existsSync(c2r)) return c2r;
   }
   return null;
 }
 
 function findInLocal(names) {
-  const local = process.env.LOCALAPPDATA || '';
-  const pf = process.env.ProgramFiles || '';
-  const pf86 = process.env['ProgramFiles(x86)'] || '';
-  const candidates = [];
-  for (const base of [local, pf, pf86]) {
+  const bases = [process.env.LOCALAPPDATA, process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(Boolean);
+  for (const base of bases) {
     for (const n of names) {
-      candidates.push(path.join(base, n));
+      const c = path.join(base, n);
+      if (fs.existsSync(c)) return c;
     }
-  }
-  for (const c of candidates) {
-    if (c && fs.existsSync(c)) return c;
   }
   return null;
 }
 
-/** Mapa de nombres hablados → estrategias de lanzamiento */
-function resolveApp(appName) {
-  const name = (appName || '').toLowerCase().trim()
+function normalizeName(appName) {
+  return (appName || '')
+    .toLowerCase()
+    .trim()
     .replace(/^el\s+|^la\s+|^los\s+|^las\s+/, '')
     .replace(/\s+/g, ' ');
+}
 
-  // Word
+/** Si es un sitio web conocido, devolver URL */
+function resolveWebUrl(appName) {
+  const name = normalizeName(appName);
+  // URL directa
+  if (/^https?:\/\//i.test(name)) return name;
+  if (/^[\w-]+\.(com|org|net|es|io|app)\b/i.test(name)) return 'https://' + name;
+  // mapa
+  for (const [key, url] of Object.entries(WEB_SITES)) {
+    if (name === key || name.includes(key)) return url;
+  }
+  return null;
+}
+
+function resolveApp(appName) {
+  const name = normalizeName(appName);
+
   if (/\b(word|winword|microsoft word)\b/.test(name) || name === 'word') {
     const exe = findOfficeExe('WINWORD.EXE');
-    return {
-      label: 'Word',
-      targets: [exe, 'winword', 'WINWORD.EXE', 'winword.exe'].filter(Boolean),
-      psName: 'WINWORD',
-    };
+    return { label: 'Word', targets: [exe, 'winword', 'WINWORD.EXE'].filter(Boolean), psName: 'WINWORD' };
   }
   if (/\b(excel)\b/.test(name)) {
     const exe = findOfficeExe('EXCEL.EXE');
@@ -73,35 +103,30 @@ function resolveApp(appName) {
   }
   if (/\b(powerpoint|power point)\b/.test(name)) {
     const exe = findOfficeExe('POWERPNT.EXE');
-    return { label: 'PowerPoint', targets: [exe, 'powerpnt', 'POWERPNT.EXE'].filter(Boolean), psName: 'POWERPNT' };
+    return { label: 'PowerPoint', targets: [exe, 'powerpnt'].filter(Boolean), psName: 'POWERPNT' };
   }
   if (/\b(outlook)\b/.test(name)) {
     const exe = findOfficeExe('OUTLOOK.EXE');
-    return { label: 'Outlook', targets: [exe, 'outlook', 'OUTLOOK.EXE'].filter(Boolean), psName: 'OUTLOOK' };
+    return { label: 'Outlook', targets: [exe, 'outlook'].filter(Boolean), psName: 'OUTLOOK' };
   }
-
   if (/\b(chrome|google chrome)\b/.test(name)) {
-    const chrome =
-      findInLocal([
-        path.join('Google', 'Chrome', 'Application', 'chrome.exe'),
-      ]) ||
-      'chrome';
-    return { label: 'Chrome', targets: [chrome, 'chrome', 'google-chrome'].filter(Boolean), psName: 'chrome' };
+    const chrome = findInLocal([path.join('Google', 'Chrome', 'Application', 'chrome.exe')]) || 'chrome';
+    return { label: 'Chrome', targets: [chrome, 'chrome'].filter(Boolean), psName: 'chrome' };
   }
   if (/\b(edge|microsoft edge)\b/.test(name)) {
-    return { label: 'Edge', targets: ['msedge', 'microsoft-edge'], psName: 'msedge' };
+    return { label: 'Edge', targets: ['msedge'], psName: 'msedge' };
   }
   if (/\b(firefox)\b/.test(name)) {
     return { label: 'Firefox', targets: ['firefox'], psName: 'firefox' };
   }
-  if (/\b(notepad|bloc de notas)\b/.test(name)) {
+  if (/\b(notepad|bloc de notas|bloc)\b/.test(name)) {
     return { label: 'Bloc de notas', targets: ['notepad.exe', 'notepad'], psName: 'notepad' };
   }
   if (/\b(calculadora|calculator|calc)\b/.test(name)) {
-    return { label: 'Calculadora', targets: ['calc.exe', 'calculator:'], psName: 'Calculator' };
+    return { label: 'Calculadora', targets: ['calc.exe'], psName: 'Calculator' };
   }
   if (/\b(paint)\b/.test(name)) {
-    return { label: 'Paint', targets: ['mspaint.exe', 'mspaint'], psName: 'mspaint' };
+    return { label: 'Paint', targets: ['mspaint.exe'], psName: 'mspaint' };
   }
   if (/\b(explorer|explorador)\b/.test(name)) {
     return { label: 'Explorador', targets: ['explorer.exe'], psName: 'explorer' };
@@ -114,23 +139,19 @@ function resolveApp(appName) {
       path.join('Programs', 'Microsoft VS Code', 'Code.exe'),
       path.join('Microsoft VS Code', 'Code.exe'),
     ]);
-    return { label: 'VS Code', targets: [code, 'code', 'Code.exe'].filter(Boolean), psName: 'Code' };
+    return { label: 'VS Code', targets: [code, 'code'].filter(Boolean), psName: 'Code' };
   }
   if (/\b(spotify)\b/.test(name)) {
-    const sp = findInLocal([path.join('Microsoft', 'WindowsApps', 'Spotify.exe')]);
-    return { label: 'Spotify', targets: [sp, 'spotify'].filter(Boolean), psName: 'Spotify' };
+    return { label: 'Spotify', targets: ['spotify'], psName: 'Spotify' };
   }
   if (/\b(discord)\b/.test(name)) {
-    const d = findInLocal([path.join('Discord', 'Update.exe')]);
-    return { label: 'Discord', targets: [d, 'discord'].filter(Boolean), psName: 'Discord' };
+    return { label: 'Discord', targets: ['discord'], psName: 'Discord' };
   }
 
-  // Genérico: usar el nombre tal cual
   return { label: appName, targets: [name], psName: name };
 }
 
 async function tryStartWindows(target) {
-  // 1) Ruta absoluta existente
   if (target.includes('\\') || target.includes('/') || /^[A-Za-z]:/.test(target)) {
     if (fs.existsSync(target)) {
       const err = await shell.openPath(target);
@@ -139,45 +160,56 @@ async function tryStartWindows(target) {
       return true;
     }
   }
-
-  // 2) start de cmd (resuelve PATH y App Paths del registro)
   try {
     await execAsync(`cmd /c start "" "${target}"`, { windowsHide: true, timeout: 8000 });
     return true;
   } catch {}
-
-  // 3) PowerShell Start-Process
   try {
     await execAsync(
-      `powershell -NoProfile -Command "Start-Process -FilePath '${target.replace(/'/g, "''")}'"`,
+      `powershell -NoProfile -Command "Start-Process -FilePath '${String(target).replace(/'/g, "''")}'"`,
       { windowsHide: true, timeout: 10000 },
     );
     return true;
   } catch {}
-
-  // 4) where + ejecutar
   try {
     const { stdout } = await execAsync(`where ${target}`, { windowsHide: true, timeout: 5000 });
-    const first = stdout.split(/\r?\n/).map((s) => s.trim()).find((s) => s.endsWith('.exe'));
+    const first = stdout
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .find((s) => s.toLowerCase().endsWith('.exe'));
     if (first && fs.existsSync(first)) {
       const err = await shell.openPath(first);
       if (!err) return true;
-      spawn(first, [], { detached: true, stdio: 'ignore' }).unref();
-      return true;
     }
   } catch {}
-
   return false;
 }
 
+async function openUrl(url) {
+  try {
+    let u = (url || '').trim();
+    if (!u) return { ok: false, result: 'URL vacía', message: 'No hay enlace' };
+    if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+    await shell.openExternal(u);
+    return { ok: true, result: 'URL abierta', message: `Abrí ${u.replace(/^https?:\/\//, '').split('/')[0]}` };
+  } catch (e) {
+    return { ok: false, result: e.message, message: 'No pude abrir el enlace' };
+  }
+}
+
 async function openApp(appName) {
+  // 1) Sitios web primero
+  const webUrl = resolveWebUrl(appName);
+  if (webUrl) {
+    return openUrl(webUrl);
+  }
+
   const resolved = resolveApp(appName);
 
   if (process.platform === 'win32') {
     for (const t of resolved.targets) {
       try {
-        const ok = await tryStartWindows(t);
-        if (ok) {
+        if (await tryStartWindows(t)) {
           return {
             ok: true,
             result: `${resolved.label} abierto`,
@@ -186,25 +218,13 @@ async function openApp(appName) {
         }
       } catch {}
     }
-
-    // Último intento: protocolo / shell
-    try {
-      await execAsync(`cmd /c start ${resolved.psName}`, { windowsHide: true, timeout: 8000 });
-      return {
-        ok: true,
-        result: `${resolved.label} lanzado`,
-        message: `Intenté abrir ${resolved.label}. Si no aparece, instálalo o revisa el acceso directo.`,
-      };
-    } catch (e) {
-      return {
-        ok: false,
-        result: e.message,
-        message: `No pude abrir ${resolved.label}. ¿Está instalado en este PC?`,
-      };
-    }
+    return {
+      ok: false,
+      result: 'not found',
+      message: `No pude abrir ${resolved.label}. ¿Está instalado en este PC?`,
+    };
   }
 
-  // macOS / Linux
   try {
     if (process.platform === 'darwin') {
       await execAsync(`open -a "${resolved.targets[0] || appName}"`);
@@ -217,4 +237,4 @@ async function openApp(appName) {
   }
 }
 
-module.exports = { openApp, resolveApp };
+module.exports = { openApp, openUrl, resolveApp, resolveWebUrl, WEB_SITES };
