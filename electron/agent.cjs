@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v2 — autonomía operativa ampliada
+ * ELYRA Agent — más rápido, honesto con errores de herramientas
  */
 const fs = require('fs');
 const path = require('path');
@@ -9,61 +9,50 @@ const DEFAULT_GROQ_KEY = 'gsk_IgkPhZsCtB542mORIcpoWGdyb3FYANRUyaZCNFug6g4vkwP7Sm
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
 const MODEL_CHAIN = [
   'llama-3.1-8b-instant',
-  'llama-3.3-70b-versatile',
   'gemma2-9b-it',
-  'llama-3.1-70b-versatile',
+  'llama-3.3-70b-versatile',
 ];
 
-const SYSTEM_PROMPT = `Eres ELYRA, la compañera de trabajo inteligente del usuario en su PC. Hablas español como una persona real: cercana, clara, proactiva y sin relleno robótico.
+const SYSTEM_PROMPT = `Eres ELYRA, asistente de escritorio. Español natural, cercano, breve.
 
-CÓMO HABLAS (respuesta final, se escucha en voz alta):
-- Como una colega competente, no como un manual.
-- 1 a 4 frases en la mayoría de casos. Si pide explicación larga, desarrolla con naturalidad.
-- Nunca digas rutas con barras invertidas. Di "en Documentos, carpeta Informes".
-- Nada de markdown, JSON, códigos de error ni bloques técnicos en la respuesta final.
-- Si algo falló, dilo con sencillez y ofrece el siguiente paso útil.
+RESPUESTA FINAL (voz): 1-3 frases, sin rutas Windows, sin markdown, sin JSON.
+Si una herramienta falló (ERROR), dilo con claridad. Nunca digas que abriste algo si el resultado fue ERROR.
 
-AUTONOMÍA:
-- Si la petición implica varios pasos, ejecútalos tú con herramientas sin pedir permiso por cada uno.
-- Anticipa lo obvio: si piden un reporte, créalo y confirma dónde quedó.
-- Si falta un dato crítico (nombre de archivo inexistente), pregunta en una sola frase.
-
-HERRAMIENTAS (úsalas con el formato exacto):
-
+HERRAMIENTAS:
 [TOOL: web_search]
 query: texto
 [/TOOL]
 
 [TOOL: create_file]
 path: Informes/archivo.txt
-content: contenido completo
+content: contenido
 [/TOOL]
 
 [TOOL: create_html_report]
 path: Informes/reporte.html
 title: título
-body: html del cuerpo
+body: html
 [/TOOL]
 
 [TOOL: append_file]
 path: archivo
-content: texto a añadir al final
+content: texto
 [/TOOL]
 
 [TOOL: delete_file]
-path: archivo a eliminar
+path: archivo
 [/TOOL]
 
 [TOOL: create_folder]
-path: nombre o ruta
+path: nombre
 [/TOOL]
 
 [TOOL: open_app]
-name: chrome | code | notepad | calculadora | spotify | excel | word
+name: word | excel | chrome | notepad | calculadora | code | spotify
 [/TOOL]
 
 [TOOL: open_folder]
-name: documentos | descargas | escritorio | informes | imagenes | musica | videos
+name: documentos | descargas | escritorio | informes
 [/TOOL]
 
 [TOOL: open_url]
@@ -79,11 +68,11 @@ path: carpeta
 [/TOOL]
 
 [TOOL: run_command]
-command: comando seguro
+command: cmd
 [/TOOL]
 
 [TOOL: remember]
-text: dato a recordar
+text: dato
 [/TOOL]
 
 [TOOL: recall]
@@ -97,29 +86,21 @@ filename: nota.txt
 content: texto
 [/TOOL]
 
-Tras herramientas, cierra con respuesta FINAL natural para voz.`;
+Para abrir apps usa open_app. Sé directa.`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
 }
-
 function ensureDefaultConfig() {
   const p = getConfigPath();
   const dir = path.dirname(p);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   if (!fs.existsSync(p)) {
-    fs.writeFileSync(
-      p,
-      JSON.stringify(
-        { apiKey: DEFAULT_GROQ_KEY, baseUrl: DEFAULT_BASE_URL, model: MODEL_CHAIN[0] },
-        null,
-        2,
-      ),
-      'utf-8',
-    );
+    fs.writeFileSync(p, JSON.stringify({
+      apiKey: DEFAULT_GROQ_KEY, baseUrl: DEFAULT_BASE_URL, model: MODEL_CHAIN[0],
+    }, null, 2));
   }
 }
-
 function getConfig() {
   ensureDefaultConfig();
   try {
@@ -133,26 +114,21 @@ function getConfig() {
     return { apiKey: DEFAULT_GROQ_KEY, baseUrl: DEFAULT_BASE_URL, model: MODEL_CHAIN[0] };
   }
 }
-
 function saveConfig(partial) {
   ensureDefaultConfig();
   const next = { ...getConfig(), ...partial };
-  fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2), 'utf-8');
+  fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2));
   return next;
 }
-
 function resolveUserPath(filePath) {
   if (!filePath) return path.join(os.homedir(), 'Documents', 'elyra-output.txt');
   if (path.isAbsolute(filePath)) return filePath;
   const docs = path.join(os.homedir(), 'Documents');
   const normalized = filePath.replace(/\\/g, '/');
-  if (/^informes\//i.test(normalized) || /^desktop\//i.test(normalized) || /^escritorio\//i.test(normalized)) {
-    if (/^informes\//i.test(normalized)) {
-      const informes = path.join(docs, 'Informes');
-      if (!fs.existsSync(informes)) fs.mkdirSync(informes, { recursive: true });
-      return path.join(docs, normalized);
-    }
-    return path.join(os.homedir(), 'Desktop', path.basename(normalized));
+  if (/^informes\//i.test(normalized)) {
+    const informes = path.join(docs, 'Informes');
+    if (!fs.existsSync(informes)) fs.mkdirSync(informes, { recursive: true });
+    return path.join(docs, normalized);
   }
   return path.join(docs, filePath);
 }
@@ -161,17 +137,13 @@ async function callLLMOnce(messages, config, model) {
   const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({ model, messages, temperature: 0.55, max_tokens: 4096 }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+    body: JSON.stringify({ model, messages, temperature: 0.45, max_tokens: 2048 }),
   });
   if (!res.ok) {
     const errText = await res.text();
     const err = new Error(`LLM ${res.status}: ${errText.slice(0, 280)}`);
     err.status = res.status;
-    err.body = errText;
     throw err;
   }
   const data = await res.json();
@@ -188,13 +160,11 @@ async function callLLM(messages, config) {
       return await callLLMOnce(messages, config, model);
     } catch (e) {
       lastErr = e;
-      if (e.status === 429 || /rate limit|429|TPD|TPM/i.test(String(e.message) + String(e.body || ''))) {
-        continue;
-      }
+      if (e.status === 429 || /rate limit|429/i.test(String(e.message))) continue;
       throw e;
     }
   }
-  throw lastErr || new Error('Límite de uso. Espera un minuto.');
+  throw lastErr || new Error('Límite de uso');
 }
 
 function parseTools(text) {
@@ -228,9 +198,7 @@ function stripTools(text) {
 function polishForSpeech(text) {
   if (!text) return '';
   let t = stripTools(text);
-  if (/rate limit|429|tokens per/i.test(t)) {
-    return 'El servicio está un poco saturado. Espera medio minuto y lo intentamos otra vez.';
-  }
+  if (/rate limit|429/i.test(t)) return 'El servicio está saturado un momento. Espera y lo intentamos otra vez.';
   t = t.replace(/[A-Za-z]:\\[^\s\]"']+/g, 'Documentos');
   t = t.replace(/\\+/g, ' ');
   t = t.replace(/\*\*?/g, '');
@@ -249,15 +217,12 @@ async function executeTool(tool, helpers) {
         const results = [];
         try {
           const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-            },
+            headers: { 'User-Agent': 'Mozilla/5.0' },
           });
           const html = await res.text();
           const re = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td)>/gi;
           let sm;
-          while ((sm = re.exec(html)) !== null && results.length < 6) {
+          while ((sm = re.exec(html)) !== null && results.length < 5) {
             const t = sm[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
             if (t.length > 30) results.push(t);
           }
@@ -265,149 +230,99 @@ async function executeTool(tool, helpers) {
           results.push(`(Búsqueda: ${e.message})`);
         }
         try {
-          for (const lang of ['es', 'en']) {
-            const wr = await fetch(
-              `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`,
-              { headers: { 'User-Agent': 'ELYRA/2.0' } },
-            );
-            if (wr.ok) {
-              const data = await wr.json();
-              if (data.extract) {
-                results.unshift(`Wikipedia: ${data.extract}`);
-                break;
-              }
-            }
+          const wr = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`, {
+            headers: { 'User-Agent': 'ELYRA/2.0' },
+          });
+          if (wr.ok) {
+            const data = await wr.json();
+            if (data.extract) results.unshift(`Wikipedia: ${data.extract}`);
           }
         } catch {}
         if (!results.length) return { ok: true, result: `Sin resultados para: ${q}` };
-        return {
-          ok: true,
-          result: results.map((r, i) => `${i + 1}. ${r}`).join('\n'),
-        };
+        return { ok: true, result: results.map((r, i) => `${i + 1}. ${r}`).join('\n') };
       }
-
       case 'create_file': {
         const filePath = resolveUserPath(params.path || 'elyra-output.txt');
-        const dir = path.dirname(filePath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, params.content || '', 'utf-8');
         return { ok: true, result: `Creado ${path.basename(filePath)}` };
       }
-
       case 'append_file': {
         const filePath = resolveUserPath(params.path || 'elyra-notes.txt');
-        const dir = path.dirname(filePath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.appendFileSync(filePath, (params.content || '') + '\n', 'utf-8');
         return { ok: true, result: `Añadido a ${path.basename(filePath)}` };
       }
-
       case 'delete_file': {
-        const filePath = resolveUserPath(params.path || '');
         if (!params.path) return { ok: false, result: 'Falta path' };
-        // Seguridad: solo dentro de home del usuario
-        const home = os.homedir();
-        const resolved = path.resolve(filePath);
-        if (!resolved.startsWith(path.resolve(home))) {
-          return { ok: false, result: 'Solo puedo borrar archivos dentro de tu carpeta de usuario.' };
+        const resolved = path.resolve(resolveUserPath(params.path));
+        if (!resolved.startsWith(path.resolve(os.homedir()))) {
+          return { ok: false, result: 'Solo archivos de tu usuario' };
         }
-        if (!fs.existsSync(resolved)) return { ok: false, result: 'El archivo no existe' };
+        if (!fs.existsSync(resolved)) return { ok: false, result: 'No existe' };
         fs.unlinkSync(resolved);
         return { ok: true, result: `Eliminado ${path.basename(resolved)}` };
       }
-
       case 'create_html_report': {
         const filePath = resolveUserPath(params.path || 'Informes/reporte.html');
         const title = params.title || 'Reporte ELYRA';
         const body = params.body || '<p>Sin contenido</p>';
         const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>${title.replace(/</g, '')}</title>
-<style>body{font-family:Segoe UI,system-ui,sans-serif;max-width:900px;margin:48px auto;padding:0 28px 64px;line-height:1.7;color:#0f172a}
-h1{color:#0284c7;border-bottom:3px solid #e0f2fe;padding-bottom:12px}h2{color:#0369a1;margin-top:1.8em}.meta{color:#64748b;font-size:.9rem}</style></head>
-<body><h1>${title.replace(/</g, '')}</h1><p class="meta">ELYRA · ${new Date().toLocaleString('es-ES')}</p>${body}</body></html>`;
-        const dir = path.dirname(filePath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+<style>body{font-family:Segoe UI,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;line-height:1.7}h1{color:#0284c7}</style></head>
+<body><h1>${title.replace(/</g, '')}</h1><p>${new Date().toLocaleString('es-ES')}</p>${body}</body></html>`;
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
         const finalPath = filePath.toLowerCase().endsWith('.html') ? filePath : filePath + '.html';
         fs.writeFileSync(finalPath, html, 'utf-8');
         return { ok: true, result: `Reporte ${path.basename(finalPath)} listo` };
       }
-
       case 'create_folder': {
         const folderPath = resolveUserPath(params.path || 'Informes');
-        if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+        fs.mkdirSync(folderPath, { recursive: true });
         return { ok: true, result: `Carpeta ${path.basename(folderPath)} lista` };
       }
-
       case 'write_desktop_note': {
-        const name = params.filename || `nota-elyra-${Date.now()}.txt`;
-        const p = path.join(os.homedir(), 'Desktop', path.basename(name));
+        const p = path.join(os.homedir(), 'Desktop', path.basename(params.filename || `nota-${Date.now()}.txt`));
         fs.writeFileSync(p, params.content || '', 'utf-8');
-        return { ok: true, result: `Nota en el escritorio: ${path.basename(p)}` };
+        return { ok: true, result: `Nota en escritorio: ${path.basename(p)}` };
       }
-
       case 'open_app':
         return await helpers.openApp(params.name || '');
       case 'open_folder':
         return await helpers.openFolder(params.name || '');
       case 'open_url':
         return await helpers.openUrl(params.url || '');
-
       case 'read_file': {
         let p = params.path;
         if (!p) return { ok: false, result: 'Falta path' };
         if (!path.isAbsolute(p)) p = resolveUserPath(p);
-        const candidates = [
-          p,
-          path.join(os.homedir(), 'Documents', params.path),
-          path.join(os.homedir(), 'Downloads', params.path),
-          path.join(os.homedir(), 'Desktop', params.path),
-        ];
-        let found = null;
-        for (const c of candidates) {
-          if (c && fs.existsSync(c) && fs.statSync(c).isFile()) {
-            found = c;
-            break;
-          }
-        }
+        const candidates = [p, path.join(os.homedir(), 'Documents', params.path), path.join(os.homedir(), 'Desktop', params.path)];
+        const found = candidates.find((c) => c && fs.existsSync(c) && fs.statSync(c).isFile());
         if (!found) return { ok: false, result: `No existe ${params.path}` };
-        if (fs.statSync(found).size > 800_000) return { ok: false, result: 'Archivo muy grande' };
-        return {
-          ok: true,
-          result: `${path.basename(found)}:\n${fs.readFileSync(found, 'utf-8').slice(0, 20000)}`,
-        };
+        if (fs.statSync(found).size > 800000) return { ok: false, result: 'Archivo muy grande' };
+        return { ok: true, result: `${path.basename(found)}:\n${fs.readFileSync(found, 'utf-8').slice(0, 15000)}` };
       }
-
       case 'list_dir': {
         let p = params.path || path.join(os.homedir(), 'Documents');
         if (!path.isAbsolute(p)) p = resolveUserPath(p);
-        if (!fs.existsSync(p)) return { ok: false, result: 'Carpeta no existe' };
-        const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 100);
-        return {
-          ok: true,
-          result: items.map((d) => `${d.isDirectory() ? '[DIR]' : '[FILE]'} ${d.name}`).join('\n'),
-        };
+        if (!fs.existsSync(p)) return { ok: false, result: 'No existe' };
+        const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 80);
+        return { ok: true, result: items.map((d) => `${d.isDirectory() ? '[DIR]' : '[FILE]'} ${d.name}`).join('\n') };
       }
-
       case 'run_command':
         return await helpers.runCommand(params.command || '');
       case 'remember':
         return await helpers.remember(params.text || '');
-      case 'recall': {
-        if (helpers.recall) return await helpers.recall();
-        return { ok: true, result: 'Sin notas en memoria' };
-      }
+      case 'recall':
+        return helpers.recall ? await helpers.recall() : { ok: true, result: 'Sin notas' };
       case 'get_system_info': {
         if (helpers.getSystemStats) {
           const s = await helpers.getSystemStats();
-          return {
-            ok: true,
-            result: `CPU ${s.cpu}%, RAM ${s.ram}%, disco ${s.disk}%.`,
-          };
+          return { ok: true, result: `CPU ${s.cpu}%, RAM ${s.ram}%, disco ${s.disk}%.` };
         }
         return { ok: true, result: `Equipo ${os.hostname()}` };
       }
-
       default:
-        return { ok: false, result: `Herramienta desconocida: ${name}` };
+        return { ok: false, result: `Desconocida: ${name}` };
     }
   } catch (e) {
     return { ok: false, result: e.message };
@@ -418,7 +333,7 @@ async function runAgent(userMessage, history, helpers) {
   const config = getConfig();
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
-    ...history.slice(-14).map((h) => ({
+    ...history.slice(-8).map((h) => ({
       role: h.role === 'user' ? 'user' : 'assistant',
       content: h.text,
     })),
@@ -427,7 +342,7 @@ async function runAgent(userMessage, history, helpers) {
 
   let finalText = '';
   let iterations = 0;
-  const maxIter = 8;
+  const maxIter = 5;
 
   while (iterations < maxIter) {
     iterations++;
@@ -436,15 +351,9 @@ async function runAgent(userMessage, history, helpers) {
       reply = await callLLM(messages, config);
     } catch (e) {
       if (/429|rate limit/i.test(String(e.message))) {
-        return {
-          response: 'El servicio de inteligencia está saturado un momento. Espera un poco y lo retomo.',
-          iterations,
-        };
+        return { response: 'El servicio está saturado un momento. Espera un poco.', iterations };
       }
-      return {
-        response: 'No pude conectar ahora. Revisa internet e inténtalo otra vez.',
-        iterations,
-      };
+      return { response: 'No pude conectar ahora. Revisa internet.', iterations };
     }
 
     const tools = parseTools(reply);
@@ -464,7 +373,7 @@ async function runAgent(userMessage, history, helpers) {
       content:
         'Resultados:\n' +
         results.map((r) => `• ${r.tool}: ${r.ok ? 'OK' : 'ERROR'} — ${r.result}`).join('\n') +
-        '\n\nRespuesta FINAL natural para voz, sin TOOL ni rutas técnicas.',
+        '\n\nRespuesta FINAL breve y honesta (si hubo ERROR, dilo). Sin TOOL.',
     });
   }
 
@@ -472,7 +381,6 @@ async function runAgent(userMessage, history, helpers) {
     const last = messages.filter((m) => m.role === 'assistant').pop();
     finalText = last ? polishForSpeech(last.content) : 'Listo.';
   }
-
   return { response: finalText, iterations };
 }
 
@@ -481,12 +389,6 @@ function fallbackResponse() {
 }
 
 module.exports = {
-  runAgent,
-  getConfig,
-  saveConfig,
-  fallbackResponse,
-  callLLM,
-  getConfigPath,
-  ensureDefaultConfig,
-  MODEL_CHAIN,
+  runAgent, getConfig, saveConfig, fallbackResponse, callLLM,
+  getConfigPath, ensureDefaultConfig, MODEL_CHAIN,
 };

@@ -9,11 +9,11 @@ const execAsync = promisify(exec);
 const { synthesizeToBase64, checkEdgeTts, VOICE } = require('./tts.cjs');
 const { runAgent, getConfig, saveConfig, fallbackResponse, ensureDefaultConfig } = require('./agent.cjs');
 const { runPythonStt } = require('./stt-python-ipc.cjs');
+const { openApp: openAppReliable } = require('./apps.cjs');
 
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
-
 const isDev = !app.isPackaged;
 
 function createWindow() {
@@ -34,10 +34,8 @@ function createWindow() {
     },
     show: false,
   });
-
   if (isDev) mainWindow.loadURL('http://localhost:5173');
   else mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
-
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
@@ -45,42 +43,22 @@ function createWindow() {
       mainWindow.hide();
     }
   });
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 function createTray() {
-  const icon = nativeImage.createEmpty();
-  tray = new Tray(icon);
+  tray = new Tray(nativeImage.createEmpty());
   tray.setToolTip('ELYRA');
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Mostrar', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
-      { type: 'separator' },
-      { label: 'Salir', click: () => { isQuitting = true; app.quit(); } },
-    ]),
-  );
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Mostrar', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+    { type: 'separator' },
+    { label: 'Salir', click: () => { isQuitting = true; app.quit(); } },
+  ]));
   tray.on('double-click', () => { mainWindow?.show(); mainWindow?.focus(); });
 }
 
 async function openAppHelper(appName) {
-  try {
-    const name = (appName || '').toLowerCase().trim();
-    const appMap = {
-      notepad: 'notepad.exe', calculadora: 'calc.exe', calculator: 'calc.exe',
-      paint: 'mspaint.exe', cmd: 'cmd.exe', explorer: 'explorer.exe',
-      chrome: 'chrome', edge: 'msedge', firefox: 'firefox', spotify: 'spotify',
-      discord: 'discord', code: 'code', vscode: 'code', word: 'winword', excel: 'excel',
-    };
-    const target = appMap[name] || name;
-    if (process.platform === 'win32') await execAsync(`start "" "${target}"`, { shell: true });
-    else if (process.platform === 'darwin') await execAsync(`open -a "${target}"`);
-    else spawn(target, [], { detached: true, stdio: 'ignore' }).unref();
-    return { ok: true, result: `Abriendo ${appName}`, message: `Abriendo ${appName}` };
-  } catch (err) {
-    return { ok: false, result: err.message, message: `No pude abrir "${appName}"` };
-  }
+  return openAppReliable(appName);
 }
 
 async function openFolderHelper(folder) {
@@ -96,8 +74,9 @@ async function openFolderHelper(folder) {
     const key = (folder || '').toLowerCase();
     let target = map[key] || folder;
     if (key === 'informes' && !fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
-    await shell.openPath(target);
-    return { ok: true, result: `Abriendo ${folder}`, message: `Abriendo carpeta ${folder}` };
+    const err = await shell.openPath(target);
+    if (err) return { ok: false, result: err, message: `No pude abrir la carpeta` };
+    return { ok: true, result: `Abriendo ${folder}`, message: `Abrí la carpeta ${folder}` };
   } catch (err) {
     return { ok: false, result: err.message, message: String(err) };
   }
@@ -105,7 +84,9 @@ async function openFolderHelper(folder) {
 
 async function openUrlHelper(url) {
   try {
-    await shell.openExternal(url);
+    let u = (url || '').trim();
+    if (u && !/^https?:\/\//i.test(u)) u = 'https://' + u;
+    await shell.openExternal(u);
     return { ok: true, result: 'URL abierta' };
   } catch (err) {
     return { ok: false, result: String(err) };
@@ -116,7 +97,7 @@ async function runCommandHelper(command) {
   try {
     const blocked = [/rm\s+-rf\s+\//, /format\s+/i, /del\s+\/s/i, /shutdown/i, /mkfs/i];
     if (blocked.some((re) => re.test(command))) return { ok: false, result: 'Comando bloqueado por seguridad.' };
-    const { stdout, stderr } = await execAsync(command, { timeout: 20000, maxBuffer: 1024 * 512, shell: true });
+    const { stdout, stderr } = await execAsync(command, { timeout: 20000, maxBuffer: 512 * 1024, shell: true });
     return { ok: true, result: (stdout || stderr || 'OK').slice(0, 3000) };
   } catch (err) {
     return { ok: false, result: err.message };
@@ -137,9 +118,7 @@ function writeMemory(data) {
   try {
     fs.writeFileSync(getMemoryPath(), JSON.stringify(data, null, 2), 'utf-8');
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 async function rememberHelper(text) {
   const mem = readMemory();
@@ -166,18 +145,14 @@ const agentHelpers = {
 
 ipcMain.handle('get-system-stats', async () => {
   try {
-    const cpus = os.cpus();
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
-    const usedMem = totalMem - freeMem;
     let cpuUsage = 15;
     try {
       if (process.platform === 'win32') {
         const { stdout } = await execAsync('wmic cpu get loadpercentage /value');
         const match = stdout.match(/LoadPercentage=(\d+)/);
         if (match) cpuUsage = parseInt(match[1], 10);
-      } else {
-        cpuUsage = Math.min(100, Math.round((os.loadavg()[0] / cpus.length) * 100));
       }
     } catch {}
     let diskUsage = 50;
@@ -191,9 +166,9 @@ ipcMain.handle('get-system-stats', async () => {
     } catch {}
     return {
       cpu: cpuUsage,
-      ram: Math.round((usedMem / totalMem) * 100),
+      ram: Math.round(((totalMem - freeMem) / totalMem) * 100),
       disk: diskUsage,
-      net: Math.round(Math.random() * 25 + 5),
+      net: Math.round(Math.random() * 20 + 5),
       platform: process.platform,
       hostname: os.hostname(),
       uptime: os.uptime(),
@@ -233,16 +208,10 @@ ipcMain.handle('memory-save-history', (_e, entry) => {
   writeMemory(mem);
   return { ok: true };
 });
-ipcMain.handle('memory-clear', () => {
-  writeMemory({ notes: [], facts: [], history: [] });
-  return { ok: true };
-});
+ipcMain.handle('memory-clear', () => { writeMemory({ notes: [], facts: [], history: [] }); return { ok: true }; });
 ipcMain.handle('tts-speak', async (_e, text) => {
-  try {
-    return { ok: true, dataUrl: await synthesizeToBase64(text) };
-  } catch (err) {
-    return { ok: false, error: err.message, fallback: true };
-  }
+  try { return { ok: true, dataUrl: await synthesizeToBase64(text) }; }
+  catch (err) { return { ok: false, error: err.message, fallback: true }; }
 });
 ipcMain.handle('tts-status', () => ({ edgeTts: checkEdgeTts(), voice: VOICE }));
 
@@ -267,13 +236,12 @@ ipcMain.handle('stt-transcribe', async (_e, payload) => {
       body: form,
     });
     if (!res.ok) {
-      const errText = await res.text();
       if (res.status === 429) return { ok: false, error: 'Límite de uso. Espera un momento.' };
-      return { ok: false, error: `STT ${res.status}: ${errText.slice(0, 200)}` };
+      return { ok: false, error: `STT ${res.status}` };
     }
     const data = await res.json();
     const text = (data.text || '').trim();
-    if (!text) return { ok: false, error: 'No detecté palabras. Habla más cerca del micrófono.' };
+    if (!text) return { ok: false, error: 'No detecté palabras.' };
     return { ok: true, text };
   } catch (err) {
     return { ok: false, error: err.message || 'Error de reconocimiento' };
@@ -284,12 +252,12 @@ ipcMain.handle('stt-listen-python', async (_e, seconds) => runPythonStt(seconds 
 
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   ensureDefaultConfig();
+  // Atajo rápido: abrir apps sin pasar por el LLM (más rápido y fiable)
+  const quick = await trySimpleIntent(message);
+  if (quick) return quick;
+
   const config = getConfig();
-  if (!config.apiKey) {
-    const simple = await trySimpleIntent(message);
-    if (simple) return simple;
-    return fallbackResponse(message);
-  }
+  if (!config.apiKey) return fallbackResponse(message);
   try {
     const result = await runAgent(message, history || [], agentHelpers);
     return { response: result.response, intelligent: true };
@@ -297,7 +265,7 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
     if (/429|rate limit/i.test(String(err.message))) {
       return { response: 'El servicio está saturado un momento. Espera y vuelve a intentar.', intelligent: false };
     }
-    return { response: 'No pude completar eso ahora. Revisa tu conexión.', intelligent: false };
+    return { response: 'No pude completar eso ahora.', intelligent: false };
   }
 });
 
@@ -308,22 +276,37 @@ ipcMain.handle('agent-config-get', () => {
 ipcMain.handle('agent-config-set', (_e, partial) => saveConfig(partial));
 
 async function trySimpleIntent(input) {
-  const text = input.toLowerCase().trim();
-  if (/\b(abre|abrir)\b/.test(text)) {
-    for (const f of ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos']) {
-      if (text.includes(f)) {
-        const r = await openFolderHelper(f);
+  const text = (input || '').toLowerCase().trim();
+
+  // Abrir apps — respuesta inmediata, sin LLM
+  const openMatch = text.match(/\b(?:abre|abrir|abre\s+me|abrir\s+me|lanza|ejecuta)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i);
+  if (openMatch || /\b(abre|abrir)\b/.test(text)) {
+    const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'imágenes', 'musica', 'música', 'videos'];
+    for (const f of folderKeys) {
+      if (text.includes(f.replace('á', 'a').replace('ú', 'u')) || text.includes(f)) {
+        const r = await openFolderHelper(f.replace('á', 'a').replace('ú', 'u'));
         return { response: r.message || r.result, intelligent: false };
       }
     }
-    const m = text.match(/(?:abre|abrir)\s+(?:la\s+|el\s+)?(.+)/);
-    if (m) {
-      const r = await openAppHelper(m[1].replace(/\s+(por favor|please)$/i, '').trim());
+    let name = openMatch ? openMatch[1] : '';
+    name = name.replace(/\s+(por favor|please|ahora|ya)$/i, '').trim();
+    // Casos cortos: "abre word"
+    if (!name) {
+      for (const app of ['word', 'excel', 'chrome', 'edge', 'notepad', 'calculadora', 'spotify', 'discord', 'code', 'firefox', 'paint', 'powerpoint', 'outlook']) {
+        if (text.includes(app)) { name = app; break; }
+      }
+    }
+    if (name) {
+      const r = await openAppHelper(name);
       return { response: r.message || r.result, intelligent: false };
     }
   }
+
   if (/\b(qué hora|que hora|hora es)\b/.test(text)) {
-    return { response: `Son las ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}.`, intelligent: false };
+    return {
+      response: `Son las ${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}.`,
+      intelligent: false,
+    };
   }
   return null;
 }
@@ -338,10 +321,10 @@ ipcMain.on('window-close', () => mainWindow?.hide());
 app.whenReady().then(() => {
   ensureDefaultConfig();
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    callback(permission === 'media' || permission === 'microphone' || permission === 'audioCapture');
+    callback(['media', 'microphone', 'audioCapture'].includes(permission));
   });
   session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
-    permission === 'media' || permission === 'microphone' || permission === 'audioCapture',
+    ['media', 'microphone', 'audioCapture'].includes(permission),
   );
   try {
     const cfgPath = path.join(os.homedir(), '.elyra', 'config.json');
@@ -357,10 +340,7 @@ app.whenReady().then(() => {
   createTray();
   globalShortcut.register('CommandOrControl+Shift+E', () => {
     if (mainWindow?.isVisible()) mainWindow.hide();
-    else {
-      mainWindow?.show();
-      mainWindow?.focus();
-    }
+    else { mainWindow?.show(); mainWindow?.focus(); }
   });
 });
 
