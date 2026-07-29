@@ -6,8 +6,8 @@ const fs = require('fs');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
-const { synthesizeToBase64, checkEdgeTts } = require('./tts.cjs');
-const { runAgent, getConfig, saveConfig, fallbackResponse } = require('./agent.cjs');
+const { synthesizeToBase64, checkEdgeTts, VOICE } = require('./tts.cjs');
+const { runAgent, getConfig, saveConfig, fallbackResponse, ensureDefaultConfig } = require('./agent.cjs');
 
 let mainWindow = null;
 let tray = null;
@@ -159,7 +159,7 @@ async function openFolderHelper(folder) {
 async function openUrlHelper(url) {
   try {
     await shell.openExternal(url);
-    return { ok: true, result: `URL abierta: ${url}` };
+    return { ok: true, result: `URL abierta` };
   } catch (err) {
     return { ok: false, result: String(err) };
   }
@@ -207,7 +207,7 @@ async function rememberHelper(text) {
   const mem = readMemory();
   mem.notes.push({ id: Date.now().toString(), text, at: new Date().toISOString() });
   writeMemory(mem);
-  return { ok: true, result: `Guardado en memoria: ${text}` };
+  return { ok: true, result: `Guardado en memoria` };
 }
 
 const agentHelpers = {
@@ -270,7 +270,7 @@ ipcMain.handle('get-system-stats', async () => {
 ipcMain.handle('open-app', async (_e, name) => openAppHelper(name));
 ipcMain.handle('open-path', async (_e, p) => {
   const result = await shell.openPath(p);
-  return result ? { ok: false, message: result } : { ok: true, message: `Abierto: ${p}` };
+  return result ? { ok: false, message: result } : { ok: true, message: `Abierto` };
 });
 ipcMain.handle('open-url', async (_e, url) => openUrlHelper(url));
 ipcMain.handle('open-folder', async (_e, folder) => openFolderHelper(folder));
@@ -303,7 +303,7 @@ ipcMain.handle('memory-clear', () => {
 
 ipcMain.handle('tts-speak', async (_e, text) => {
   try {
-    const dataUrl = await synthesizeToBase64(text, { rate: '+5%', pitch: '+0Hz' });
+    const dataUrl = await synthesizeToBase64(text);
     return { ok: true, dataUrl };
   } catch (err) {
     return { ok: false, error: err.message, fallback: true };
@@ -312,10 +312,11 @@ ipcMain.handle('tts-speak', async (_e, text) => {
 
 ipcMain.handle('tts-status', () => ({
   edgeTts: checkEdgeTts(),
-  voice: 'es-ES-ElviraNeural',
+  voice: VOICE,
 }));
 
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
+  ensureDefaultConfig();
   const config = getConfig();
   if (!config.apiKey) {
     const simple = await trySimpleIntent(message);
@@ -326,7 +327,18 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
     const result = await runAgent(message, history || [], agentHelpers);
     return { response: result.response, intelligent: true };
   } catch (err) {
-    return { response: `Error del modelo: ${err.message}`, intelligent: false };
+    const msg = String(err.message || err);
+    if (/429|rate limit/i.test(msg)) {
+      return {
+        response:
+          'El servicio de inteligencia está saturado un momento. Espera medio minuto y vuelve a intentarlo.',
+        intelligent: false,
+      };
+    }
+    return {
+      response: 'No pude completar eso ahora. Revisa tu conexión e inténtalo de nuevo.',
+      intelligent: false,
+    };
   }
 });
 
@@ -339,7 +351,6 @@ ipcMain.handle('agent-config-set', (_e, partial) => saveConfig(partial));
 
 async function trySimpleIntent(input) {
   const text = input.toLowerCase().trim();
-
   if (/\b(abre|abrir)\b/.test(text)) {
     const folderKeys = ['documentos', 'descargas', 'escritorio', 'imágenes', 'imagenes', 'música', 'musica', 'videos', 'informes'];
     for (const f of folderKeys) {
@@ -351,21 +362,10 @@ async function trySimpleIntent(input) {
     const m = text.match(/(?:abre|abrir)\s+(?:la\s+|el\s+)?(.+)/);
     if (m) {
       const name = m[1].replace(/\s+(por favor|please)$/i, '').trim();
-      const sites = {
-        youtube: 'https://www.youtube.com',
-        google: 'https://www.google.com',
-        gmail: 'https://mail.google.com',
-        github: 'https://github.com',
-      };
-      if (sites[name]) {
-        await openUrlHelper(sites[name]);
-        return { response: `Abriendo ${name}.`, intelligent: false };
-      }
       const r = await openAppHelper(name);
       return { response: r.message || r.result, intelligent: false };
     }
   }
-
   if (/\b(qué hora|que hora|hora es)\b/.test(text)) {
     const now = new Date();
     return {
@@ -373,7 +373,6 @@ async function trySimpleIntent(input) {
       intelligent: false,
     };
   }
-
   return null;
 }
 
@@ -385,6 +384,19 @@ ipcMain.on('window-maximize', () => {
 ipcMain.on('window-close', () => mainWindow?.hide());
 
 app.whenReady().then(() => {
+  ensureDefaultConfig();
+  // Preferir modelo con más cuota en el config del usuario
+  try {
+    const cfgPath = path.join(os.homedir(), '.elyra', 'config.json');
+    if (fs.existsSync(cfgPath)) {
+      const c = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+      if (c.model === 'llama-3.3-70b-versatile') {
+        c.model = 'llama-3.1-8b-instant';
+        fs.writeFileSync(cfgPath, JSON.stringify(c, null, 2));
+      }
+    }
+  } catch {}
+
   createWindow();
   createTray();
   globalShortcut.register('CommandOrControl+Shift+E', () => {

@@ -1,6 +1,6 @@
 /**
- * ELYRA TTS — voz masculina natural estilo JARVIS (calmada, clara, consistente).
- * Usa edge-tts con una sola voz fija: es-ES-AlvaroNeural
+ * ELYRA TTS — voz femenina natural (casi humana).
+ * Voz fija: es-MX-DaliaNeural (Microsoft neural, español México)
  */
 const path = require('path');
 const fs = require('fs');
@@ -9,11 +9,11 @@ const { promisify } = require('util');
 const { exec, execSync } = require('child_process');
 const execAsync = promisify(exec);
 
-// Voz única y estable (hombre, español España, natural)
-const VOICE = 'es-ES-AlvaroNeural';
-// Ritmo más pausado y tono ligeramente grave = sensación tipo JARVIS
-const DEFAULT_RATE = '-10%';
-const DEFAULT_PITCH = '-3Hz';
+// Voz femenina muy natural (México). Alternativa España: es-ES-ElviraNeural
+const VOICE = 'es-MX-DaliaNeural';
+// Ritmo y tono cercanos a una persona real hablando con calma
+const DEFAULT_RATE = '+2%';
+const DEFAULT_PITCH = '+0Hz';
 
 let edgeTtsAvailable = null;
 
@@ -38,57 +38,69 @@ function checkEdgeTts() {
   return edgeTtsAvailable;
 }
 
-/**
- * Limpia el texto para que NO se lean rutas, barras invertidas, markdown, etc.
- */
 function cleanForSpeech(text) {
   if (!text) return '';
   let t = String(text);
 
-  // Bloques de código
   t = t.replace(/```[\s\S]*?```/g, ' ');
   t = t.replace(/`([^`]+)`/g, '$1');
-
-  // Markdown
   t = t.replace(/\*\*?([^*]+)\*\*?/g, '$1');
   t = t.replace(/__?([^_]+)__?/g, '$1');
   t = t.replace(/^#+\s+/gm, '');
   t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
-  // URLs
+  // Errores técnicos crudos → frase humana
+  if (/rate limit|429|tokens per day|TPD/i.test(t)) {
+    return 'He alcanzado el límite temporal del modelo. Espera un momento e inténtalo de nuevo, o prueba con una frase más corta.';
+  }
+  if (/LLM\s*\d{3}|Error del modelo/i.test(t) && t.length > 120) {
+    return 'Hubo un problema al conectar con la inteligencia. Inténtalo de nuevo en unos segundos.';
+  }
+
   t = t.replace(/https?:\/\/[^\s]+/g, ' un enlace ');
-
-  // Rutas Windows (C:\Users\...)
   t = t.replace(/[A-Za-z]:\\[^\s\]"']+/g, ' la carpeta de documentos ');
-  // Barras invertidas sueltas o restantes
   t = t.replace(/\\+/g, ' ');
-  // Rutas estilo Unix largas
   t = t.replace(/\/(?:Users|home|Documents|Informes)[^\s]*/gi, ' la ruta del archivo ');
-
-  // Caracteres que el TTS deletrea mal
   t = t.replace(/[_|<>{}\[\]#~^]/g, ' ');
   t = t.replace(/&/g, ' y ');
   t = t.replace(/\//g, ' ');
 
-  // Espacios múltiples
+  // Números de error / JSON feo
+  t = t.replace(/\{[\s\S]*\}/g, ' ');
+  t = t.replace(/org_[a-zA-Z0-9]+/g, ' ');
+  t = t.replace(/gsk_[a-zA-Z0-9]+/g, ' ');
+
   t = t.replace(/\s+/g, ' ').trim();
 
-  // Límite razonable para voz
-  if (t.length > 1200) {
-    t = t.slice(0, 1200);
+  if (t.length > 900) {
+    t = t.slice(0, 900);
     const last = t.lastIndexOf('.');
-    if (last > 400) t = t.slice(0, last + 1);
+    if (last > 300) t = t.slice(0, last + 1);
     else t += '.';
   }
 
   return t;
 }
 
+/**
+ * Divide en frases para síntesis más natural (pausas humanas).
+ * edge-tts no tiene SSML completo en CLI simple; usamos el texto limpio
+ * con puntuación clara que la voz neural respeta bien.
+ */
+function humanizePunctuation(text) {
+  let t = text;
+  // Asegurar espacios tras puntuación
+  t = t.replace(/([.,;:!?])([A-Za-zÁÉÍÓÚáéíóúñÑ])/g, '$1 $2');
+  // Evitar puntos repetidos
+  t = t.replace(/\.{2,}/g, '.');
+  return t.replace(/\s+/g, ' ').trim();
+}
+
 async function synthesizeToBase64(text, options = {}) {
   const mode = checkEdgeTts();
   if (!mode) throw new Error('edge-tts no instalado. Ejecuta: pip install edge-tts');
 
-  const safeText = cleanForSpeech(text);
+  let safeText = humanizePunctuation(cleanForSpeech(text));
   if (!safeText) throw new Error('Texto vacío tras limpiar');
 
   const tmpDir = os.tmpdir();
@@ -109,7 +121,6 @@ async function synthesizeToBase64(text, options = {}) {
 
   const buf = fs.readFileSync(outFile);
   const base64 = buf.toString('base64');
-
   try {
     fs.unlinkSync(outFile);
   } catch {}
