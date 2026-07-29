@@ -1,20 +1,38 @@
 import { useEffect, useState } from 'react';
 import { CircularGauge } from './CircularGauge';
-import { Shield, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Shield, ShieldCheck } from 'lucide-react';
+
+const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
 
 export function SystemPanel() {
-  const [stats, setStats] = useState({ cpu: 23, ram: 48, disk: 62, net: 18 });
+  const [stats, setStats] = useState({ cpu: 18, ram: 42, disk: 55, net: 12 });
 
-  // Simulate slight variation in system stats
   useEffect(() => {
-    const interval = setInterval(() => {
-      setStats((prev) => ({
-        cpu: Math.min(95, Math.max(8, prev.cpu + (Math.random() - 0.5) * 6)),
-        ram: Math.min(90, Math.max(30, prev.ram + (Math.random() - 0.5) * 3)),
-        disk: prev.disk,
-        net: Math.min(80, Math.max(5, prev.net + (Math.random() - 0.5) * 8)),
-      }));
-    }, 2500);
+    const update = async () => {
+      if (isDesktop && window.elyra) {
+        try {
+          const s = await window.elyra.getSystemStats();
+          setStats({
+            cpu: Math.round(s.cpu),
+            ram: Math.round(s.ram),
+            disk: Math.round(s.disk),
+            net: Math.round(s.net),
+          });
+        } catch {
+          // fallback
+        }
+      } else {
+        setStats((prev) => ({
+          cpu: Math.min(95, Math.max(8, prev.cpu + (Math.random() - 0.5) * 6)),
+          ram: Math.min(90, Math.max(30, prev.ram + (Math.random() - 0.5) * 3)),
+          disk: prev.disk,
+          net: Math.min(80, Math.max(5, prev.net + (Math.random() - 0.5) * 8)),
+        }));
+      }
+    };
+
+    update();
+    const interval = setInterval(update, isDesktop ? 3000 : 2500);
     return () => clearInterval(interval);
   }, []);
 
@@ -26,7 +44,6 @@ export function SystemPanel() {
 
   return (
     <div className="w-[260px] flex-shrink-0 flex flex-col gap-4">
-      {/* System Status */}
       <div className="rounded-xl bg-[#0a1525]/80 border border-sky-500/15 p-4 backdrop-blur-sm">
         <div className="flex items-center gap-2 mb-4">
           <div className="w-5 h-5 rounded-md bg-sky-500/20 flex items-center justify-center">
@@ -41,18 +58,19 @@ export function SystemPanel() {
 
         <div className="flex items-center gap-1.5 mb-4">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="text-[11px] text-emerald-400">Todo funciona correctamente</span>
+          <span className="text-[11px] text-emerald-400">
+            {isDesktop ? 'Datos reales del PC' : 'Todo funciona correctamente'}
+          </span>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <CircularGauge label="CPU" value={Math.round(stats.cpu)} color="#38bdf8" />
-          <CircularGauge label="RAM" value={Math.round(stats.ram)} color="#a78bfa" />
-          <CircularGauge label="Disco" value={Math.round(stats.disk)} color="#34d399" />
-          <CircularGauge label="Red" value={Math.round(stats.net)} color="#60a5fa" />
+          <CircularGauge label="CPU" value={stats.cpu} color="#38bdf8" />
+          <CircularGauge label="RAM" value={stats.ram} color="#a78bfa" />
+          <CircularGauge label="Disco" value={stats.disk} color="#34d399" />
+          <CircularGauge label="Red" value={stats.net} color="#60a5fa" />
         </div>
       </div>
 
-      {/* Protection */}
       <div className="rounded-xl bg-[#0a1525]/80 border border-sky-500/15 p-4 backdrop-blur-sm">
         <div className="flex items-center gap-2 mb-3">
           <Shield className="w-4 h-4 text-sky-400" />
@@ -68,11 +86,7 @@ export function SystemPanel() {
           {protections.map((p) => (
             <div key={p.label} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-sky-500/5">
               <div className="flex items-center gap-2">
-                {p.active ? (
-                  <ShieldCheck className="w-3.5 h-3.5 text-sky-400/70" />
-                ) : (
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400/70" />
-                )}
+                <ShieldCheck className="w-3.5 h-3.5 text-sky-400/70" />
                 <span className="text-[12px] text-sky-200/70">{p.label}</span>
               </div>
               <div className="flex items-center gap-1.5">

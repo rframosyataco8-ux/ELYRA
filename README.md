@@ -1,28 +1,69 @@
-# NOVA AI — Asistente Inteligente
+# ELYRA — Asistente Inteligente de Escritorio
 
-Asistente de escritorio con interfaz futurista, voz y control del sistema.
+Asistente de voz y texto con control real del PC, memoria local y interfaz futurista.
 
-## Características actuales
+## Nombre
 
-- Diseño inspirado en panel de control futurista (globo de red interactivo)
-- El globo reacciona al hablar y al escuchar (velocidad, brillo, conexiones, anillos de energía)
-- Reconocimiento y síntesis de voz (español)
-- Comandos por voz o texto
-- Panel de estado del sistema (CPU, RAM, Disco, Red)
-- Panel de protección
-- Historial de conversación (Supabase)
+**ELYRA** — nombre original, no utilizado en otros asistentes conocidos.
 
-## Cómo ejecutar
+## Características
+
+- **Aplicación de escritorio** (Electron)
+- Globo de red **interactivo** (reacciona al hablar / escuchar)
+- Control del PC: abrir apps, carpetas, URLs
+- Memoria local persistente (notas y hechos)
+- Estadísticas reales de CPU / RAM / Disco
+- Voz (escuchar + hablar) en español
+- Bandeja del sistema (sigue en segundo plano)
+- Atajo global: `Ctrl+Shift+E` para mostrar/ocultar
+- Ventana sin marco (frameless) con controles propios
+
+## Instalación
 
 ```bash
 npm install
-npm run dev
 ```
 
-Abre en Chrome o Edge para que funcione el micrófono.
+## Desarrollo
 
-## Próximos pasos (escritorio + autonomía real)
+```bash
+# Solo interfaz (navegador)
+npm run dev
 
-- Convertir a Electron / Tauri para control real del PC
-- Integrar LLM (Grok / OpenAI) para comprensión natural
-- Acciones de sistema (abrir apps, archivos, scripts, etc.)
+# App de escritorio completa
+npm run dev:electron
+```
+
+## Build / instalador
+
+```bash
+npm run build:electron
+```
+
+El instalador se genera en la carpeta `release/`.
+
+## Ejemplos de comandos
+
+- "Abre Chrome"
+- "Abre Visual Studio Code"
+- "Abre la carpeta Descargas"
+- "Busca el clima de hoy"
+- "Recuerda que mi reunión es el viernes"
+- "Qué recuerdas"
+- "Estado del sistema"
+- "Calcula 25 * 4"
+- "Qué hora es"
+
+## Arquitectura
+
+- **Renderer**: React + TypeScript + Tailwind (interfaz)
+- **Main process**: Electron (acceso real al SO)
+- **Preload**: bridge seguro vía `contextBridge`
+- **Memoria**: archivo JSON en `userData` del sistema
+
+## Próximas mejoras posibles
+
+- Integración con LLM (comprensión total de lenguaje natural)
+- Más acciones de sistema (volumen, brillo, capturas)
+- Plugins / extensiones
+- Wake-word ("Hey ELYRA")

@@ -14,7 +14,6 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
 
   return (
     <aside className="w-[220px] flex-shrink-0 flex flex-col bg-[#060d18]/90 border-r border-sky-500/10 h-full">
-      {/* Logo */}
       <div className="px-5 pt-6 pb-8 flex items-center gap-3">
         <div className="relative w-9 h-9 flex items-center justify-center">
           <div className="absolute inset-0 rounded-full bg-sky-500/20 animate-pulse" />
@@ -27,12 +26,11 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
           </svg>
         </div>
         <div>
-          <h1 className="text-white font-semibold text-[15px] tracking-wide leading-tight">NOVA AI</h1>
+          <h1 className="text-white font-semibold text-[15px] tracking-wide leading-tight">ELYRA</h1>
           <p className="text-[10px] text-sky-400/60 tracking-wider">Asistente Inteligente</p>
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 px-3 space-y-1">
         {items.map((item) => {
           const isActive = active === item.id;
@@ -53,7 +51,6 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
         })}
       </nav>
 
-      {/* Bottom status */}
       <div className="px-4 pb-5 pt-3 border-t border-sky-500/10">
         <div className="flex items-center gap-2.5 mb-3">
           <div className="relative w-8 h-8 rounded-full border border-sky-500/30 flex items-center justify-center">
@@ -61,7 +58,7 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
             <div className="absolute w-2 h-2 rounded-full bg-sky-400" />
           </div>
           <div>
-            <p className="text-xs text-white/80 font-medium">NOVA AI</p>
+            <p className="text-xs text-white/80 font-medium">ELYRA</p>
             <p className="text-[10px] text-sky-400/50">Modo Autónomo</p>
           </div>
         </div>
