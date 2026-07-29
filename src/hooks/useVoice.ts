@@ -42,6 +42,23 @@ function normalize(s: string) {
     .trim();
 }
 
+/** Correcciones post-STT en el cliente */
+function fixSpanishTranscript(raw: string) {
+  let t = (raw || '').trim();
+  const pairs: [RegExp, string][] = [
+    [/\bwork\b/gi, 'word'],
+    [/\bwuar\b/gi, 'word'],
+    [/\bcrom\b/gi, 'chrome'],
+    [/\bgrome\b/gi, 'chrome'],
+    [/\bnot pad\b/gi, 'notepad'],
+    [/\bbloc de nota\b/gi, 'bloc de notas'],
+    [/\bvs code\b/gi, 'code'],
+    [/\bvisual estudio code\b/gi, 'code'],
+  ];
+  for (const [re, rep] of pairs) t = t.replace(re, rep);
+  return t;
+}
+
 export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
@@ -63,7 +80,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const ignoreUntilRef = useRef(0);
   const listeningModeRef = useRef<'whisper' | 'webspeech' | 'python' | null>(null);
   const vadTimerRef = useRef<number | null>(null);
-  const ampRafRef = useRef<number>(0);
+  const ampRafRef = useRef(0);
   const ampCtxRef = useRef<AudioContext | null>(null);
   const ampAnalyserRef = useRef<AnalyserNode | null>(null);
   onCommandRef.current = onCommand;
@@ -103,7 +120,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         ampCtxRef.current = ctx;
         ampAnalyserRef.current = analyser;
         const data = new Uint8Array(analyser.frequencyBinCount);
-
         const tick = () => {
           if (!ampAnalyserRef.current) return;
           ampAnalyserRef.current.getByteTimeDomainData(data);
@@ -113,14 +129,12 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             sum += v * v;
           }
           const rms = Math.sqrt(sum / data.length);
-          // Suavizar 0–1
           const level = Math.min(1, rms * 4.5);
           setAmplitude((prev) => prev * 0.55 + level * 0.45);
           ampRafRef.current = requestAnimationFrame(tick);
         };
         tick();
       } catch {
-        // Algunos entornos bloquean createMediaElementSource si el audio ya suena
         setAmplitude(0.35);
       }
     },
@@ -227,7 +241,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
                 speakBrowser(text, token);
               }
             };
-            // Monitor ANTES de play para capturar el stream
             startAmplitudeMonitor(audio);
             await audio.play();
             return;
@@ -240,7 +253,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   );
 
   const acceptTranscript = useCallback((raw: string) => {
-    const text = (raw || '').trim();
+    const text = fixSpanishTranscript((raw || '').trim());
     if (!text) return;
     if (Date.now() < ignoreUntilRef.current || speakingRef.current) return;
     const n = normalize(text);
@@ -248,9 +261,14 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     if (last) {
       if (n === last || last.includes(n) || (n.length < 18 && last.includes(n))) return;
     }
+    // Filtrar basura típica
+    if (/^(thanks for watching|thank you|gracias por ver)/i.test(text)) return;
     onCommandRef.current?.(text);
   }, []);
 
+  /**
+   * VAD adaptativo: umbral según ruido de fondo, más tiempo de habla, silencio más tolerante.
+   */
   const startWhisperListening = useCallback(async () => {
     try {
       if (speakingRef.current || Date.now() < ignoreUntilRef.current - 400) {
@@ -265,20 +283,46 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
           noiseSuppression: true,
           autoGainControl: true,
           channelCount: 1,
+          sampleRate: 16000,
         },
       });
       mediaStreamRef.current = stream;
 
-      const audioCtx = new AudioContext();
+      const audioCtx = new AudioContext({ sampleRate: 16000 });
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 2048;
       source.connect(analyser);
       const data = new Uint8Array(analyser.fftSize);
 
-      const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      // Calibrar ruido ambiente ~400ms
+      let noiseFloor = 8;
+      {
+        const samples: number[] = [];
+        for (let i = 0; i < 5; i++) {
+          await new Promise((r) => setTimeout(r, 80));
+          analyser.getByteTimeDomainData(data);
+          let sum = 0;
+          for (let j = 0; j < data.length; j++) {
+            const v = (data[j] - 128) / 128;
+            sum += v * v;
+          }
+          samples.push(Math.sqrt(sum / data.length) * 100);
+        }
+        noiseFloor = samples.reduce((a, b) => a + b, 0) / samples.length;
+      }
+      const SPEECH_THRESHOLD = Math.max(6, noiseFloor * 1.8 + 2);
+
+      const mimeCandidates = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+      ];
       const mimeType = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 })
+        : new MediaRecorder(stream);
       chunksRef.current = [];
       recorder.ondataavailable = (e) => {
         if (e.data?.size) chunksRef.current.push(e.data);
@@ -286,12 +330,12 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
 
       let speechStarted = false;
       let silenceMs = 0;
+      let speechMs = 0;
       let totalMs = 0;
-      const TICK = 80;
-      const SPEECH_THRESHOLD = 12;
-      const SILENCE_TO_STOP = 900;
-      const MAX_MS = 7000;
-      const MIN_SPEECH_MS = 350;
+      const TICK = 60;
+      const SILENCE_TO_STOP = 1100;
+      const MAX_MS = 12000;
+      const MIN_SPEECH_MS = 280;
 
       const finish = () => {
         if (vadTimerRef.current) {
@@ -312,7 +356,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         stopMediaTracks();
         if (speakingRef.current || Date.now() < ignoreUntilRef.current) return;
-        if (!speechStarted || blob.size < 1500) {
+        if (!speechStarted || blob.size < 800) {
           setError('No capturé tu voz. Habla un poco más fuerte y cerca del micrófono.');
           return;
         }
@@ -320,7 +364,10 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
           const buffer = await blob.arrayBuffer();
           const bytes = new Uint8Array(buffer);
           let binary = '';
-          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          const chunk = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunk) {
+            binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+          }
           const base64 = btoa(binary);
           const result = await window.elyra!.sttTranscribe({
             base64,
@@ -330,7 +377,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             setError(null);
             acceptTranscript(result.text);
           } else {
-            setError(result.error || 'No entendí. Intenta de nuevo.');
+            setError(result.error || 'No entendí. Intenta de nuevo, un poco más despacio.');
           }
         } catch (e: any) {
           setError(e?.message || 'Error al transcribir.');
@@ -339,7 +386,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
 
       mediaRecorderRef.current = recorder;
       listeningModeRef.current = 'whisper';
-      recorder.start(200);
+      recorder.start(150);
       setListening(true);
 
       vadTimerRef.current = window.setInterval(() => {
@@ -351,14 +398,26 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         }
         const rms = Math.sqrt(sum / data.length) * 100;
         totalMs += TICK;
+
         if (rms > SPEECH_THRESHOLD) {
           speechStarted = true;
           silenceMs = 0;
+          speechMs += TICK;
+          setAmplitude(Math.min(1, rms / 40));
         } else if (speechStarted) {
           silenceMs += TICK;
+          setAmplitude((a) => a * 0.85);
         }
-        if (speechStarted && silenceMs >= SILENCE_TO_STOP && totalMs > MIN_SPEECH_MS + SILENCE_TO_STOP) finish();
-        else if (totalMs >= MAX_MS) finish();
+
+        if (
+          speechStarted &&
+          silenceMs >= SILENCE_TO_STOP &&
+          speechMs >= MIN_SPEECH_MS
+        ) {
+          finish();
+        } else if (totalMs >= MAX_MS) {
+          finish();
+        }
       }, TICK);
 
       return true;
@@ -381,7 +440,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       setError(null);
       setListening(true);
       listeningModeRef.current = 'python';
-      const result = await window.elyra.sttListenPython(5);
+      const result = await window.elyra.sttListenPython(6);
       setListening(false);
       listeningModeRef.current = null;
       if (result.ok && result.text) {
@@ -406,6 +465,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     recognition.lang = 'es-ES';
     recognition.continuous = false;
     recognition.interimResults = false;
+    recognition.maxAlternatives = 3;
     recognition.onstart = () => {
       setListening(true);
       setError(null);
@@ -462,10 +522,10 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     recognitionRef.current?.stop();
     stopMediaTracks();
     setListening(false);
+    setAmplitude(0);
     listeningModeRef.current = null;
   }, []);
 
-  // Barge-in global (Ctrl+Espacio desde main)
   useEffect(() => {
     if (!isDesktop() || !window.elyra?.onBargeIn) return;
     return window.elyra.onBargeIn(() => {
