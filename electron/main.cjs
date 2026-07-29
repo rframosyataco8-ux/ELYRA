@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, globalShortcut, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, Tray, Menu, nativeImage, session } = require('electron');
 const path = require('path');
 const { exec, spawn } = require('child_process');
 const os = require('os');
@@ -210,12 +210,24 @@ async function rememberHelper(text) {
   return { ok: true, result: `Guardado en memoria` };
 }
 
+async function recallHelper() {
+  const mem = readMemory();
+  const notes = (mem.notes || []).slice(-20).map((n) => n.text);
+  const facts = (mem.facts || []).slice(-20).map((f) => f.text);
+  if (!notes.length && !facts.length) return { ok: true, result: 'No hay notas en memoria todavía.' };
+  return {
+    ok: true,
+    result: `Notas: ${notes.join(' | ') || 'ninguna'}. Hechos: ${facts.join(' | ') || 'ninguno'}.`,
+  };
+}
+
 const agentHelpers = {
   openApp: openAppHelper,
   openFolder: openFolderHelper,
   openUrl: openUrlHelper,
   runCommand: runCommandHelper,
   remember: rememberHelper,
+  recall: recallHelper,
 };
 
 ipcMain.handle('get-system-stats', async () => {
@@ -315,6 +327,63 @@ ipcMain.handle('tts-status', () => ({
   voice: VOICE,
 }));
 
+/**
+ * STT con Groq Whisper — fiable en Electron (a diferencia de Web Speech API).
+ * Recibe audio en base64 desde el renderer.
+ */
+ipcMain.handle('stt-transcribe', async (_e, payload) => {
+  try {
+    const { base64, mimeType } = payload || {};
+    if (!base64) return { ok: false, error: 'Sin audio' };
+
+    ensureDefaultConfig();
+    const config = getConfig();
+    if (!config.apiKey) return { ok: false, error: 'Sin API key' };
+
+    const buffer = Buffer.from(base64, 'base64');
+    const ext = (mimeType || '').includes('mp4') ? 'mp4' : (mimeType || '').includes('ogg') ? 'ogg' : 'webm';
+    const tmpFile = path.join(os.tmpdir(), `elyra-stt-${Date.now()}.${ext}`);
+    fs.writeFileSync(tmpFile, buffer);
+
+    // Node 18+ FormData + Blob / File
+    const form = new FormData();
+    const blob = new Blob([buffer], { type: mimeType || 'audio/webm' });
+    form.append('file', blob, `audio.${ext}`);
+    form.append('model', 'whisper-large-v3');
+    form.append('language', 'es');
+    form.append('response_format', 'json');
+    form.append('temperature', '0');
+
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: form,
+    });
+
+    try {
+      fs.unlinkSync(tmpFile);
+    } catch {}
+
+    if (!res.ok) {
+      const errText = await res.text();
+      // Si Whisper no está disponible, mensaje claro
+      if (res.status === 429) {
+        return { ok: false, error: 'Límite de uso. Espera un momento e intenta de nuevo.' };
+      }
+      return { ok: false, error: `STT ${res.status}: ${errText.slice(0, 200)}` };
+    }
+
+    const data = await res.json();
+    const text = (data.text || '').trim();
+    if (!text) return { ok: false, error: 'No detecté palabras. Habla un poco más cerca del micrófono.' };
+    return { ok: true, text };
+  } catch (err) {
+    return { ok: false, error: err.message || 'Error de reconocimiento' };
+  }
+});
+
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   ensureDefaultConfig();
   const config = getConfig();
@@ -330,8 +399,7 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
     const msg = String(err.message || err);
     if (/429|rate limit/i.test(msg)) {
       return {
-        response:
-          'El servicio de inteligencia está saturado un momento. Espera medio minuto y vuelve a intentarlo.',
+        response: 'El servicio de inteligencia está saturado un momento. Espera medio minuto y vuelve a intentarlo.',
         intelligent: false,
       };
     }
@@ -385,7 +453,22 @@ ipcMain.on('window-close', () => mainWindow?.hide());
 
 app.whenReady().then(() => {
   ensureDefaultConfig();
-  // Preferir modelo con más cuota en el config del usuario
+
+  // Permisos de micrófono (crítico para voz en Electron)
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    if (permission === 'media' || permission === 'microphone' || permission === 'audioCapture') {
+      callback(true);
+      return;
+    }
+    callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    if (permission === 'media' || permission === 'microphone' || permission === 'audioCapture') {
+      return true;
+    }
+    return false;
+  });
+
   try {
     const cfgPath = path.join(os.homedir(), '.elyra', 'config.json');
     if (fs.existsSync(cfgPath)) {

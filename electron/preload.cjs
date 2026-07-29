@@ -14,11 +14,12 @@ contextBridge.exposeInMainWorld('elyra', {
   memorySaveHistory: (entry) => ipcRenderer.invoke('memory-save-history', entry),
   memoryClear: () => ipcRenderer.invoke('memory-clear'),
 
-  // Natural TTS — returns { ok, file } path to mp3
   ttsSpeak: (text) => ipcRenderer.invoke('tts-speak', text),
   ttsStatus: () => ipcRenderer.invoke('tts-status'),
 
-  // Intelligent agent
+  // Whisper STT (Groq) — fiable en escritorio
+  sttTranscribe: (payload) => ipcRenderer.invoke('stt-transcribe', payload),
+
   agentChat: (message, history) => ipcRenderer.invoke('agent-chat', { message, history }),
   agentConfigGet: () => ipcRenderer.invoke('agent-config-get'),
   agentConfigSet: (partial) => ipcRenderer.invoke('agent-config-set', partial),

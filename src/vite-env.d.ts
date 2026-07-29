@@ -24,6 +24,7 @@ interface ElyraAPI {
   memoryClear: () => Promise<{ ok: boolean }>;
   ttsSpeak: (text: string) => Promise<{ ok: boolean; dataUrl?: string; error?: string; fallback?: boolean }>;
   ttsStatus: () => Promise<{ edgeTts: boolean | string; voice: string }>;
+  sttTranscribe: (payload: { base64: string; mimeType: string }) => Promise<{ ok: boolean; text?: string; error?: string }>;
   agentChat: (message: string, history: { role: string; text: string }[]) => Promise<{ response: string; intelligent?: boolean }>;
   agentConfigGet: () => Promise<{ hasKey: boolean; baseUrl: string; model: string }>;
   agentConfigSet: (partial: { apiKey?: string; baseUrl?: string; model?: string }) => Promise<any>;
