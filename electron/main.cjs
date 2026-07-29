@@ -9,9 +9,10 @@ const execAsync = promisify(exec);
 const { synthesizeToBase64, checkEdgeTts, VOICE } = require('./tts.cjs');
 const { runAgent, getConfig, saveConfig, fallbackResponse, ensureDefaultConfig, normalizeUserIntent } = require('./agent.cjs');
 const { runPythonStt } = require('./stt-python-ipc.cjs');
-const { openApp: openAppReliable } = require('./apps.cjs');
+const { openApp: openAppReliable, openUrl: openUrlReliable, resolveWebUrl } = require('./apps.cjs');
 const pc = require('./pc-control.cjs');
 const { transcribeBuffer } = require('./stt.cjs');
+const { chatOpenClaw, pingOpenClaw, getOpenClawConfig } = require('./openclaw-bridge.cjs');
 
 let mainWindow = null;
 let tray = null;
@@ -77,6 +78,9 @@ function createTray() {
 async function openAppHelper(name) {
   return openAppReliable(name);
 }
+async function openUrlHelper(url) {
+  return openUrlReliable(url);
+}
 
 async function openFolderHelper(folder) {
   try {
@@ -101,17 +105,6 @@ async function openFolderHelper(folder) {
     return { ok: true, result: `Abriendo ${folder}`, message: `Abrí la carpeta ${folder}` };
   } catch (err) {
     return { ok: false, result: err.message, message: String(err) };
-  }
-}
-
-async function openUrlHelper(url) {
-  try {
-    let u = (url || '').trim();
-    if (u && !/^https?:\/\//i.test(u)) u = 'https://' + u;
-    await shell.openExternal(u);
-    return { ok: true, result: 'URL abierta' };
-  } catch (err) {
-    return { ok: false, result: String(err) };
   }
 }
 
@@ -278,16 +271,34 @@ ipcMain.handle('stt-transcribe', async (_e, payload) => {
 
 ipcMain.handle('stt-listen-python', async (_e, seconds) => runPythonStt(seconds || 6));
 
+ipcMain.handle('openclaw-status', async () => {
+  const cfg = getOpenClawConfig();
+  const ping = await pingOpenClaw();
+  return { ...cfg, online: !!ping.ok, reason: ping.reason || null };
+});
+
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   ensureDefaultConfig();
   const fixed = typeof normalizeUserIntent === 'function' ? normalizeUserIntent(message) : message;
+
+  // Atajos locales (apps, webs, volumen…) — siempre primero
   const quick = await trySimpleIntent(fixed);
   if (quick) return quick;
+
+  // OpenClaw opcional
+  const oc = getOpenClawConfig();
+  if (oc.enabled) {
+    const ocRes = await chatOpenClaw(fixed, history || []);
+    if (ocRes.ok && ocRes.response) {
+      return { response: ocRes.response, intelligent: true, via: 'openclaw' };
+    }
+  }
+
   const config = getConfig();
   if (!config.apiKey) return fallbackResponse(message);
   try {
     const result = await runAgent(fixed, history || [], agentHelpers);
-    return { response: result.response, intelligent: true };
+    return { response: result.response, intelligent: true, via: 'groq' };
   } catch (err) {
     if (/429|rate limit/i.test(String(err.message))) {
       return { response: 'El servicio está saturado un momento.', intelligent: false };
@@ -305,39 +316,28 @@ ipcMain.handle('agent-config-set', (_e, partial) => saveConfig(partial));
 async function trySimpleIntent(input) {
   const text = (input || '').toLowerCase().trim();
 
-  if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text) || /\bvolumen\s+arriba\b/.test(text)) {
+  if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
     const r = await pc.volume('up');
     return { response: r.result, intelligent: false };
   }
-  if (/\b(baja|bajar)\s+(el\s+)?volumen\b/.test(text) || /\bvolumen\s+abajo\b/.test(text)) {
+  if (/\b(baja|bajar)\s+(el\s+)?volumen\b/.test(text)) {
     const r = await pc.volume('down');
     return { response: r.result, intelligent: false };
   }
-  if (/\b(silencia|mute|silencio|calla el volumen)\b/.test(text)) {
+  if (/\b(silencia|mute|silencio)\b/.test(text)) {
     const r = await pc.volume('mute');
     return { response: r.result, intelligent: false };
   }
-  if (/\b(captura|screenshot|captura de pantalla|hazme una foto de la pantalla)\b/.test(text)) {
+  if (/\b(captura|screenshot|captura de pantalla)\b/.test(text)) {
     const r = await pc.screenshot();
     return { response: r.result, intelligent: false };
   }
-  if (/\b(bloquea|bloquear)\s+(la\s+)?(sesión|pc|pantalla|equipo)\b/.test(text)) {
+  if (/\b(bloquea|bloquear)\s+(la\s+)?(sesión|pc|pantalla)\b/.test(text)) {
     const r = await pc.windows('lock');
     return { response: r.result, intelligent: false };
   }
-  if (/\b(pausa|play|reproduce|siguiente canción|siguiente pista|anterior)\b/.test(text)) {
-    if (/siguiente/.test(text)) {
-      const r = await pc.media('next');
-      return { response: r.result, intelligent: false };
-    }
-    if (/anterior/.test(text)) {
-      const r = await pc.media('prev');
-      return { response: r.result, intelligent: false };
-    }
-    const r = await pc.media('play');
-    return { response: r.result, intelligent: false };
-  }
 
+  // Abrir apps o webs
   const openMatch = text.match(
     /\b(?:abre|abrir|abre\s+me|abrir\s+me|lanza|ejecuta|abre\s+el|abre\s+la)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
@@ -349,20 +349,31 @@ async function trySimpleIntent(input) {
         return { response: r.message || r.result, intelligent: false };
       }
     }
+
     let name = openMatch ? openMatch[1] : '';
     name = name.replace(/\s+(por favor|please|ahora|ya)$/i, '').trim();
+
     if (!name) {
-      for (const app of [
+      const candidates = [
+        'youtube', 'google', 'gmail', 'facebook', 'instagram', 'netflix', 'github',
         'word', 'excel', 'chrome', 'edge', 'notepad', 'calculadora', 'spotify',
-        'discord', 'code', 'firefox', 'paint', 'powerpoint', 'outlook',
-      ]) {
+        'discord', 'code', 'firefox', 'paint', 'powerpoint', 'outlook', 'whatsapp',
+      ];
+      for (const app of candidates) {
         if (text.includes(app)) {
           name = app;
           break;
         }
       }
     }
+
     if (name) {
+      // Web primero
+      const web = resolveWebUrl(name);
+      if (web) {
+        const r = await openUrlHelper(web);
+        return { response: r.message || r.result, intelligent: false };
+      }
       const r = await openAppHelper(name);
       return { response: r.message || r.result, intelligent: false };
     }
