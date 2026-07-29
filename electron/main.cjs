@@ -6,7 +6,7 @@ const fs = require('fs');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
-const { synthesizeToFile, checkEdgeTts } = require('./tts.cjs');
+const { synthesizeToBase64, checkEdgeTts } = require('./tts.cjs');
 const { runAgent, getConfig, saveConfig, fallbackResponse } = require('./agent.cjs');
 
 let mainWindow = null;
@@ -88,7 +88,6 @@ function createTray() {
   });
 }
 
-// ── Helpers shared with agent ───────────────────────────────
 async function openAppHelper(appName) {
   try {
     const name = (appName || '').toLowerCase().trim();
@@ -219,7 +218,6 @@ const agentHelpers = {
   remember: rememberHelper,
 };
 
-// ── IPC ─────────────────────────────────────────────────────
 ipcMain.handle('get-system-stats', async () => {
   try {
     const cpus = os.cpus();
@@ -303,11 +301,10 @@ ipcMain.handle('memory-clear', () => {
   return { ok: true };
 });
 
-// Natural TTS
 ipcMain.handle('tts-speak', async (_e, text) => {
   try {
-    const file = await synthesizeToFile(text, { rate: '+8%', pitch: '+0Hz' });
-    return { ok: true, file };
+    const dataUrl = await synthesizeToBase64(text, { rate: '+5%', pitch: '+0Hz' });
+    return { ok: true, dataUrl };
   } catch (err) {
     return { ok: false, error: err.message, fallback: true };
   }
@@ -318,11 +315,9 @@ ipcMain.handle('tts-status', () => ({
   voice: 'es-ES-ElviraNeural',
 }));
 
-// Intelligent agent
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   const config = getConfig();
   if (!config.apiKey) {
-    // Try simple local patterns first for common tasks, else guide to config
     const simple = await trySimpleIntent(message);
     if (simple) return simple;
     return fallbackResponse(message);
@@ -342,7 +337,6 @@ ipcMain.handle('agent-config-get', () => {
 
 ipcMain.handle('agent-config-set', (_e, partial) => saveConfig(partial));
 
-/** Quick intents without LLM for basic desktop actions */
 async function trySimpleIntent(input) {
   const text = input.toLowerCase().trim();
 

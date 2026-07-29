@@ -20,7 +20,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const onCommandRef = useRef(onCommand);
   onCommandRef.current = onCommand;
 
-  // Check edge-tts availability on desktop
   useEffect(() => {
     if (isDesktop()) {
       window.elyra?.ttsStatus().then((s) => setNaturalTts(!!s.edgeTts));
@@ -30,6 +29,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const stopSpeaking = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.src = '';
       audioRef.current = null;
     }
     if ('speechSynthesis' in window) {
@@ -37,42 +37,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     }
     setSpeaking(false);
   }, []);
-
-  /** Prefer natural neural TTS (edge-tts); fallback to best browser voice */
-  const speak = useCallback(
-    async (text: string) => {
-      stopSpeaking();
-      if (!text?.trim()) return;
-
-      // 1) Desktop + edge-tts → natural neural voice
-      if (isDesktop() && window.elyra) {
-        try {
-          const result = await window.elyra.ttsSpeak(text);
-          if (result.ok && result.file) {
-            setSpeaking(true);
-            const audio = new Audio(`file://${result.file.replace(/\\/g, '/')}`);
-            audioRef.current = audio;
-            audio.onended = () => {
-              setSpeaking(false);
-              audioRef.current = null;
-            };
-            audio.onerror = () => {
-              setSpeaking(false);
-              // fallback below
-              speakBrowser(text);
-            };
-            await audio.play();
-            return;
-          }
-        } catch {
-          // fall through to browser
-        }
-      }
-
-      speakBrowser(text);
-    },
-    [stopSpeaking],
-  );
 
   function speakBrowser(text: string) {
     if (!('speechSynthesis' in window)) return;
@@ -85,17 +49,16 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     utterance.volume = 1;
 
     const voices = window.speechSynthesis.getVoices();
-    // Prefer natural-sounding Spanish voices
-    const preferred = voices.find(
-      (v) =>
-        /elvira|dalia|alvaro|sabina|paulina|jorge|google.*español|microsoft.*(helena|pablo|sabina)/i.test(
-          v.name,
-        ) && v.lang.startsWith('es'),
-    )
-      || voices.find((v) => v.lang.startsWith('es-ES') && /neural|natural|premium/i.test(v.name))
-      || voices.find((v) => v.lang.startsWith('es-MX'))
-      || voices.find((v) => v.lang.startsWith('es'))
-      || null;
+    const preferred =
+      voices.find(
+        (v) =>
+          /elvira|dalia|alvaro|sabina|paulina|jorge|google.*español|microsoft.*(helena|pablo|sabina)/i.test(v.name) &&
+          v.lang.startsWith('es'),
+      ) ||
+      voices.find((v) => v.lang.startsWith('es-ES') && /neural|natural|premium/i.test(v.name)) ||
+      voices.find((v) => v.lang.startsWith('es-MX')) ||
+      voices.find((v) => v.lang.startsWith('es')) ||
+      null;
 
     if (preferred) utterance.voice = preferred;
 
@@ -103,9 +66,42 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
 
-    // Chrome bug: sometimes needs a tick
-    setTimeout(() => window.speechSynthesis.speak(utterance), 50);
+    setTimeout(() => window.speechSynthesis.speak(utterance), 40);
   }
+
+  /** Always speaks. Prefers neural edge-tts on desktop. */
+  const speak = useCallback(
+    async (text: string) => {
+      stopSpeaking();
+      if (!text?.trim()) return;
+
+      if (isDesktop() && window.elyra) {
+        try {
+          const result = await window.elyra.ttsSpeak(text);
+          if (result.ok && result.dataUrl) {
+            setSpeaking(true);
+            const audio = new Audio(result.dataUrl);
+            audioRef.current = audio;
+            audio.onended = () => {
+              setSpeaking(false);
+              audioRef.current = null;
+            };
+            audio.onerror = () => {
+              setSpeaking(false);
+              speakBrowser(text);
+            };
+            await audio.play();
+            return;
+          }
+        } catch {
+          // fallback
+        }
+      }
+
+      speakBrowser(text);
+    },
+    [stopSpeaking],
+  );
 
   const startListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
