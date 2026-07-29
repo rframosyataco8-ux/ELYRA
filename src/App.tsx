@@ -2,27 +2,35 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useVoice } from '@/hooks/useVoice';
 import { processCommand } from '@/lib/commands';
 import { supabase } from '@/lib/supabase';
-import { ParticleField } from '@/components/ParticleField';
-import { ArcReactor } from '@/components/ArcReactor';
-import { ControlPanel } from '@/components/ControlPanel';
-import { ConversationLog, type Message } from '@/components/ConversationLog';
-import { TextInput } from '@/components/TextInput';
-import { AudioVisualizer } from '@/components/AudioVisualizer';
-import { SystemStats } from '@/components/SystemStats';
+import { NetworkGlobe } from '@/components/NetworkGlobe';
+import { Sidebar } from '@/components/Sidebar';
+import { SystemPanel } from '@/components/SystemPanel';
+import { Mic, Send } from 'lucide-react';
+
+export interface Message {
+  id: string;
+  role: 'user' | 'nova';
+  text: string;
+  timestamp: number;
+}
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [booted, setBooted] = useState(false);
-  const [poweredOff, setPoweredOff] = useState(false);
+  const [page, setPage] = useState<'inicio' | 'asistente' | 'config'>('inicio');
+  const [inputValue, setInputValue] = useState('');
+  const [uptime, setUptime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(new Date());
 
   const speakRef = useRef<(text: string) => void>(() => {});
+  const startTimeRef = useRef(Date.now());
 
-  const addMessage = useCallback((role: 'user' | 'jarvis', text: string) => {
+  const addMessage = useCallback((role: 'user' | 'nova', text: string) => {
     setMessages((prev) => [
       ...prev,
       { id: `${Date.now()}-${Math.random()}`, role, text, timestamp: Date.now() },
     ]);
-    supabase.from('conversation_history').insert({ role, text }).then(({ error }) => {
+    supabase.from('conversation_history').insert({ role: role === 'nova' ? 'jarvis' : role, text }).then(({ error }) => {
       if (error) console.error('Error guardando mensaje:', error);
     });
   }, []);
@@ -31,7 +39,7 @@ export default function App() {
     (transcript: string) => {
       addMessage('user', transcript);
       const result = processCommand(transcript);
-      addMessage('jarvis', result.response);
+      addMessage('nova', result.response);
       speakRef.current(result.response);
     },
     [addMessage],
@@ -42,197 +50,180 @@ export default function App() {
 
   speakRef.current = speak;
 
-  // Load conversation history from Supabase on boot
+  // Clock + uptime
   useEffect(() => {
-    if (!booted || poweredOff) return;
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+      setUptime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Load history
+  useEffect(() => {
+    if (!booted) return;
     supabase
       .from('conversation_history')
       .select('id, role, text, created_at')
       .order('created_at', { ascending: true })
       .limit(50)
       .then(({ data, error }) => {
-        if (error) {
-          console.error('Error cargando historial:', error);
-          return;
-        }
+        if (error) return;
         if (data && data.length > 0) {
           setMessages(
             data.map((row) => ({
               id: row.id,
-              role: row.role as 'user' | 'jarvis',
+              role: (row.role === 'jarvis' ? 'nova' : row.role) as 'user' | 'nova',
               text: row.text,
               timestamp: new Date(row.created_at).getTime(),
-            }))
+            })),
           );
         }
       });
-  }, [booted, poweredOff]);
+  }, [booted]);
+
+  // Auto-boot
+  useEffect(() => {
+    if (!booted) {
+      const timer = setTimeout(() => {
+        setBooted(true);
+        const bootMsg = 'Sistema iniciado. Todos los módulos operativos. Hola, estoy lista para ayudarte.';
+        addMessage('nova', bootMsg);
+        setTimeout(() => speak(bootMsg), 400);
+      }, 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [booted, addMessage, speak]);
 
   const handleToggleListen = () => {
-    if (listening) {
-      stopListening();
-    } else {
-      startListening();
-    }
+    if (listening) stopListening();
+    else startListening();
   };
 
-  const handleSend = (text: string) => {
+  const handleSend = () => {
+    const text = inputValue.trim();
+    if (!text) return;
+    setInputValue('');
     addMessage('user', text);
     const result = processCommand(text);
-    addMessage('jarvis', result.response);
+    addMessage('nova', result.response);
     speak(result.response);
   };
 
-  const handleShutdown = () => {
-    stopSpeaking();
-    stopListening();
-    setPoweredOff(true);
+  const formatUptime = (s: number) => {
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    return `${h}h ${m}m ${s % 60}s`;
   };
 
-  const handleBoot = () => {
-    setPoweredOff(false);
-    setBooted(true);
-    const bootMsg = 'Sistema iniciado. Todos los módulos operativos. Hola, señor. J.A.R.V.I.S. a su servicio.';
-    addMessage('jarvis', bootMsg);
-    setTimeout(() => speak(bootMsg), 300);
-  };
-
-  // Auto-boot on first load
-  useEffect(() => {
-    if (!booted && !poweredOff) {
-      const timer = setTimeout(() => {
-        setBooted(true);
-        const bootMsg = 'Sistema iniciado. Todos los módulos operativos. Hola, señor. J.A.R.V.I.S. a su servicio.';
-        addMessage('jarvis', bootMsg);
-        setTimeout(() => speak(bootMsg), 500);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [booted, poweredOff, addMessage, speak]);
-
-  if (poweredOff) {
-    return (
-      <div className="min-h-screen bg-dark-900 grid-bg flex items-center justify-center">
-        <div className="text-center space-y-6">
-          <div className="w-24 h-24 mx-auto rounded-full border-2 border-jarvis-500/20 flex items-center justify-center">
-            <button
-              onClick={handleBoot}
-              className="w-16 h-16 rounded-full border-2 border-jarvis-500/40 hover:border-jarvis-glow hover:animate-glow-pulse flex items-center justify-center transition-all"
-            >
-              <span className="font-display text-jarvis-500 text-xs tracking-widest">ON</span>
-            </button>
-          </div>
-          <p className="font-display text-jarvis-500/40 text-sm tracking-[0.3em] uppercase">
-            Sistema Apagado
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const statusLabel = speaking ? 'Hablando...' : listening ? 'Conversando...' : 'En espera';
 
   return (
-    <div className="h-screen w-screen bg-dark-900 grid-bg relative overflow-hidden flex flex-col">
-      {/* Background glow */}
-      <div className="absolute inset-0 radial-glow pointer-events-none" />
-      <ParticleField active={speaking || listening} />
+    <div className="h-screen w-screen bg-[#030810] text-sky-100 flex overflow-hidden select-none">
+      {/* Left Sidebar */}
+      <Sidebar active={page} onNavigate={setPage} />
 
-      {/* Scan line effect */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute left-0 right-0 h-px bg-jarvis-glow/20 animate-scan" />
-      </div>
+      {/* Main area */}
+      <div className="flex-1 flex flex-col min-w-0 relative">
+        {/* Top bar */}
+        <header className="h-10 flex items-center justify-end px-4 gap-2 border-b border-sky-500/10">
+          <button className="w-3 h-3 rounded-sm bg-sky-500/20 hover:bg-sky-500/40 transition-colors" />
+          <button className="w-3 h-3 rounded-sm bg-sky-500/20 hover:bg-sky-500/40 transition-colors" />
+          <button className="w-3 h-3 rounded-sm bg-red-500/40 hover:bg-red-500/60 transition-colors" />
+        </header>
 
-      {/* Header */}
-      <header className="relative z-10 flex items-center justify-between px-6 py-3 border-b border-jarvis-500/15">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-jarvis-glow animate-pulse" />
-          <h1 className="font-display text-lg tracking-[0.3em] text-jarvis-glow text-glow-strong">
-            J.A.R.V.I.S.
-          </h1>
-          <span className="text-[10px] text-jarvis-500/50 tracking-widest hidden sm:inline">
-            v2.0.1 — JUST A RATHER VERY INTELLIGENT SYSTEM
-          </span>
-        </div>
-        <div className="flex items-center gap-4 text-[10px] text-jarvis-500/60 tracking-widest uppercase">
-          <span className="hidden md:inline">Sistema Operativo</span>
-          <span className={`flex items-center gap-1 ${speaking || listening ? 'text-jarvis-glow' : ''}`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-jarvis-glow animate-pulse" />
-            {speaking ? 'TX' : listening ? 'RX' : 'IDLE'}
-          </span>
-        </div>
-      </header>
+        {/* Content */}
+        <div className="flex-1 flex min-h-0">
+          {/* Center */}
+          <main className="flex-1 flex flex-col items-center justify-between py-6 px-8 relative min-w-0">
+            {/* Greeting */}
+            <div className="w-full text-center space-y-2 z-10">
+              <h2 className="text-2xl font-semibold text-white tracking-wide">Hola, Fabricio</h2>
+              <p className="text-sm text-sky-300/60">Estoy monitoreando tu PC y lista para ayudarte.</p>
+              <div className="inline-flex items-center gap-2 mt-2 px-3.5 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/20">
+                <span className={`w-1.5 h-1.5 rounded-full ${speaking || listening ? 'bg-sky-400 animate-pulse' : 'bg-sky-500/50'}`} />
+                <span className="text-xs text-sky-300/80">{statusLabel}</span>
+              </div>
+            </div>
 
-      {/* Main content */}
-      <main className="relative z-10 flex-1 flex flex-col lg:flex-row gap-4 p-4 min-h-0">
-        {/* Left panel - System stats */}
-        <aside className="hud-panel hud-corner rounded-lg p-4 lg:w-64 flex-shrink-0">
-          <h2 className="font-display text-xs tracking-widest text-jarvis-500/60 uppercase mb-3">
-            Estado del Sistema
-          </h2>
-          <SystemStats />
-          <div className="mt-4 pt-4 border-t border-jarvis-500/10">
-            <h3 className="font-display text-[10px] tracking-widest text-jarvis-500/50 uppercase mb-2">
-              Capacidades
-            </h3>
-            <ul className="space-y-1.5 text-[11px] text-jarvis-300/70">
-              <li className="flex items-center gap-2">
-                <span className="w-1 h-1 rounded-full bg-jarvis-glow" /> Voz y escucha
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1 h-1 rounded-full bg-jarvis-glow" /> Abrir sitios web
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1 h-1 rounded-full bg-jarvis-glow" /> Búsqueda Google
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1 h-1 rounded-full bg-jarvis-glow" /> Calculadora
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="w-1 h-1 rounded-full bg-jarvis-glow" /> Hora y fecha
-              </li>
-            </ul>
+            {/* Interactive Globe */}
+            <div className="flex-1 flex items-center justify-center relative">
+              <NetworkGlobe speaking={speaking} listening={listening} size={400} />
+            </div>
+
+            {/* Input bar */}
+            <div className="w-full max-w-xl z-10">
+              {!supported && (
+                <p className="text-amber-400/70 text-xs text-center mb-2">
+                  Tu navegador no soporta voz. Usa Chrome o Edge. Puedes escribir comandos.
+                </p>
+              )}
+              {error && (
+                <p className="text-red-400/70 text-xs text-center mb-2">{error}</p>
+              )}
+
+              <div className="flex items-center gap-3 rounded-full bg-[#0a1525]/90 border border-sky-500/20 px-4 py-2.5 shadow-[0_0_30px_rgba(14,165,233,0.08)]">
+                <button
+                  onClick={handleToggleListen}
+                  className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                    listening
+                      ? 'bg-sky-500/30 text-sky-300 shadow-[0_0_15px_rgba(56,189,248,0.4)]'
+                      : 'text-sky-400/60 hover:text-sky-300 hover:bg-sky-500/10'
+                  }`}
+                  title={listening ? 'Detener' : 'Hablar'}
+                >
+                  <Mic className="w-4.5 h-4.5" />
+                </button>
+
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                  placeholder="Puedes preguntarme o darme una orden..."
+                  className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
+                />
+
+                <button
+                  onClick={handleSend}
+                  disabled={!inputValue.trim()}
+                  className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:text-sky-300 hover:bg-sky-500/10 disabled:opacity-30 transition-all"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </main>
+
+          {/* Right panel */}
+          <div className="pr-5 py-5 flex flex-col">
+            <SystemPanel />
           </div>
-        </aside>
+        </div>
 
-        {/* Center - Arc reactor + visualizer */}
-        <section className="flex-1 flex flex-col items-center justify-center gap-8 min-h-0">
-          <ArcReactor speaking={speaking} listening={listening} />
-          <AudioVisualizer active={speaking || listening} bars={32} />
-
-          {!supported && (
-            <p className="text-amber-400/70 text-xs text-center max-w-md">
-              Su navegador no soporta reconocimiento de voz. Use Chrome o Edge para activar el micrófono.
-              Puede seguir escribiendo comandos.
-            </p>
-          )}
-
-          {error && (
-            <p className="text-red-400/70 text-xs text-center max-w-md animate-fade-in">
-              {error}
-            </p>
-          )}
-
-          <ControlPanel
-            listening={listening}
-            speaking={speaking}
-            onToggleListen={handleToggleListen}
-            onStopSpeak={stopSpeaking}
-            onShutdown={handleShutdown}
-          />
-        </section>
-
-        {/* Right panel - Conversation log */}
-        <aside className="hud-panel hud-corner rounded-lg p-4 lg:w-80 flex flex-col min-h-0 max-h-[40vh] lg:max-h-none">
-          <h2 className="font-display text-xs tracking-widest text-jarvis-500/60 uppercase mb-3 flex-shrink-0">
-            Registro de Comunicación
-          </h2>
-          <ConversationLog messages={messages} />
-        </aside>
-      </main>
-
-      {/* Bottom - Text input */}
-      <footer className="relative z-10 px-4 pb-4">
-        <TextInput onSend={handleSend} disabled={poweredOff} />
-      </footer>
+        {/* Bottom status bar */}
+        <footer className="h-9 flex items-center justify-between px-5 border-t border-sky-500/10 text-[11px] text-sky-400/50">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              Conectado
+            </span>
+            <span className="flex items-center gap-1.5">
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+              </svg>
+              Uptime: {formatUptime(uptime)}
+            </span>
+          </div>
+          <span>
+            {currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}{' '}
+            {currentTime.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+          </span>
+        </footer>
+      </div>
     </div>
   );
 }

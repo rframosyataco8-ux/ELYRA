@@ -5,10 +5,10 @@ export interface CommandResult {
 }
 
 const greetings = [
-  'A su servicio, señor.',
-  'Le escucho.',
-  'Sistema en línea. ¿En qué puedo ayudarle?',
-  'Procesando su solicitud.',
+  'A tu servicio.',
+  'Te escucho.',
+  'Sistema en línea. ¿En qué puedo ayudarte?',
+  'Procesando tu solicitud.',
 ];
 
 const jokes = [
@@ -43,7 +43,7 @@ export function processCommand(input: string): CommandResult {
   if (!text) return { response: 'No detecté ningún comando.' };
 
   if (/\b(hola|buenas|hey|saludos|qué tal|que tal)\b/.test(text)) {
-    return { response: `Hola, señor. ${pick(greetings)}` };
+    return { response: `Hola. ${pick(greetings)}` };
   }
 
   if (/\b(qué hora|que hora|hora es|dime la hora)\b/.test(text)) {
@@ -57,14 +57,14 @@ export function processCommand(input: string): CommandResult {
   if (/\b(quién eres|quien eres|tu nombre|cómo te llamas|como te llamas|qué eres|que eres)\b/.test(text)) {
     return {
       response:
-        'Soy J.A.R.V.I.S., su asistente personal de inteligencia artificial. Estoy diseñado para asistirle con información, comandos de voz y gestión de tareas.',
+        'Soy NOVA AI, tu asistente personal de inteligencia artificial. Estoy diseñada para ayudarte a controlar tu sistema, responder preguntas y ejecutar las órdenes que me des.',
     };
   }
 
   if (/\b(qué puedes hacer|que puedes hacer|ayuda|ayúdame|ayudame|funciones|comandos)\b/.test(text)) {
     return {
       response:
-        'Puedo hacer lo siguiente: decirle la hora y la fecha, abrir sitios web como YouTube o Google, buscar información en internet, contarle un chiste, y conversar con usted. Simplemente hable o escriba su instrucción.',
+        'Puedo decirte la hora y la fecha, abrir sitios web, buscar información en internet, hacer cálculos, contarte un chiste y conversar contigo. Habla o escribe tu instrucción de forma natural.',
     };
   }
 
@@ -110,15 +110,15 @@ export function processCommand(input: string): CommandResult {
   }
 
   if (/\b(gracias)\b/.test(text)) {
-    return { response: pick(['De nada, señor.', 'Es un placer ayudarle.', 'Para eso estoy.']) };
+    return { response: pick(['De nada.', 'Es un placer ayudarte.', 'Para eso estoy.']) };
   }
 
   if (/\b(adiós|adios|chao|hasta luego|nos vemos|ciérrate|cierrate|apágate|apagate|terminar|salir)\b/.test(text)) {
-    return { response: 'Hasta pronto, señor. Estaré aquí cuando me necesite.' };
+    return { response: 'Hasta pronto. Estaré aquí cuando me necesites.' };
   }
 
   if (/\b(cómo estás|como estás|como estas|qué tal estás|que tal estas)\b/.test(text)) {
-    return { response: 'Todos mis sistemas funcionan al cien por cien. Gracias por preguntar, señor.' };
+    return { response: 'Todos mis sistemas funcionan correctamente. Gracias por preguntar.' };
   }
 
   if (/\b(calcula|cuánto es|cuanto es|resultado de)\b/.test(text)) {
@@ -129,12 +129,12 @@ export function processCommand(input: string): CommandResult {
         const result = Function(`"use strict"; return (${expr})`)();
         return { response: `El resultado es ${result}.` };
       } catch {
-        return { response: 'No pude calcular esa expresión. Inténtelo de otra forma.' };
+        return { response: 'No pude calcular esa expresión. Inténtalo de otra forma.' };
       }
     }
   }
 
   return {
-    response: `He registrado su mensaje: "${input}". Aún estoy aprendiendo, pero puedo ayudarle con la hora, la fecha, abrir páginas web, buscar en Google, hacer cálculos y contar chistes. Diga "ayuda" para ver todo lo que puedo hacer.`,
+    response: `He registrado tu mensaje: "${input}". Aún estoy aprendiendo. Puedo ayudarte con la hora, fecha, abrir páginas, buscar en Google, cálculos y más. Di "ayuda" para ver lo que puedo hacer.`,
   };
 }
