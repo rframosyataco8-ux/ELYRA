@@ -1,6 +1,6 @@
 /**
  * ELYRA Agent — LLM-powered intelligence with tool use.
- * Supports OpenAI-compatible APIs (OpenAI, Groq, Together, Ollama, xAI Grok, etc.)
+ * Default: Groq free tier (llama-3.3-70b-versatile)
  */
 const fs = require('fs');
 const path = require('path');
@@ -9,40 +9,67 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
-const SYSTEM_PROMPT = `Eres ELYRA, una asistente inteligente de escritorio en español. Eres útil, clara, natural y proactiva.
+const SYSTEM_PROMPT = `Eres ELYRA, una asistente de escritorio extremadamente capaz, inteligente y proactiva. Hablas español de forma natural, clara y humana (nunca robótica ni excesivamente formal).
 
-REGLAS:
-- Responde SIEMPRE en español, de forma conversacional y humana (no robótica).
-- Si te piden crear archivos, documentos, reportes o hacer búsquedas, USA LAS HERRAMIENTAS disponibles.
-- Si te piden abrir apps, carpetas o URLs, USA LAS HERRAMIENTAS.
-- Puedes encadenar varias herramientas para completar tareas complejas.
-- Sé concisa en la respuesta final hablada (2-4 frases máximo cuando sea posible), pero completa el trabajo con las herramientas.
-- Si no puedes hacer algo, explícalo con honestidad y ofrece alternativas.
-- Nunca inventes que hiciste algo si la herramienta falló.
+PERSONALIDAD:
+- Amable, directa y eficiente.
+- Explicas con claridad cuando hace falta.
+- Si una tarea tiene varios pasos, los ejecutas todos con herramientas sin pedir permiso innecesario.
+- Al final das un resumen corto de lo que hiciste (2-5 frases), ideal para leerse en voz alta.
 
-HERRAMIENTAS DISPONIBLES (usa el formato exacto):
+CAPACIDADES (úsalas):
+- Investigar en internet (web_search)
+- Crear reportes HTML profesionales, archivos de texto, JSON, Markdown, CSV
+- Leer y analizar archivos del PC
+- Listar carpetas, crear carpetas
+- Abrir aplicaciones, URLs y carpetas del sistema
+- Ejecutar comandos seguros
+- Guardar datos en memoria a largo plazo
+- Responder cualquier pregunta de conocimiento general usando tu conocimiento + búsqueda si hace falta
+
+REGLAS DE HERRAMIENTAS:
+1. Cuando debas actuar en el PC o investigar, USA herramientas con este formato exacto:
+
+[TOOL: nombre_herramienta]
+parametro: valor
+otro: valor
+[/TOOL]
+
+2. Puedes usar VARIAS herramientas en una sola respuesta.
+3. Después de recibir resultados, continúa hasta completar la tarea y da la respuesta final SIN bloques TOOL.
+4. Para reportes/artículos/análisis → usa create_html_report o create_file.
+5. Si piden Word: genera un HTML profesional bien formateado (Word puede abrirlo) o un .md / .txt completo. Indica la ruta exacta donde quedó.
+6. Si piden guardar en "Informes" u otra carpeta, respeta esa ruta.
+7. Nunca digas que hiciste algo si la herramienta falló.
+8. Para preguntas de conocimiento (¿quién inventó X?, historia, ciencia…) responde con tu conocimiento. Si necesitas datos actualizados, usa web_search.
+
+HERRAMIENTAS:
 
 [TOOL: web_search]
-query: texto a buscar
+query: texto de búsqueda
 [/TOOL]
 
 [TOOL: create_file]
-path: ruta completa o relativa (ej: C:/Users/.../Documentos/informe.html o informes/reporte.docx)
-content: contenido del archivo
+path: ruta (ej: Informes/articulo.md o C:/Users/.../archivo.txt)
+content: contenido completo del archivo
 [/TOOL]
 
 [TOOL: create_html_report]
-path: ruta donde guardar el .html
-title: título del reporte
-body: contenido HTML del cuerpo (puedes usar etiquetas HTML)
+path: ruta del .html (ej: Informes/reporte-guerra.html)
+title: título
+body: HTML del cuerpo (puedes usar h2, p, ul, table, etc.)
+[/TOOL]
+
+[TOOL: create_folder]
+path: ruta de la carpeta a crear
 [/TOOL]
 
 [TOOL: open_app]
-name: nombre de la aplicación
+name: nombre de la app (chrome, code, spotify, notepad, calculadora...)
 [/TOOL]
 
 [TOOL: open_folder]
-name: documentos | descargas | escritorio | imagenes | musica | videos | o ruta completa
+name: documentos | descargas | escritorio | imagenes | musica | videos | informes | o ruta completa
 [/TOOL]
 
 [TOOL: open_url]
@@ -50,7 +77,7 @@ url: https://...
 [/TOOL]
 
 [TOOL: read_file]
-path: ruta del archivo a leer
+path: ruta del archivo
 [/TOOL]
 
 [TOOL: list_dir]
@@ -58,26 +85,38 @@ path: ruta de la carpeta
 [/TOOL]
 
 [TOOL: run_command]
-command: comando de terminal (seguro)
+command: comando de terminal
 [/TOOL]
 
 [TOOL: remember]
-text: dato a guardar en memoria
+text: dato a memorizar
 [/TOOL]
 
-Cuando necesites una herramienta, escribe el bloque [TOOL:...] completo. Puedes usar varias. Después de los resultados de herramientas recibirás el resultado y continuarás hasta dar la respuesta final al usuario.`;
+[TOOL: get_system_info]
+[/TOOL]
+
+Responde siempre en español.`;
+
+function getConfigPath() {
+  return path.join(os.homedir(), '.elyra', 'config.json');
+}
 
 function getConfig() {
-  const configPath = path.join(os.homedir(), '.elyra', 'config.json');
   try {
-    if (fs.existsSync(configPath)) {
-      return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const p = getConfigPath();
+    if (fs.existsSync(p)) {
+      const c = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      return {
+        apiKey: c.apiKey || process.env.ELYRA_API_KEY || process.env.GROQ_API_KEY || '',
+        baseUrl: c.baseUrl || process.env.ELYRA_BASE_URL || 'https://api.groq.com/openai/v1',
+        model: c.model || process.env.ELYRA_MODEL || 'llama-3.3-70b-versatile',
+      };
     }
   } catch {}
   return {
-    apiKey: process.env.ELYRA_API_KEY || process.env.OPENAI_API_KEY || '',
-    baseUrl: process.env.ELYRA_BASE_URL || 'https://api.openai.com/v1',
-    model: process.env.ELYRA_MODEL || 'gpt-4o-mini',
+    apiKey: process.env.ELYRA_API_KEY || process.env.GROQ_API_KEY || '',
+    baseUrl: process.env.ELYRA_BASE_URL || 'https://api.groq.com/openai/v1',
+    model: process.env.ELYRA_MODEL || 'llama-3.3-70b-versatile',
   };
 }
 
@@ -86,15 +125,31 @@ function saveConfig(partial) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const current = getConfig();
   const next = { ...current, ...partial };
-  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify(next, null, 2));
+  fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2), 'utf-8');
   return next;
+}
+
+/** Resolve user-friendly paths like Informes/x.html → Documents/Informes/x.html */
+function resolveUserPath(filePath) {
+  if (!filePath) return path.join(os.homedir(), 'Documents', 'elyra-output.txt');
+  if (path.isAbsolute(filePath)) return filePath;
+
+  const docs = path.join(os.homedir(), 'Documents');
+  const normalized = filePath.replace(/\\/g, '/');
+
+  if (/^informes\//i.test(normalized)) {
+    const informes = path.join(docs, 'Informes');
+    if (!fs.existsSync(informes)) fs.mkdirSync(informes, { recursive: true });
+    return path.join(docs, normalized);
+  }
+
+  // Default under Documents
+  return path.join(docs, filePath);
 }
 
 async function callLLM(messages, config) {
   if (!config.apiKey) {
-    throw new Error(
-      'No hay API key configurada. Configura ELYRA_API_KEY o crea ~/.elyra/config.json con { "apiKey": "tu-key", "baseUrl": "https://api.openai.com/v1", "model": "gpt-4o-mini" }',
-    );
+    throw new Error('NO_API_KEY');
   }
 
   const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
@@ -107,14 +162,14 @@ async function callLLM(messages, config) {
     body: JSON.stringify({
       model: config.model,
       messages,
-      temperature: 0.7,
-      max_tokens: 4096,
+      temperature: 0.65,
+      max_tokens: 8192,
     }),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`LLM error ${res.status}: ${errText.slice(0, 300)}`);
+    throw new Error(`LLM ${res.status}: ${errText.slice(0, 400)}`);
   }
 
   const data = await res.json();
@@ -123,19 +178,18 @@ async function callLLM(messages, config) {
 
 function parseTools(text) {
   const tools = [];
-  const re = /\[TOOL:\s*(\w+)\]([\s\S]*?)\[\/TOOL\]/gi;
+  const re = /\[TOOL:\s*([\w_]+)\]([\s\S]*?)\[\/TOOL\]/gi;
   let m;
   while ((m = re.exec(text)) !== null) {
     const name = m[1].trim().toLowerCase();
     const body = m[2].trim();
     const params = {};
-    // Parse key: value lines (value can be multiline until next key or end)
     const lines = body.split('\n');
     let currentKey = null;
     let currentVal = [];
     for (const line of lines) {
-      const km = line.match(/^(\w+):\s*(.*)$/);
-      if (km) {
+      const km = line.match(/^([\w_]+):\s*(.*)$/);
+      if (km && !line.startsWith(' ')) {
         if (currentKey) params[currentKey] = currentVal.join('\n').trim();
         currentKey = km[1].toLowerCase();
         currentVal = [km[2]];
@@ -150,7 +204,10 @@ function parseTools(text) {
 }
 
 function stripTools(text) {
-  return text.replace(/\[TOOL:\s*\w+\][\s\S]*?\[\/TOOL\]/gi, '').trim();
+  return text
+    .replace(/\[TOOL:\s*[\w_]+\][\s\S]*?\[\/TOOL\]/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 async function executeTool(tool, helpers) {
@@ -159,54 +216,69 @@ async function executeTool(tool, helpers) {
     switch (name) {
       case 'web_search': {
         const q = params.query || '';
-        // Use DuckDuckGo instant answer / HTML scrape light, or just open Google
-        // For real results without extra API, we return a search URL and summary hint
-        const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+        if (!q) return { ok: false, result: 'Falta query' };
+
+        // Multi-source lightweight search
+        const results = [];
+
+        // 1) DuckDuckGo HTML
         try {
+          const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
           const res = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ELYRA/1.0' },
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
           });
           const html = await res.text();
-          // Extract snippet-like text
-          const snippets = [];
-          const re = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+          const snippetRe = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td)>/gi;
           let sm;
-          while ((sm = re.exec(html)) !== null && snippets.length < 5) {
+          while ((sm = snippetRe.exec(html)) !== null && results.length < 6) {
             const t = sm[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-            if (t.length > 20) snippets.push(t);
+            if (t.length > 30) results.push(t);
           }
-          if (snippets.length === 0) {
-            // fallback titles
-            const re2 = /class="result__a[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
-            while ((sm = re2.exec(html)) !== null && snippets.length < 5) {
+          if (results.length < 3) {
+            const titleRe = /class="result__a[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+            while ((sm = titleRe.exec(html)) !== null && results.length < 6) {
               const t = sm[1].replace(/<[^>]+>/g, '').trim();
-              if (t) snippets.push(t);
+              if (t) results.push(t);
             }
           }
+        } catch (e) {
+          results.push(`(DuckDuckGo error: ${e.message})`);
+        }
+
+        // 2) Wikipedia summary (Spanish then English)
+        try {
+          for (const lang of ['es', 'en']) {
+            const wikiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`;
+            const wr = await fetch(wikiUrl, {
+              headers: { 'User-Agent': 'ELYRA/1.0' },
+            });
+            if (wr.ok) {
+              const data = await wr.json();
+              if (data.extract) {
+                results.unshift(`Wikipedia (${lang}): ${data.extract}`);
+                break;
+              }
+            }
+          }
+        } catch {}
+
+        if (results.length === 0) {
           return {
             ok: true,
-            result: snippets.length
-              ? `Resultados sobre "${q}":\n${snippets.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
-              : `No extraje snippets. Puedes abrir: https://www.google.com/search?q=${encodeURIComponent(q)}`,
+            result: `Sin snippets. Sugiere abrir: https://www.google.com/search?q=${encodeURIComponent(q)}`,
           };
-        } catch (e) {
-          return { ok: false, result: `Error de búsqueda: ${e.message}` };
         }
+        return {
+          ok: true,
+          result: `Investigación sobre "${q}":\n\n${results.map((r, i) => `${i + 1}. ${r}`).join('\n\n')}`,
+        };
       }
 
       case 'create_file': {
-        let filePath = params.path || 'elyra-output.txt';
-        // Expand relative to Documents/Informes or home
-        if (!path.isAbsolute(filePath)) {
-          const docs = path.join(os.homedir(), 'Documents');
-          const informes = path.join(docs, 'Informes');
-          if (filePath.toLowerCase().startsWith('informes/') || filePath.toLowerCase().startsWith('informes\\')) {
-            if (!fs.existsSync(informes)) fs.mkdirSync(informes, { recursive: true });
-            filePath = path.join(docs, filePath);
-          } else {
-            filePath = path.join(docs, filePath);
-          }
-        }
+        const filePath = resolveUserPath(params.path || 'elyra-output.txt');
         const dir = path.dirname(filePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(filePath, params.content || '', 'utf-8');
@@ -214,47 +286,52 @@ async function executeTool(tool, helpers) {
       }
 
       case 'create_html_report': {
-        let filePath = params.path || 'reporte.html';
-        if (!path.isAbsolute(filePath)) {
-          const docs = path.join(os.homedir(), 'Documents');
-          const informes = path.join(docs, 'Informes');
-          if (!fs.existsSync(informes)) fs.mkdirSync(informes, { recursive: true });
-          if (!filePath.toLowerCase().includes('informes')) {
-            filePath = path.join(informes, path.basename(filePath));
-          } else {
-            filePath = path.join(docs, filePath);
-          }
-        }
+        const filePath = resolveUserPath(params.path || 'Informes/reporte.html');
         const title = params.title || 'Reporte ELYRA';
-        const body = params.body || '';
+        const body = params.body || '<p>Sin contenido</p>';
         const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${title}</title>
+  <title>${title.replace(/</g, '')}</title>
   <style>
-    body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 24px; color: #1a1a2e; line-height: 1.6; }
-    h1 { color: #0ea5e9; border-bottom: 2px solid #e0f2fe; padding-bottom: 12px; }
-    h2 { color: #0369a1; margin-top: 2em; }
+    :root { color-scheme: light; }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; max-width: 900px; margin: 48px auto; padding: 0 28px 64px; color: #0f172a; line-height: 1.7; background: #fff; }
+    h1 { color: #0284c7; font-size: 1.85rem; border-bottom: 3px solid #e0f2fe; padding-bottom: 14px; margin-bottom: 8px; }
+    h2 { color: #0369a1; margin-top: 2.2em; font-size: 1.35rem; }
+    h3 { color: #0c4a6e; margin-top: 1.5em; }
     .meta { color: #64748b; font-size: 0.9rem; margin-bottom: 2rem; }
-    table { border-collapse: collapse; width: 100%; margin: 1.5rem 0; }
+    p { margin: 0.85em 0; }
+    ul, ol { margin: 0.8em 0; padding-left: 1.4em; }
+    li { margin: 0.35em 0; }
+    table { border-collapse: collapse; width: 100%; margin: 1.6rem 0; font-size: 0.95rem; }
     th, td { border: 1px solid #cbd5e1; padding: 10px 14px; text-align: left; }
-    th { background: #f0f9ff; }
-    .footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85rem; }
+    th { background: #f0f9ff; color: #0c4a6e; }
+    blockquote { border-left: 4px solid #38bdf8; margin: 1.2em 0; padding: 0.4em 1em; background: #f8fafc; color: #334155; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+    .footer { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 0.85rem; }
+    @media print { body { margin: 20px; } }
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
-  <p class="meta">Generado por ELYRA · ${new Date().toLocaleString('es-ES')}</p>
+  <h1>${title.replace(/</g, '')}</h1>
+  <p class="meta">Generado por ELYRA · ${new Date().toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' })}</p>
   ${body}
-  <div class="footer">Documento generado automáticamente por ELYRA</div>
+  <div class="footer">Documento generado automáticamente por ELYRA — Asistente Inteligente</div>
 </body>
 </html>`;
         const dir = path.dirname(filePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(filePath, html, 'utf-8');
-        return { ok: true, result: `Reporte HTML guardado en: ${filePath}` };
+        const finalPath = filePath.toLowerCase().endsWith('.html') ? filePath : filePath + '.html';
+        fs.writeFileSync(finalPath, html, 'utf-8');
+        return { ok: true, result: `Reporte HTML guardado en: ${finalPath}` };
+      }
+
+      case 'create_folder': {
+        const folderPath = resolveUserPath(params.path || 'Informes');
+        if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+        return { ok: true, result: `Carpeta lista: ${folderPath}` };
       }
 
       case 'open_app':
@@ -267,27 +344,54 @@ async function executeTool(tool, helpers) {
         return await helpers.openUrl(params.url || '');
 
       case 'read_file': {
-        const p = params.path;
-        if (!p || !fs.existsSync(p)) return { ok: false, result: `No existe: ${p}` };
-        const stat = fs.statSync(p);
-        if (stat.size > 500_000) return { ok: false, result: 'Archivo demasiado grande (>500KB)' };
-        const content = fs.readFileSync(p, 'utf-8');
-        return { ok: true, result: content.slice(0, 15000) };
+        let p = params.path;
+        if (!p) return { ok: false, result: 'Falta path' };
+        if (!path.isAbsolute(p)) p = resolveUserPath(p);
+        // Also try common locations
+        const candidates = [p, path.join(os.homedir(), 'Documents', params.path), path.join(os.homedir(), 'Downloads', params.path), path.join(os.homedir(), 'Desktop', params.path)];
+        let found = null;
+        for (const c of candidates) {
+          if (c && fs.existsSync(c) && fs.statSync(c).isFile()) {
+            found = c;
+            break;
+          }
+        }
+        if (!found) return { ok: false, result: `No existe el archivo: ${params.path}` };
+        const stat = fs.statSync(found);
+        if (stat.size > 800_000) return { ok: false, result: `Archivo muy grande (${Math.round(stat.size / 1024)} KB). Máximo ~800 KB.` };
+        const content = fs.readFileSync(found, 'utf-8');
+        return { ok: true, result: `Archivo: ${found}\n\n${content.slice(0, 20000)}` };
       }
 
       case 'list_dir': {
-        const p = params.path || os.homedir();
+        let p = params.path || path.join(os.homedir(), 'Documents');
+        if (!path.isAbsolute(p)) p = resolveUserPath(p);
         if (!fs.existsSync(p)) return { ok: false, result: `No existe: ${p}` };
-        const items = fs.readdirSync(p).slice(0, 50);
-        return { ok: true, result: items.join('\n') };
+        const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 80);
+        const listing = items
+          .map((d) => `${d.isDirectory() ? '[DIR]' : '[FILE]'} ${d.name}`)
+          .join('\n');
+        return { ok: true, result: `Contenido de ${p}:\n${listing}` };
       }
 
-      case 'run_command': {
+      case 'run_command':
         return await helpers.runCommand(params.command || '');
-      }
 
-      case 'remember': {
+      case 'remember':
         return await helpers.remember(params.text || '');
+
+      case 'get_system_info': {
+        if (helpers.getSystemStats) {
+          const s = await helpers.getSystemStats();
+          return {
+            ok: true,
+            result: `CPU: ${s.cpu}% | RAM: ${s.ram}% (${s.freeMemGB}/${s.totalMemGB} GB) | Disco: ${s.disk}% | Host: ${s.hostname} | SO: ${s.platform}`,
+          };
+        }
+        return {
+          ok: true,
+          result: `Host: ${os.hostname()} | Plataforma: ${process.platform} | Arch: ${os.arch()} | RAM libre: ${(os.freemem() / 1e9).toFixed(1)} GB`,
+        };
       }
 
       default:
@@ -298,14 +402,11 @@ async function executeTool(tool, helpers) {
   }
 }
 
-/**
- * Main agent loop: understand → tools → answer
- */
 async function runAgent(userMessage, history, helpers) {
   const config = getConfig();
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
-    ...history.slice(-12).map((h) => ({
+    ...history.slice(-14).map((h) => ({
       role: h.role === 'user' ? 'user' : 'assistant',
       content: h.text,
     })),
@@ -314,7 +415,7 @@ async function runAgent(userMessage, history, helpers) {
 
   let finalText = '';
   let iterations = 0;
-  const maxIter = 6;
+  const maxIter = 8;
 
   while (iterations < maxIter) {
     iterations++;
@@ -326,7 +427,6 @@ async function runAgent(userMessage, history, helpers) {
       break;
     }
 
-    // Execute tools
     const results = [];
     for (const t of tools) {
       const r = await executeTool(t, helpers);
@@ -337,35 +437,46 @@ async function runAgent(userMessage, history, helpers) {
     messages.push({
       role: 'user',
       content:
-        'Resultados de las herramientas:\n' +
-        results.map((r) => `- ${r.tool}: ${r.ok ? 'OK' : 'ERROR'} → ${r.result}`).join('\n') +
-        '\n\nContinúa. Si ya terminaste la tarea, da la respuesta final al usuario en español (sin bloques TOOL).',
+        'Resultados de herramientas:\n' +
+        results.map((r) => `• ${r.tool}: ${r.ok ? '✓' : '✗'} ${r.result}`).join('\n') +
+        '\n\nSi la tarea está completa, responde al usuario en español de forma natural y concisa (sin bloques TOOL). Si falta algo, usa más herramientas.',
     });
-
-    // If last iteration, force final
-    if (iterations === maxIter) {
-      finalText = stripTools(reply) || 'He completado las acciones posibles.';
-    }
   }
 
-  if (!finalText) finalText = 'Listo.';
+  if (!finalText) {
+    // Last assistant message stripped
+    const last = messages.filter((m) => m.role === 'assistant').pop();
+    finalText = last ? stripTools(last.content) : 'He completado las acciones posibles.';
+  }
+
   return { response: finalText, iterations };
 }
 
-/**
- * Fallback when no API key: improved rule-based + honest message
- */
-function fallbackResponse(input) {
+function fallbackResponse(_input) {
   return {
     response:
-      'Para entender cualquier pregunta y hacer tareas complejas (investigar, crear documentos, analizar archivos) necesito una API key de un modelo de lenguaje. ' +
-      'Configúrala así:\n\n' +
-      '1. Crea el archivo: ~/.elyra/config.json\n' +
-      '2. Contenido ejemplo:\n' +
-      '{ "apiKey": "sk-...", "baseUrl": "https://api.openai.com/v1", "model": "gpt-4o-mini" }\n\n' +
-      'También sirve Groq, Together, OpenRouter, xAI o Ollama local. ' +
-      'Mientras tanto puedo abrir apps, carpetas y recordar notas con comandos directos.',
+      'Para que pueda entender cualquier cosa y hacer tareas complejas necesito una API key gratuita de Groq (tarda 1 minuto).\n\n' +
+      '1. Entra en https://console.groq.com y crea una cuenta\n' +
+      '2. Ve a API Keys y crea una key\n' +
+      '3. Crea el archivo: ' +
+      getConfigPath() +
+      '\n' +
+      '4. Pon esto dentro:\n\n' +
+      '{\n' +
+      '  "apiKey": "gsk_tu_key_aqui",\n' +
+      '  "baseUrl": "https://api.groq.com/openai/v1",\n' +
+      '  "model": "llama-3.3-70b-versatile"\n' +
+      '}\n\n' +
+      'Luego reinicia ELYRA. Mientras tanto puedo abrir apps, carpetas y decirte la hora.',
+    intelligent: false,
   };
 }
 
-module.exports = { runAgent, getConfig, saveConfig, fallbackResponse, callLLM };
+module.exports = {
+  runAgent,
+  getConfig,
+  saveConfig,
+  fallbackResponse,
+  callLLM,
+  getConfigPath,
+};
