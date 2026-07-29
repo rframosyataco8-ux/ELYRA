@@ -1,125 +1,147 @@
 /**
- * ELYRA Agent — más rápido, honesto con errores de herramientas
+ * ELYRA Agent — key solo desde config/env; escalado de modelo; herramientas PC
  */
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const DEFAULT_GROQ_KEY = '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';
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
-const MODEL_CHAIN = [
-  'llama-3.1-8b-instant',
-  'gemma2-9b-it',
-  'llama-3.3-70b-versatile',
-];
+const MODEL_FAST = 'llama-3.1-8b-instant';
+const MODEL_SMART = 'llama-3.3-70b-versatile';
+const MODEL_CHAIN = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
+
+const COMPLEX_RE =
+  /\b(analiza|analizar|planifica|planificar|explica en detalle|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor)\b/i;
 
 const SYSTEM_PROMPT = `Eres ELYRA, asistente de escritorio. Español natural, cercano, breve.
 
 RESPUESTA FINAL (voz): 1-3 frases, sin rutas Windows, sin markdown, sin JSON.
-Si una herramienta falló (ERROR), dilo con claridad. Nunca digas que abriste algo si el resultado fue ERROR.
+Si una herramienta falló (ERROR), dilo. Nunca inventes éxitos.
 
 HERRAMIENTAS:
 [TOOL: web_search]
 query: texto
 [/TOOL]
-
 [TOOL: create_file]
-path: Informes/archivo.txt
-content: contenido
-[/TOOL]
-
-[TOOL: create_html_report]
-path: Informes/reporte.html
-title: título
-body: html
-[/TOOL]
-
-[TOOL: append_file]
-path: archivo
+path: Informes/a.txt
 content: texto
 [/TOOL]
-
-[TOOL: delete_file]
-path: archivo
+[TOOL: create_html_report]
+path: Informes/r.html
+title: t
+body: html
 [/TOOL]
-
-[TOOL: create_folder]
-path: nombre
-[/TOOL]
-
 [TOOL: open_app]
-name: word | excel | chrome | notepad | calculadora | code | spotify
+name: word|chrome|notepad|...
 [/TOOL]
-
 [TOOL: open_folder]
-name: documentos | descargas | escritorio | informes
+name: documentos|descargas|escritorio|informes
 [/TOOL]
-
 [TOOL: open_url]
 url: https://...
 [/TOOL]
-
 [TOOL: read_file]
 path: archivo
 [/TOOL]
-
 [TOOL: list_dir]
 path: carpeta
 [/TOOL]
-
 [TOOL: run_command]
 command: cmd
 [/TOOL]
-
 [TOOL: remember]
 text: dato
 [/TOOL]
-
 [TOOL: recall]
 [/TOOL]
-
 [TOOL: get_system_info]
 [/TOOL]
-
-[TOOL: write_desktop_note]
-filename: nota.txt
-content: texto
+[TOOL: volume]
+action: up|down|mute|set
+value: 50
 [/TOOL]
-
-Para abrir apps usa open_app. Sé directa.`;
+[TOOL: media]
+action: play|pause|next|prev
+[/TOOL]
+[TOOL: brightness]
+action: up|down|set
+value: 70
+[/TOOL]
+[TOOL: clipboard]
+action: read|write
+text: opcional
+[/TOOL]
+[TOOL: screenshot]
+[/TOOL]
+[TOOL: list_processes]
+[/TOOL]
+[TOOL: kill_process]
+name: chrome
+[/TOOL]
+[TOOL: windows]
+action: minimize_all|lock|screen_off
+[/TOOL]
+[TOOL: input]
+action: type|click
+text: hola
+[/TOOL]
+`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
 }
+
 function ensureDefaultConfig() {
   const p = getConfigPath();
   const dir = path.dirname(p);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   if (!fs.existsSync(p)) {
-    fs.writeFileSync(p, JSON.stringify({
-      apiKey: DEFAULT_GROQ_KEY, baseUrl: DEFAULT_BASE_URL, model: MODEL_CHAIN[0],
-    }, null, 2));
+    fs.writeFileSync(
+      p,
+      JSON.stringify(
+        {
+          apiKey: '',
+          baseUrl: DEFAULT_BASE_URL,
+          model: MODEL_FAST,
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    );
   }
 }
+
 function getConfig() {
   ensureDefaultConfig();
   try {
     const c = JSON.parse(fs.readFileSync(getConfigPath(), 'utf-8'));
     return {
-      apiKey: c.apiKey || DEFAULT_GROQ_KEY,
-      baseUrl: c.baseUrl || DEFAULT_BASE_URL,
-      model: c.model || MODEL_CHAIN[0],
+      apiKey: (c.apiKey || process.env.GROQ_API_KEY || process.env.ELYRA_API_KEY || '').trim(),
+      baseUrl: c.baseUrl || process.env.ELYRA_BASE_URL || DEFAULT_BASE_URL,
+      model: c.model || process.env.ELYRA_MODEL || MODEL_FAST,
     };
   } catch {
-    return { apiKey: DEFAULT_GROQ_KEY, baseUrl: DEFAULT_BASE_URL, model: MODEL_CHAIN[0] };
+    return {
+      apiKey: (process.env.GROQ_API_KEY || process.env.ELYRA_API_KEY || '').trim(),
+      baseUrl: DEFAULT_BASE_URL,
+      model: MODEL_FAST,
+    };
   }
 }
+
 function saveConfig(partial) {
   ensureDefaultConfig();
   const next = { ...getConfig(), ...partial };
-  fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2));
+  fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2), 'utf-8');
   return next;
 }
+
+function pickModel(userMessage, config) {
+  if (COMPLEX_RE.test(userMessage || '')) return MODEL_SMART;
+  return config.model || MODEL_FAST;
+}
+
 function resolveUserPath(filePath) {
   if (!filePath) return path.join(os.homedir(), 'Documents', 'elyra-output.txt');
   if (path.isAbsolute(filePath)) return filePath;
@@ -137,7 +159,10 @@ async function callLLMOnce(messages, config, model) {
   const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+    },
     body: JSON.stringify({ model, messages, temperature: 0.45, max_tokens: 2048 }),
   });
   if (!res.ok) {
@@ -150,9 +175,9 @@ async function callLLMOnce(messages, config, model) {
   return data.choices?.[0]?.message?.content || '';
 }
 
-async function callLLM(messages, config) {
+async function callLLM(messages, config, preferredModel) {
   if (!config.apiKey) throw new Error('NO_API_KEY');
-  const preferred = config.model || MODEL_CHAIN[0];
+  const preferred = preferredModel || config.model || MODEL_FAST;
   const chain = [preferred, ...MODEL_CHAIN.filter((m) => m !== preferred)];
   let lastErr;
   for (const model of chain) {
@@ -198,7 +223,7 @@ function stripTools(text) {
 function polishForSpeech(text) {
   if (!text) return '';
   let t = stripTools(text);
-  if (/rate limit|429/i.test(t)) return 'El servicio está saturado un momento. Espera y lo intentamos otra vez.';
+  if (/rate limit|429/i.test(t)) return 'El servicio está saturado un momento.';
   t = t.replace(/[A-Za-z]:\\[^\s\]"']+/g, 'Documentos');
   t = t.replace(/\\+/g, ' ');
   t = t.replace(/\*\*?/g, '');
@@ -231,15 +256,17 @@ async function executeTool(tool, helpers) {
         }
         try {
           const wr = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`, {
-            headers: { 'User-Agent': 'ELYRA/2.0' },
+            headers: { 'User-Agent': 'ELYRA/2.1' },
           });
           if (wr.ok) {
             const data = await wr.json();
             if (data.extract) results.unshift(`Wikipedia: ${data.extract}`);
           }
         } catch {}
-        if (!results.length) return { ok: true, result: `Sin resultados para: ${q}` };
-        return { ok: true, result: results.map((r, i) => `${i + 1}. ${r}`).join('\n') };
+        return {
+          ok: true,
+          result: results.length ? results.map((r, i) => `${i + 1}. ${r}`).join('\n') : `Sin resultados: ${q}`,
+        };
       }
       case 'create_file': {
         const filePath = resolveUserPath(params.path || 'elyra-output.txt');
@@ -247,43 +274,15 @@ async function executeTool(tool, helpers) {
         fs.writeFileSync(filePath, params.content || '', 'utf-8');
         return { ok: true, result: `Creado ${path.basename(filePath)}` };
       }
-      case 'append_file': {
-        const filePath = resolveUserPath(params.path || 'elyra-notes.txt');
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.appendFileSync(filePath, (params.content || '') + '\n', 'utf-8');
-        return { ok: true, result: `Añadido a ${path.basename(filePath)}` };
-      }
-      case 'delete_file': {
-        if (!params.path) return { ok: false, result: 'Falta path' };
-        const resolved = path.resolve(resolveUserPath(params.path));
-        if (!resolved.startsWith(path.resolve(os.homedir()))) {
-          return { ok: false, result: 'Solo archivos de tu usuario' };
-        }
-        if (!fs.existsSync(resolved)) return { ok: false, result: 'No existe' };
-        fs.unlinkSync(resolved);
-        return { ok: true, result: `Eliminado ${path.basename(resolved)}` };
-      }
       case 'create_html_report': {
         const filePath = resolveUserPath(params.path || 'Informes/reporte.html');
         const title = params.title || 'Reporte ELYRA';
         const body = params.body || '<p>Sin contenido</p>';
-        const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>${title.replace(/</g, '')}</title>
-<style>body{font-family:Segoe UI,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;line-height:1.7}h1{color:#0284c7}</style></head>
-<body><h1>${title.replace(/</g, '')}</h1><p>${new Date().toLocaleString('es-ES')}</p>${body}</body></html>`;
+        const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>${title.replace(/</g, '')}</title></head><body><h1>${title.replace(/</g, '')}</h1>${body}</body></html>`;
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         const finalPath = filePath.toLowerCase().endsWith('.html') ? filePath : filePath + '.html';
         fs.writeFileSync(finalPath, html, 'utf-8');
         return { ok: true, result: `Reporte ${path.basename(finalPath)} listo` };
-      }
-      case 'create_folder': {
-        const folderPath = resolveUserPath(params.path || 'Informes');
-        fs.mkdirSync(folderPath, { recursive: true });
-        return { ok: true, result: `Carpeta ${path.basename(folderPath)} lista` };
-      }
-      case 'write_desktop_note': {
-        const p = path.join(os.homedir(), 'Desktop', path.basename(params.filename || `nota-${Date.now()}.txt`));
-        fs.writeFileSync(p, params.content || '', 'utf-8');
-        return { ok: true, result: `Nota en escritorio: ${path.basename(p)}` };
       }
       case 'open_app':
         return await helpers.openApp(params.name || '');
@@ -298,14 +297,13 @@ async function executeTool(tool, helpers) {
         const candidates = [p, path.join(os.homedir(), 'Documents', params.path), path.join(os.homedir(), 'Desktop', params.path)];
         const found = candidates.find((c) => c && fs.existsSync(c) && fs.statSync(c).isFile());
         if (!found) return { ok: false, result: `No existe ${params.path}` };
-        if (fs.statSync(found).size > 800000) return { ok: false, result: 'Archivo muy grande' };
-        return { ok: true, result: `${path.basename(found)}:\n${fs.readFileSync(found, 'utf-8').slice(0, 15000)}` };
+        return { ok: true, result: `${path.basename(found)}:\n${fs.readFileSync(found, 'utf-8').slice(0, 12000)}` };
       }
       case 'list_dir': {
         let p = params.path || path.join(os.homedir(), 'Documents');
         if (!path.isAbsolute(p)) p = resolveUserPath(p);
         if (!fs.existsSync(p)) return { ok: false, result: 'No existe' };
-        const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 80);
+        const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 60);
         return { ok: true, result: items.map((d) => `${d.isDirectory() ? '[DIR]' : '[FILE]'} ${d.name}`).join('\n') };
       }
       case 'run_command':
@@ -314,13 +312,30 @@ async function executeTool(tool, helpers) {
         return await helpers.remember(params.text || '');
       case 'recall':
         return helpers.recall ? await helpers.recall() : { ok: true, result: 'Sin notas' };
-      case 'get_system_info': {
+      case 'get_system_info':
         if (helpers.getSystemStats) {
           const s = await helpers.getSystemStats();
           return { ok: true, result: `CPU ${s.cpu}%, RAM ${s.ram}%, disco ${s.disk}%.` };
         }
         return { ok: true, result: `Equipo ${os.hostname()}` };
-      }
+      case 'volume':
+        return helpers.pc ? await helpers.pc.volume(params.action, params.value) : { ok: false, result: 'N/A' };
+      case 'media':
+        return helpers.pc ? await helpers.pc.media(params.action) : { ok: false, result: 'N/A' };
+      case 'brightness':
+        return helpers.pc ? await helpers.pc.brightness(params.action, params.value) : { ok: false, result: 'N/A' };
+      case 'clipboard':
+        return helpers.pc ? await helpers.pc.clipboard(params.action, params.text) : { ok: false, result: 'N/A' };
+      case 'screenshot':
+        return helpers.pc ? await helpers.pc.screenshot() : { ok: false, result: 'N/A' };
+      case 'list_processes':
+        return helpers.pc ? await helpers.pc.listProcesses() : { ok: false, result: 'N/A' };
+      case 'kill_process':
+        return helpers.pc ? await helpers.pc.killProcess(params.name) : { ok: false, result: 'N/A' };
+      case 'windows':
+        return helpers.pc ? await helpers.pc.windows(params.action) : { ok: false, result: 'N/A' };
+      case 'input':
+        return helpers.pc ? await helpers.pc.input(params.action, { text: params.text }) : { ok: false, result: 'N/A' };
       default:
         return { ok: false, result: `Desconocida: ${name}` };
     }
@@ -331,6 +346,15 @@ async function executeTool(tool, helpers) {
 
 async function runAgent(userMessage, history, helpers) {
   const config = getConfig();
+  if (!config.apiKey) {
+    return {
+      response:
+        'No hay API key configurada. Crea el archivo de configuración en tu carpeta de usuario, carpeta .elyra, archivo config.json, con tu clave de Groq.',
+      iterations: 0,
+    };
+  }
+
+  const preferred = pickModel(userMessage, config);
   const messages = [
     { role: 'system', content: SYSTEM_PROMPT },
     ...history.slice(-8).map((h) => ({
@@ -348,12 +372,15 @@ async function runAgent(userMessage, history, helpers) {
     iterations++;
     let reply;
     try {
-      reply = await callLLM(messages, config);
+      reply = await callLLM(messages, config, preferred);
     } catch (e) {
       if (/429|rate limit/i.test(String(e.message))) {
-        return { response: 'El servicio está saturado un momento. Espera un poco.', iterations };
+        return { response: 'El servicio está saturado un momento.', iterations };
       }
-      return { response: 'No pude conectar ahora. Revisa internet.', iterations };
+      if (String(e.message) === 'NO_API_KEY') {
+        return { response: 'Falta la API key de Groq en tu configuración local.', iterations };
+      }
+      return { response: 'No pude conectar ahora.', iterations };
     }
 
     const tools = parseTools(reply);
@@ -373,7 +400,7 @@ async function runAgent(userMessage, history, helpers) {
       content:
         'Resultados:\n' +
         results.map((r) => `• ${r.tool}: ${r.ok ? 'OK' : 'ERROR'} — ${r.result}`).join('\n') +
-        '\n\nRespuesta FINAL breve y honesta (si hubo ERROR, dilo). Sin TOOL.',
+        '\n\nRespuesta FINAL breve y honesta. Sin TOOL.',
     });
   }
 
@@ -385,10 +412,21 @@ async function runAgent(userMessage, history, helpers) {
 }
 
 function fallbackResponse() {
-  return { response: 'No pude conectar con el modelo.', intelligent: false };
+  return {
+    response: 'Configura tu API key de Groq en el archivo local de configuración de ELYRA.',
+    intelligent: false,
+  };
 }
 
 module.exports = {
-  runAgent, getConfig, saveConfig, fallbackResponse, callLLM,
-  getConfigPath, ensureDefaultConfig, MODEL_CHAIN,
+  runAgent,
+  getConfig,
+  saveConfig,
+  fallbackResponse,
+  callLLM,
+  getConfigPath,
+  ensureDefaultConfig,
+  MODEL_CHAIN,
+  MODEL_FAST,
+  MODEL_SMART,
 };
