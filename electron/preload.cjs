@@ -17,8 +17,8 @@ contextBridge.exposeInMainWorld('elyra', {
   ttsSpeak: (text) => ipcRenderer.invoke('tts-speak', text),
   ttsStatus: () => ipcRenderer.invoke('tts-status'),
 
-  // Whisper STT (Groq) — fiable en escritorio
   sttTranscribe: (payload) => ipcRenderer.invoke('stt-transcribe', payload),
+  sttListenPython: (seconds) => ipcRenderer.invoke('stt-listen-python', seconds),
 
   agentChat: (message, history) => ipcRenderer.invoke('agent-chat', { message, history }),
   agentConfigGet: () => ipcRenderer.invoke('agent-config-get'),
