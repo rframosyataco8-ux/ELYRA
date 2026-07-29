@@ -3,14 +3,8 @@ import { useVoice } from '@/hooks/useVoice';
 import { NetworkGlobe } from '@/components/NetworkGlobe';
 import { Sidebar } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
-import { Mic, Send, Minus, Square, X, Loader2 } from 'lucide-react';
-
-export interface Message {
-  id: string;
-  role: 'user' | 'elyra';
-  text: string;
-  timestamp: number;
-}
+import { ConversationLog, type Message } from '@/components/ConversationLog';
+import { Mic, Send, Minus, Square, X, Loader2, Ear } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
 
@@ -21,23 +15,23 @@ export default function App() {
   const [inputValue, setInputValue] = useState('');
   const [uptime, setUptime] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [autonomous, setAutonomous] = useState(true);
   const [thinking, setThinking] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [continuous, setContinuous] = useState(false);
 
   const speakRef = useRef<(text: string) => void | Promise<void>>(() => {});
   const startTimeRef = useRef(Date.now());
   const messagesRef = useRef<Message[]>([]);
   const bootOnceRef = useRef(false);
   const processingRef = useRef(false);
+  const continuousRef = useRef(false);
+  continuousRef.current = continuous;
   messagesRef.current = messages;
 
   const addMessage = useCallback((role: 'user' | 'elyra', text: string) => {
     const entry = { id: `${Date.now()}-${Math.random()}`, role, text, timestamp: Date.now() };
     setMessages((prev) => [...prev, entry]);
-    if (isDesktop) {
-      window.elyra?.memorySaveHistory({ role, text, at: new Date().toISOString() });
-    }
+    if (isDesktop) window.elyra?.memorySaveHistory({ role, text, at: new Date().toISOString() });
   }, []);
 
   const processInput = useCallback(
@@ -48,33 +42,37 @@ export default function App() {
       setThinking(true);
       try {
         if (isDesktop && window.elyra) {
-          const history = messagesRef.current.slice(-8).map((m) => ({
-            role: m.role,
-            text: m.text,
-          }));
+          const history = messagesRef.current.slice(-12).map((m) => ({ role: m.role, text: m.text }));
           const result = await window.elyra.agentChat(text, history);
           let reply = (result.response || '').trim();
-          // Nunca mostrar JSON técnico en pantalla
           if (/rate limit|"error".*429|org_[a-z0-9]+/i.test(reply)) {
-            reply =
-              'El servicio de inteligencia está saturado un momento. Espera medio minuto y vuelve a intentarlo.';
+            reply = 'El servicio está saturado un momento. Espera un poco y lo intentamos otra vez.';
           }
           if (reply) {
             addMessage('elyra', reply);
             await speakRef.current(reply);
           }
         } else {
-          const msg = 'Abre ELYRA en modo escritorio para todas las funciones.';
+          const msg = 'Abre la app de escritorio para usar todas las funciones.';
           addMessage('elyra', msg);
           await speakRef.current(msg);
         }
       } catch {
-        const msg = 'No pude completar eso ahora. Inténtalo de nuevo en unos segundos.';
+        const msg = 'No pude completar eso ahora. Prueba de nuevo en unos segundos.';
         addMessage('elyra', msg);
         await speakRef.current(msg);
       } finally {
         setThinking(false);
         processingRef.current = false;
+        // Escucha continua: vuelve a escuchar tras responder
+        if (continuousRef.current) {
+          setTimeout(() => {
+            try {
+              // se engancha vía ref en el efecto de continuous
+              window.dispatchEvent(new CustomEvent('elyra-relisten'));
+            } catch {}
+          }, 600);
+        }
       }
     },
     [addMessage],
@@ -86,36 +84,51 @@ export default function App() {
   speakRef.current = speak;
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    const onRelisten = () => {
+      if (continuousRef.current && !processingRef.current) startListening();
+    };
+    window.addEventListener('elyra-relisten', onRelisten);
+    return () => window.removeEventListener('elyra-relisten', onRelisten);
+  }, [startListening]);
+
+  useEffect(() => {
+    const id = setInterval(() => {
       setCurrentTime(new Date());
       setUptime(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
-    return () => clearInterval(interval);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
     if (!booted || !isDesktop) return;
     window.elyra?.agentConfigGet().then((c) => setHasApiKey(c.hasKey));
+    window.elyra?.memoryGet().then((mem) => {
+      if (mem.history?.length) {
+        setMessages(
+          mem.history.slice(-30).map((h: any, i: number) => ({
+            id: `h-${i}`,
+            role: h.role === 'user' ? 'user' : 'elyra',
+            text: h.text,
+            timestamp: new Date(h.at || Date.now()).getTime(),
+          })),
+        );
+      }
+    });
   }, [booted]);
 
   useEffect(() => {
     if (bootOnceRef.current) return;
     bootOnceRef.current = true;
-    const timer = setTimeout(async () => {
+    const t = setTimeout(async () => {
       setBooted(true);
       const bootMsg = isDesktop
-        ? 'Hola. Soy ELYRA. Estoy lista para ayudarte con lo que necesites.'
-        : 'Soy ELYRA. Usa la versión de escritorio para todas las funciones.';
+        ? 'Hola. Soy ELYRA. Dime qué necesitas y lo hacemos.'
+        : 'Soy ELYRA. Usa la versión de escritorio para el control total.';
       addMessage('elyra', bootMsg);
       await speak(bootMsg);
-    }, 700);
-    return () => clearTimeout(timer);
+    }, 600);
+    return () => clearTimeout(t);
   }, [addMessage, speak]);
-
-  useEffect(() => {
-    if (!isDesktop) return;
-    return window.elyra?.onAutonomousMode((value) => setAutonomous(value));
-  }, []);
 
   const handleToggleListen = () => {
     if (listening) stopListening();
@@ -139,36 +152,35 @@ export default function App() {
   };
 
   const statusLabel = thinking
-    ? 'Pensando...'
+    ? 'Trabajando...'
     : speaking
     ? 'Hablando...'
     : listening
-    ? 'Escuchando...'
-    : autonomous
-    ? 'En espera'
-    : 'En espera';
-
-  const recentMessages = messages.slice(-5);
+    ? continuous
+      ? 'Escucha continua'
+      : 'Escuchando...'
+    : 'Lista';
 
   return (
     <div className="h-screen w-screen bg-[#030810] text-sky-100 flex overflow-hidden select-none">
       <Sidebar active={page} onNavigate={setPage} />
 
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      <div className="flex-1 flex flex-col min-w-0">
         <header className="h-10 flex items-center justify-between px-3 border-b border-sky-500/10 drag-region">
           <div className="flex items-center gap-2 text-[11px] text-sky-400/40 pl-1">
             <span className="font-medium text-sky-300/70 tracking-widest">ELYRA</span>
-            {isDesktop && <span className="text-sky-500/30">· Escritorio</span>}
+            {isDesktop && <span>· Escritorio</span>}
             {naturalTts && <span className="text-emerald-400/50">· Voz Dalia</span>}
-            {hasApiKey && <span className="text-violet-400/50">· IA activa</span>}
+            {hasApiKey && <span className="text-violet-400/50">· IA</span>}
+            {continuous && <span className="text-amber-300/50">· Autónomo</span>}
           </div>
           <div className="flex items-center gap-1 no-drag">
             {isDesktop && (
               <>
-                <button onClick={() => window.elyra?.minimize()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50 hover:text-sky-300">
+                <button onClick={() => window.elyra?.minimize()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50">
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={() => window.elyra?.maximize()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50 hover:text-sky-300">
+                <button onClick={() => window.elyra?.maximize()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50">
                   <Square className="w-3 h-3" />
                 </button>
                 <button onClick={() => window.elyra?.close()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-red-500/20 text-sky-400/50 hover:text-red-400">
@@ -180,69 +192,116 @@ export default function App() {
         </header>
 
         <div className="flex-1 flex min-h-0">
-          <main className="flex-1 flex flex-col items-center justify-between py-5 px-6 relative min-w-0">
-            <div className="w-full text-center space-y-2 z-10">
-              <h2 className="text-2xl font-semibold text-white tracking-wide">Hola, Fabricio</h2>
-              <p className="text-sm text-sky-300/55">
-                {hasApiKey ? 'Lista para lo que necesites.' : 'Preparando inteligencia…'}
-              </p>
-              <div className="inline-flex items-center gap-2 mt-1 px-3.5 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/20">
-                {thinking ? (
-                  <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" />
-                ) : (
-                  <span className={`w-1.5 h-1.5 rounded-full ${speaking || listening ? 'bg-sky-400 animate-pulse' : 'bg-emerald-400'}`} />
-                )}
-                <span className="text-xs text-sky-300/80">{statusLabel}</span>
-              </div>
-            </div>
-
-            <div className="flex-1 flex items-center justify-center relative min-h-0">
-              <NetworkGlobe speaking={speaking || thinking} listening={listening} size={380} />
-            </div>
-
-            {recentMessages.length > 0 && (
-              <div className="w-full max-w-xl mb-3 max-h-28 overflow-y-auto space-y-1.5 px-1">
-                {recentMessages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`text-[11px] leading-snug px-3 py-1.5 rounded-lg ${
-                      m.role === 'user' ? 'bg-sky-500/10 text-sky-200/80 ml-8' : 'bg-white/5 text-sky-100/70 mr-8'
-                    }`}
-                  >
-                    <span className="opacity-40 mr-1">{m.role === 'user' ? 'Tú' : 'ELYRA'}:</span>
-                    {m.text.length > 140 ? m.text.slice(0, 140) + '…' : m.text}
+          <main className="flex-1 flex flex-col min-w-0 px-5 py-4">
+            {page === 'inicio' && (
+              <>
+                <div className="text-center space-y-1 mb-2">
+                  <h2 className="text-2xl font-semibold text-white">Hola, Fabricio</h2>
+                  <p className="text-sm text-sky-300/50">Dime qué hacemos.</p>
+                  <div className="inline-flex items-center gap-2 mt-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20">
+                    {thinking ? <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" /> : (
+                      <span className={`w-1.5 h-1.5 rounded-full ${speaking || listening ? 'bg-sky-400 animate-pulse' : 'bg-emerald-400'}`} />
+                    )}
+                    <span className="text-xs text-sky-300/80">{statusLabel}</span>
                   </div>
-                ))}
+                </div>
+                <div className="flex-1 flex items-center justify-center min-h-0">
+                  <NetworkGlobe speaking={speaking || thinking} listening={listening} size={340} />
+                </div>
+                <div className="max-w-xl mx-auto w-full mb-2 max-h-24 overflow-hidden">
+                  <ConversationLog messages={messages.slice(-4)} compact />
+                </div>
+              </>
+            )}
+
+            {page === 'asistente' && (
+              <div className="flex-1 flex flex-col min-h-0 max-w-2xl mx-auto w-full">
+                <h2 className="text-lg font-medium text-white mb-3">Conversación</h2>
+                <ConversationLog messages={messages} />
               </div>
             )}
 
-            <div className="w-full max-w-xl z-10">
+            {page === 'config' && (
+              <div className="max-w-md mx-auto w-full space-y-4 pt-6">
+                <h2 className="text-lg font-medium text-white">Configuración</h2>
+                <div className="rounded-xl border border-sky-500/15 bg-[#0a1525]/80 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-sky-100">Escucha continua</p>
+                      <p className="text-[11px] text-sky-400/50">Tras responder, vuelve a escuchar sola</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setContinuous((v) => !v);
+                        if (!continuous) {
+                          stopSpeaking();
+                          startListening();
+                        } else stopListening();
+                      }}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${
+                        continuous ? 'bg-sky-500' : 'bg-sky-900'
+                      }`}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${
+                          continuous ? 'translate-x-5' : ''
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  <div className="text-[12px] text-sky-400/60 space-y-1 pt-2 border-t border-sky-500/10">
+                    <p>Voz: es-MX-DaliaNeural (edge-tts)</p>
+                    <p>IA: Groq · fallback automático de modelos</p>
+                    <p>Atajo: Ctrl+Shift+E</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Input siempre visible */}
+            <div className="w-full max-w-xl mx-auto mt-auto pt-3">
               {error && <p className="text-red-400/70 text-xs text-center mb-2">{error}</p>}
-              <div className="flex items-center gap-3 rounded-full bg-[#0a1525]/95 border border-sky-500/25 px-4 py-2.5 shadow-[0_0_40px_rgba(14,165,233,0.1)]">
+              <div className="flex items-center gap-2 rounded-full bg-[#0a1525]/95 border border-sky-500/25 px-3 py-2 shadow-[0_0_30px_rgba(14,165,233,0.08)]">
                 <button
                   onClick={handleToggleListen}
                   disabled={thinking}
-                  className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
                     listening
-                      ? 'bg-sky-500/35 text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.45)]'
-                      : 'text-sky-400/60 hover:text-sky-300 hover:bg-sky-500/10'
+                      ? 'bg-sky-500/35 text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.4)]'
+                      : 'text-sky-400/60 hover:bg-sky-500/10'
                   }`}
+                  title="Micrófono"
                 >
                   <Mic className="w-4 h-4" />
                 </button>
+                <button
+                  onClick={() => {
+                    const next = !continuous;
+                    setContinuous(next);
+                    if (next) {
+                      stopSpeaking();
+                      startListening();
+                    } else stopListening();
+                  }}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                    continuous ? 'text-amber-300 bg-amber-500/15' : 'text-sky-500/40 hover:text-sky-400'
+                  }`}
+                  title="Escucha continua"
+                >
+                  <Ear className="w-3.5 h-3.5" />
+                </button>
                 <input
-                  type="text"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder="Habla o escribe una orden…"
-                  className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40 disabled:opacity-50"
+                  placeholder="Habla conmigo o escribe…"
+                  className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
                 />
                 <button
                   onClick={handleSend}
                   disabled={!inputValue.trim() || thinking}
-                  className="flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:text-sky-300 hover:bg-sky-500/10 disabled:opacity-30"
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:bg-sky-500/10 disabled:opacity-30"
                 >
                   {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
@@ -250,23 +309,23 @@ export default function App() {
             </div>
           </main>
 
-          <div className="pr-5 py-5 flex flex-col">
-            <SystemPanel />
-          </div>
+          {page === 'inicio' && (
+            <div className="pr-4 py-4 hidden lg:flex">
+              <SystemPanel />
+            </div>
+          )}
         </div>
 
-        <footer className="h-9 flex items-center justify-between px-5 border-t border-sky-500/10 text-[11px] text-sky-400/45">
-          <div className="flex items-center gap-4">
+        <footer className="h-8 flex items-center justify-between px-5 border-t border-sky-500/10 text-[11px] text-sky-400/40">
+          <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              Escritorio
+              Activo
             </span>
-            <span>Uptime: {formatUptime(uptime)}</span>
-            <span className="text-sky-500/25">Ctrl+Shift+E</span>
-          </div>
+            <span>{formatUptime(uptime)}</span>
+          </span>
           <span>
-            {currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}{' '}
-            {currentTime.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+            {currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
           </span>
         </footer>
       </div>
