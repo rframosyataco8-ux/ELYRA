@@ -28,6 +28,8 @@ export default function App() {
   const speakRef = useRef<(text: string) => void | Promise<void>>(() => {});
   const startTimeRef = useRef(Date.now());
   const messagesRef = useRef<Message[]>([]);
+  const bootOnceRef = useRef(false);
+  const processingRef = useRef(false);
   messagesRef.current = messages;
 
   const addMessage = useCallback((role: 'user' | 'elyra', text: string) => {
@@ -40,6 +42,8 @@ export default function App() {
 
   const processInput = useCallback(
     async (text: string) => {
+      if (processingRef.current) return;
+      processingRef.current = true;
       addMessage('user', text);
       setThinking(true);
       try {
@@ -49,12 +53,14 @@ export default function App() {
             text: m.text,
           }));
           const result = await window.elyra.agentChat(text, history);
-          addMessage('elyra', result.response);
-          await speakRef.current(result.response);
+          const reply = (result.response || '').trim();
+          if (reply) {
+            addMessage('elyra', reply);
+            await speakRef.current(reply);
+          }
         } else {
-          // Web fallback — limited
           const msg =
-            'En el navegador mis capacidades son limitadas. Abre ELYRA como app de escritorio y configura una API key para inteligencia completa.';
+            'Mis capacidades completas están en la aplicación de escritorio. Ábrela con npm run dev:electron.';
           addMessage('elyra', msg);
           await speakRef.current(msg);
         }
@@ -64,6 +70,7 @@ export default function App() {
         await speakRef.current(msg);
       } finally {
         setThinking(false);
+        processingRef.current = false;
       }
     },
     [addMessage],
@@ -99,22 +106,22 @@ export default function App() {
     window.elyra?.agentConfigGet().then((c) => setHasApiKey(c.hasKey));
   }, [booted]);
 
+  // Boot UNA sola vez (evita doble saludo por StrictMode)
   useEffect(() => {
-    if (!booted) {
-      const timer = setTimeout(async () => {
-        setBooted(true);
-        let bootMsg = 'Hola, soy ELYRA. Estoy lista para ayudarte.';
-        if (isDesktop) {
-          bootMsg = naturalTts
-            ? 'Hola, soy ELYRA. Voz natural activa. Puedo entenderte y ayudarte con lo que necesites en tu PC.'
-            : 'Hola, soy ELYRA. Para voz más natural instala edge-tts con: pip install edge-tts. Estoy lista para ayudarte.';
-        }
-        addMessage('elyra', bootMsg);
-        setTimeout(() => speak(bootMsg), 400);
-      }, 900);
-      return () => clearTimeout(timer);
-    }
-  }, [booted, addMessage, speak, naturalTts]);
+    if (bootOnceRef.current) return;
+    bootOnceRef.current = true;
+
+    const timer = setTimeout(async () => {
+      setBooted(true);
+      const bootMsg = isDesktop
+        ? 'Sistema en línea. Soy ELYRA. Todos los módulos operativos. ¿En qué puedo ayudarte?'
+        : 'Soy ELYRA. Abre la versión de escritorio para control total del sistema.';
+      addMessage('elyra', bootMsg);
+      await speak(bootMsg);
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [addMessage, speak]);
 
   useEffect(() => {
     if (!isDesktop) return;
@@ -131,7 +138,7 @@ export default function App() {
 
   const handleSend = async () => {
     const text = inputValue.trim();
-    if (!text || thinking) return;
+    if (!text || thinking || processingRef.current) return;
     setInputValue('');
     await processInput(text);
   };
@@ -145,14 +152,16 @@ export default function App() {
   };
 
   const statusLabel = thinking
-    ? 'Pensando...'
+    ? 'Procesando...'
     : speaking
-    ? 'Hablando...'
+    ? 'Transmitiendo...'
     : listening
-    ? 'Conversando...'
+    ? 'Escuchando...'
     : autonomous
-    ? 'Modo autónomo'
+    ? 'En espera · autónomo'
     : 'En espera';
+
+  const recentMessages = messages.slice(-6);
 
   return (
     <div className="h-screen w-screen bg-[#030810] text-sky-100 flex overflow-hidden select-none">
@@ -161,9 +170,9 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0 relative">
         <header className="h-10 flex items-center justify-between px-3 border-b border-sky-500/10 drag-region">
           <div className="flex items-center gap-2 text-[11px] text-sky-400/40 pl-1">
-            <span className="font-medium text-sky-300/60">ELYRA</span>
+            <span className="font-medium text-sky-300/70 tracking-widest">ELYRA</span>
             {isDesktop && <span className="text-sky-500/30">· Escritorio</span>}
-            {naturalTts && <span className="text-emerald-400/50">· Voz neural</span>}
+            {naturalTts && <span className="text-emerald-400/50">· Voz Álvaro</span>}
             {hasApiKey && <span className="text-violet-400/50">· IA activa</span>}
           </div>
           <div className="flex items-center gap-1 no-drag">
@@ -179,62 +188,71 @@ export default function App() {
                   <X className="w-3.5 h-3.5" />
                 </button>
               </>
-            ) : (
-              <>
-                <button className="w-3 h-3 rounded-sm bg-sky-500/20" />
-                <button className="w-3 h-3 rounded-sm bg-sky-500/20" />
-                <button className="w-3 h-3 rounded-sm bg-red-500/40" />
-              </>
-            )}
+            ) : null}
           </div>
         </header>
 
         <div className="flex-1 flex min-h-0">
-          <main className="flex-1 flex flex-col items-center justify-between py-5 px-8 relative min-w-0">
+          <main className="flex-1 flex flex-col items-center justify-between py-5 px-6 relative min-w-0">
             <div className="w-full text-center space-y-2 z-10">
               <h2 className="text-2xl font-semibold text-white tracking-wide">Hola, Fabricio</h2>
-              <p className="text-sm text-sky-300/60">
+              <p className="text-sm text-sky-300/55">
                 {hasApiKey
-                  ? 'Inteligencia activa. Pídeme lo que necesites.'
+                  ? 'Sistemas en línea. Puedes pedirme cualquier cosa.'
                   : isDesktop
-                  ? 'Configura una API key para comprensión total de lenguaje natural.'
-                  : 'Usa la app de escritorio para control total e inteligencia.'}
+                  ? 'Conectando inteligencia…'
+                  : 'Versión limitada en navegador.'}
               </p>
-              <div className="inline-flex items-center gap-2 mt-2 px-3.5 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/20">
+              <div className="inline-flex items-center gap-2 mt-1 px-3.5 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/20">
                 {thinking ? (
                   <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" />
                 ) : (
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
-                      speaking || listening
-                        ? 'bg-sky-400 animate-pulse'
-                        : autonomous
-                        ? 'bg-emerald-400'
-                        : 'bg-sky-500/50'
+                      speaking || listening ? 'bg-sky-400 animate-pulse' : autonomous ? 'bg-emerald-400' : 'bg-sky-500/50'
                     }`}
                   />
                 )}
-                <span className="text-xs text-sky-300/80">{statusLabel}</span>
+                <span className="text-xs text-sky-300/80 tracking-wide">{statusLabel}</span>
               </div>
             </div>
 
-            <div className="flex-1 flex items-center justify-center relative">
-              <NetworkGlobe speaking={speaking || thinking} listening={listening} size={400} />
+            <div className="flex-1 flex items-center justify-center relative min-h-0">
+              <NetworkGlobe speaking={speaking || thinking} listening={listening} size={380} />
             </div>
 
+            {/* Últimos mensajes (compacto) */}
+            {recentMessages.length > 0 && (
+              <div className="w-full max-w-xl mb-3 max-h-28 overflow-y-auto space-y-1.5 px-1">
+                {recentMessages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`text-[11px] leading-snug px-3 py-1.5 rounded-lg ${
+                      m.role === 'user'
+                        ? 'bg-sky-500/10 text-sky-200/80 ml-8'
+                        : 'bg-white/5 text-sky-100/70 mr-8'
+                    }`}
+                  >
+                    <span className="opacity-40 mr-1">{m.role === 'user' ? 'Tú' : 'ELYRA'}:</span>
+                    {m.text.length > 160 ? m.text.slice(0, 160) + '…' : m.text}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="w-full max-w-xl z-10">
+              {error && <p className="text-red-400/70 text-xs text-center mb-2">{error}</p>}
               {!supported && (
                 <p className="text-amber-400/70 text-xs text-center mb-2">Micrófono no disponible. Puedes escribir.</p>
               )}
-              {error && <p className="text-red-400/70 text-xs text-center mb-2">{error}</p>}
 
-              <div className="flex items-center gap-3 rounded-full bg-[#0a1525]/90 border border-sky-500/20 px-4 py-2.5 shadow-[0_0_30px_rgba(14,165,233,0.08)]">
+              <div className="flex items-center gap-3 rounded-full bg-[#0a1525]/95 border border-sky-500/25 px-4 py-2.5 shadow-[0_0_40px_rgba(14,165,233,0.1)]">
                 <button
                   onClick={handleToggleListen}
                   disabled={thinking}
                   className={`flex-shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all ${
                     listening
-                      ? 'bg-sky-500/30 text-sky-300 shadow-[0_0_15px_rgba(56,189,248,0.4)]'
+                      ? 'bg-sky-500/35 text-sky-200 shadow-[0_0_18px_rgba(56,189,248,0.45)]'
                       : 'text-sky-400/60 hover:text-sky-300 hover:bg-sky-500/10'
                   }`}
                   title={listening ? 'Detener' : 'Hablar'}
@@ -248,7 +266,7 @@ export default function App() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder="Pregúntame cualquier cosa o dame una orden..."
+                  placeholder="Habla o escribe una orden…"
                   className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40 disabled:opacity-50"
                 />
 
@@ -268,14 +286,14 @@ export default function App() {
           </div>
         </div>
 
-        <footer className="h-9 flex items-center justify-between px-5 border-t border-sky-500/10 text-[11px] text-sky-400/50">
+        <footer className="h-9 flex items-center justify-between px-5 border-t border-sky-500/10 text-[11px] text-sky-400/45">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
               {isDesktop ? 'Escritorio' : 'Web'}
             </span>
             <span>Uptime: {formatUptime(uptime)}</span>
-            {isDesktop && <span className="text-sky-500/30">Ctrl+Shift+E</span>}
+            {isDesktop && <span className="text-sky-500/25">Ctrl+Shift+E</span>}
           </div>
           <span>
             {currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}{' '}
