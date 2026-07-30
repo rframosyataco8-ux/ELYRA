@@ -1,7 +1,5 @@
 /**
  * ELYRA Tool Schemas — Function Calling (OpenAI-compatible)
- * Fuente única de verdad para el agente autónomo.
- * No depende de React/UI.
  */
 
 const TOOL_DEFINITIONS = [
@@ -9,12 +7,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'web_search',
-      description: 'Busca información actualizada en internet (Wikipedia/web). Usa para preguntas de conocimiento.',
+      description: 'Busca información actualizada en internet.',
       parameters: {
         type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Consulta de búsqueda en español o inglés' },
-        },
+        properties: { query: { type: 'string' } },
         required: ['query'],
       },
     },
@@ -22,17 +18,118 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
-      name: 'create_file',
-      description:
-        'Crea o sobrescribe un archivo de texto en Documentos del usuario. Rutas relativas van a Documents/. Usa Informes/nombre.txt para reportes.',
+      name: 'scan_folder',
+      description: 'Escanea Documentos (u otra carpeta) buscando Excel, PDF, Word, PPT, texto.',
       parameters: {
         type: 'object',
         properties: {
-          path: {
+          root: { type: 'string' },
+          pattern: { type: 'string', description: 'Filtro opcional en el nombre' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'analyze_excel',
+      description: 'Analiza un CSV/Excel con pandas: columnas, stats, muestra. Opcional export ejecutivo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          export: { type: 'boolean' },
+        },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'summarize_pdf',
+      description: 'Extrae texto de un PDF para analizarlo o resumirlo.',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_docx',
+      description: 'Lee un documento Word (.docx).',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_docx',
+      description: 'Redacta un informe corporativo en Word (.docx) en Documentos/Informes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          body: { type: 'string', description: 'Texto con párrafos; # y ## para títulos; - para viñetas' },
+          path: { type: 'string' },
+        },
+        required: ['title', 'body'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_pptx',
+      description: 'Crea una presentación PowerPoint ejecutiva.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          slides: {
             type: 'string',
-            description: 'Ruta relativa (ej: Informes/resumen.txt) o absoluta',
+            description: 'JSON array [{title, bullets: string[]}] o texto plano',
           },
-          content: { type: 'string', description: 'Contenido completo del archivo' },
+          body: { type: 'string' },
+          path: { type: 'string' },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'html_dashboard',
+      description: 'Genera un dashboard HTML ejecutivo en Informes/.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          body: { type: 'string', description: 'HTML interior' },
+          path: { type: 'string' },
+        },
+        required: ['title', 'body'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_file',
+      description: 'Crea archivo de texto en Documentos.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          content: { type: 'string' },
         },
         required: ['path', 'content'],
       },
@@ -42,13 +139,13 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'create_html_report',
-      description: 'Genera un informe HTML legible en Documentos/Informes/. Ideal para resúmenes largos.',
+      description: 'Informe HTML simple en Informes/.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Ej: Informes/guerra-mundial.html' },
+          path: { type: 'string' },
           title: { type: 'string' },
-          body: { type: 'string', description: 'HTML del cuerpo (párrafos, listas)' },
+          body: { type: 'string' },
         },
         required: ['path', 'title', 'body'],
       },
@@ -58,12 +155,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'read_file',
-      description: 'Lee el contenido de un archivo de texto del usuario.',
+      description: 'Lee archivo de texto.',
       parameters: {
         type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Ruta relativa a Documents o absoluta' },
-        },
+        properties: { path: { type: 'string' } },
         required: ['path'],
       },
     },
@@ -72,12 +167,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'list_dir',
-      description: 'Lista archivos y carpetas de un directorio.',
+      description: 'Lista directorio.',
       parameters: {
         type: 'object',
-        properties: {
-          path: { type: 'string', description: 'Por defecto Documents' },
-        },
+        properties: { path: { type: 'string' } },
       },
     },
   },
@@ -85,12 +178,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'search_files',
-      description: 'Busca archivos por nombre en Documentos (o root indicado).',
+      description: 'Busca archivos por nombre.',
       parameters: {
         type: 'object',
         properties: {
           query: { type: 'string' },
-          root: { type: 'string', description: 'Carpeta raíz opcional' },
+          root: { type: 'string' },
         },
         required: ['query'],
       },
@@ -100,12 +193,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_app',
-      description: 'Abre una aplicación del PC (Word, Chrome, Spotify, etc.). Si falla, el sistema puede abrir la web.',
+      description: 'Abre aplicación del PC.',
       parameters: {
         type: 'object',
-        properties: {
-          name: { type: 'string', description: 'Nombre de la app: word, excel, chrome, spotify…' },
-        },
+        properties: { name: { type: 'string' } },
         required: ['name'],
       },
     },
@@ -114,12 +205,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_folder',
-      description: 'Abre una carpeta del usuario (documentos, descargas, escritorio, informes…).',
+      description: 'Abre carpeta del usuario.',
       parameters: {
         type: 'object',
-        properties: {
-          name: { type: 'string' },
-        },
+        properties: { name: { type: 'string' } },
         required: ['name'],
       },
     },
@@ -128,12 +217,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_url',
-      description: 'Abre una URL en el navegador predeterminado.',
+      description: 'Abre URL en el navegador.',
       parameters: {
         type: 'object',
-        properties: {
-          url: { type: 'string' },
-        },
+        properties: { url: { type: 'string' } },
         required: ['url'],
       },
     },
@@ -142,12 +229,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Ejecuta un comando de shell seguro (no destructivo). Evitar format, del /s, shutdown.',
+      description: 'Comando shell no destructivo.',
       parameters: {
         type: 'object',
-        properties: {
-          command: { type: 'string' },
-        },
+        properties: { command: { type: 'string' } },
         required: ['command'],
       },
     },
@@ -156,11 +241,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'remember',
-      description: 'Guarda un dato en la memoria local de ELYRA para futuras sesiones.',
+      description: 'Guarda preferencia o hecho en memoria a largo plazo.',
       parameters: {
         type: 'object',
         properties: {
           text: { type: 'string' },
+          kind: { type: 'string', enum: ['preference', 'fact'] },
         },
         required: ['text'],
       },
@@ -170,7 +256,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'recall',
-      description: 'Recupera notas y hechos guardados en memoria local.',
+      description: 'Recupera memoria contextual.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -178,7 +264,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'get_system_info',
-      description: 'CPU, RAM y disco del equipo.',
+      description: 'CPU RAM disco.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -186,7 +272,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'battery',
-      description: 'Estado de la batería.',
+      description: 'Batería.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -194,7 +280,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'network_info',
-      description: 'Adaptadores de red e IPs.',
+      description: 'Red e IPs.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -202,7 +288,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'disk_space',
-      description: 'Espacio libre en discos.',
+      description: 'Espacio en disco.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -210,7 +296,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'uptime',
-      description: 'Tiempo desde el último arranque.',
+      description: 'Uptime del sistema.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -218,12 +304,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'volume',
-      description: 'Control de volumen del sistema.',
+      description: 'Volumen.',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['up', 'down', 'mute', 'set'] },
-          value: { type: 'string', description: 'Porcentaje 0-100 si action=set' },
+          value: { type: 'string' },
         },
         required: ['action'],
       },
@@ -233,7 +319,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'media',
-      description: 'Control multimedia (play/pause, siguiente, anterior).',
+      description: 'Multimedia.',
       parameters: {
         type: 'object',
         properties: {
@@ -247,7 +333,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'brightness',
-      description: 'Brillo de pantalla (portátiles).',
+      description: 'Brillo.',
       parameters: {
         type: 'object',
         properties: {
@@ -262,7 +348,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'clipboard',
-      description: 'Leer, escribir o limpiar el portapapeles.',
+      description: 'Portapapeles.',
       parameters: {
         type: 'object',
         properties: {
@@ -277,7 +363,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'screenshot',
-      description: 'Captura de pantalla a Documentos/Informes/Capturas.',
+      description: 'Captura de pantalla.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -285,7 +371,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'list_processes',
-      description: 'Lista procesos que más RAM usan.',
+      description: 'Procesos top RAM.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -293,12 +379,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'kill_process',
-      description: 'Cierra un proceso por nombre (no críticos del sistema).',
+      description: 'Cierra proceso.',
       parameters: {
         type: 'object',
-        properties: {
-          name: { type: 'string' },
-        },
+        properties: { name: { type: 'string' } },
         required: ['name'],
       },
     },
@@ -307,7 +391,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'windows',
-      description: 'Acciones de ventana: minimizar todo, bloquear, apagar pantalla.',
+      description: 'minimize_all | lock | screen_off',
       parameters: {
         type: 'object',
         properties: {
@@ -321,7 +405,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'notify',
-      description: 'Muestra una notificación o mensaje al usuario.',
+      description: 'Notificación al usuario.',
       parameters: {
         type: 'object',
         properties: {
@@ -336,15 +420,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_settings',
-      description: 'Abre ajustes de Windows (wifi, display, sound, etc.).',
+      description: 'Ajustes Windows.',
       parameters: {
         type: 'object',
-        properties: {
-          page: {
-            type: 'string',
-            description: 'system|display|sound|wifi|bluetooth|privacy|apps|update|power',
-          },
-        },
+        properties: { page: { type: 'string' } },
       },
     },
   },
@@ -352,7 +431,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'empty_recycle',
-      description: 'Vacía la papelera de reciclaje.',
+      description: 'Vaciar papelera.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -360,12 +439,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'power',
-      description: 'Apagar, reiniciar, suspender o cancelar apagado programado.',
+      description: 'shutdown|restart|sleep|cancel',
       parameters: {
         type: 'object',
         properties: {
           action: { type: 'string', enum: ['shutdown', 'restart', 'sleep', 'cancel'] },
-          minutes: { type: 'string', description: 'Minutos de gracia opcionales' },
+          minutes: { type: 'string' },
         },
         required: ['action'],
       },
@@ -373,7 +452,6 @@ const TOOL_DEFINITIONS = [
   },
 ];
 
-/** Resumen compacto para system prompt (texto) */
 function toolsPromptSummary() {
   return TOOL_DEFINITIONS.map((t) => {
     const f = t.function;
@@ -382,7 +460,4 @@ function toolsPromptSummary() {
   }).join('\n');
 }
 
-module.exports = {
-  TOOL_DEFINITIONS,
-  toolsPromptSummary,
-};
+module.exports = { TOOL_DEFINITIONS, toolsPromptSummary };
