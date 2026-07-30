@@ -7,11 +7,8 @@ const os = require('os');
 const hooks = require('./agent-hooks.cjs');
 const fsSkills = require('./fs-skills.cjs');
 const HOOK_TOOLS = require('./agent-tool-gate.cjs');
-
-let smartKnowledgeFn = null;
-try {
-  smartKnowledgeFn = require('./smart-knowledge.cjs').smartKnowledge;
-} catch {}
+const { deepWebSearch } = require('./web-search-boost.cjs');
+const { youtubeSearchUrl, googleSearchUrl } = require('./intent-compound.cjs');
 
 function resolveUserPath(filePath) {
   if (!filePath) return path.join(os.homedir(), 'Documents', 'elyra-output.txt');
@@ -35,13 +32,8 @@ async function executeTool(tool, helpers) {
     return hooks.extendExecute(name, params, helpers, null);
   }
 
-  // FS skills directos (por si el gate no se cargó)
   if (name === 'find_files') {
-    return fsSkills.findFiles({
-      root: params.root,
-      ext: params.ext,
-      query: params.query,
-    });
+    return fsSkills.findFiles({ root: params.root, ext: params.ext, query: params.query });
   }
   if (name === 'collect_files') {
     return fsSkills.collectByExtension({
@@ -63,32 +55,22 @@ async function executeTool(tool, helpers) {
       case 'web_search': {
         const q = params.query || '';
         if (!q) return { ok: false, result: 'Falta query' };
-        const results = [];
-        if (smartKnowledgeFn) {
-          try {
-            const sk = await smartKnowledgeFn(q);
-            if (sk.ok && sk.response) results.push('Resumen: ' + sk.response);
-          } catch {}
-        }
-        try {
-          const res = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-          });
-          const html = await res.text();
-          const re = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td)>/gi;
-          let sm;
-          while ((sm = re.exec(html)) !== null && results.length < 7) {
-            const t = sm[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-            if (t.length > 25) results.push(t);
+        if (/\byoutube\b|\bvideo\b/i.test(q) && helpers.openUrl) {
+          const clean = q
+            .replace(/\s*en\s+youtube\s*/gi, ' ')
+            .replace(/\byoutube\b/gi, ' ')
+            .replace(/\bvideo\b/gi, ' ')
+            .trim();
+          if (clean) {
+            await helpers.openUrl(youtubeSearchUrl(clean));
+            return { ok: true, result: 'YouTube abierto con búsqueda: ' + clean };
           }
-        } catch (e) {
-          results.push('(Búsqueda: ' + e.message + ')');
         }
+        const deep = await deepWebSearch(q);
+        if (deep.ok) return { ok: true, result: deep.response };
         return {
           ok: true,
-          result: results.length
-            ? results.map((r, i) => i + 1 + '. ' + r).join('\n')
-            : 'Sin resultados para: ' + q,
+          result: (deep.response || 'Sin resumen') + ' · Google: ' + googleSearchUrl(q),
         };
       }
       case 'create_file': {
@@ -104,11 +86,9 @@ async function executeTool(tool, helpers) {
         const html =
           '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>' +
           title.replace(/</g, '') +
-          '</title><style>body{font-family:Segoe UI,sans-serif;max-width:880px;margin:40px auto;padding:0 20px;line-height:1.65;color:#0f172a;background:#f8fafc}h1{color:#0369a1}</style></head><body><h1>' +
+          '</title></head><body><h1>' +
           title.replace(/</g, '') +
-          '</h1><p>ELYRA · ' +
-          new Date().toLocaleString('es-ES') +
-          '</p>' +
+          '</h1>' +
           body +
           '</body></html>';
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -156,18 +136,11 @@ async function executeTool(tool, helpers) {
       case 'get_system_info':
         if (helpers.getSystemStats) {
           const s = await helpers.getSystemStats();
-          return {
-            ok: true,
-            result: 'CPU ' + s.cpu + '%, RAM ' + s.ram + '%, disco ' + s.disk + '%.',
-          };
+          return { ok: true, result: 'CPU ' + s.cpu + '%, RAM ' + s.ram + '%, disco ' + s.disk + '%.' };
         }
         return {
           ok: true,
-          result:
-            os.hostname() +
-            ', ' +
-            Math.round(os.totalmem() / 1e9) +
-            ' GB RAM.',
+          result: os.hostname() + ', ' + Math.round(os.totalmem() / 1e9) + ' GB RAM.',
         };
       case 'battery':
         return pc ? await pc.battery() : { ok: false, result: 'N/A' };
