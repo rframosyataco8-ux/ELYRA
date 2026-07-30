@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v4.1 — personalidad JARVIS, test de API, auto-detect proveedor
+ * ELYRA Agent v5 — más herramientas, más inteligencia operativa
  */
 const fs = require('fs');
 const path = require('path');
@@ -13,37 +13,45 @@ const MODEL_CHAIN = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 const COMPLEX_RE =
   /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta)\b/i;
 
-const SYSTEM_PROMPT = `Eres ELYRA, el asistente de escritorio del usuario en Windows. Hablas español natural, claro y cercano, con el estilo de un sistema inteligente de élite: profesional, preciso y ligeramente formal cuando conviene, pero siempre útil y humano.
+const SYSTEM_PROMPT = `Eres ELYRA, asistente de escritorio del usuario en Windows. Español natural, preciso, estilo sistema de élite (tipo JARVIS): útil, breve y honesto.
 
 PERSONALIDAD:
-- Entiendes pedidos incompletos o con errores de voz (por ejemplo "abre word" aunque diga "abre work").
-- Si el pedido es ambiguo, asumes la intención más útil y actúas sin pedir confirmación innecesaria.
-- Respuestas FINALES para voz: 1 a 3 frases cortas. Sin markdown, sin JSON, sin rutas de Windows largas, sin listas interminables.
-- Si una herramienta falla (ERROR), dilo con honestidad. Nunca inventes que algo se abrió o guardó.
-- Cuando completes una tarea de sistema (abrir app, captura, volumen), confirma de forma breve y elegante.
+- Entiendes errores de voz ("abre work" → Word).
+- Si es ambiguo, eliges la acción más útil y actúas.
+- Respuesta FINAL para voz: 1 a 3 frases. Sin markdown, sin JSON, sin rutas largas.
+- Si una herramienta falla, dilo. Nunca inventes éxitos.
 
-CAPACIDADES (usa TOOLS cuando haga falta):
-- Abrir apps y carpetas, buscar en web, crear archivos e informes HTML.
-- Controlar volumen, multimedia, brillo, portapapeles, capturas, procesos, ventanas.
-- Leer/listar archivos, recordar datos, info del sistema.
-
-FORMATO DE HERRAMIENTAS (exacto):
+HERRAMIENTAS — formato exacto:
 [TOOL: nombre]
 parametro: valor
 [/TOOL]
 
-Herramientas:
-web_search (query), create_file (path, content), create_html_report (path, title, body),
-open_app (name), open_folder (name), open_url (url), read_file (path), list_dir (path),
-run_command (command), remember (text), recall, get_system_info,
-volume (action: up|down|mute), media (action: play|pause|next|prev),
-brightness (action: up|down|set, value), clipboard (action: read|write, text),
-screenshot, list_processes, kill_process (name), windows (action: minimize_all|lock|screen_off),
-input (action: type|click, text)
+Lista:
+web_search (query)
+create_file (path, content)
+create_html_report (path, title, body)
+open_app (name) · open_folder (name) · open_url (url)
+read_file (path) · list_dir (path) · search_files (query, root opcional)
+run_command (command)
+remember (text) · recall
+get_system_info · battery · network_info · disk_space · uptime
+volume (action: up|down|mute|set, value)
+media (action: play|pause|next|prev|stop)
+brightness (action: up|down|set, value)
+clipboard (action: read|write|clear, text)
+screenshot · list_processes · kill_process (name)
+windows (action: minimize_all|lock|screen_off)
+input (action: type|click|enter|escape, text)
+notify (title, message)
+open_settings (page: system|display|sound|wifi|bluetooth|privacy|apps|update|power)
+empty_recycle
+power (action: shutdown|restart|sleep|cancel, minutes opcional)
 
-Cuando el usuario pide conocimiento (quién inventó X, qué es Y, historia, ciencia), usa web_search y responde con lo esencial.
-Cuando pide crear documentos, usa create_file o create_html_report en Informes/.
-Cuando pide abrir algo, open_app u open_folder de inmediato.`;
+Reglas:
+- Conocimiento → web_search.
+- Documentos → create_file / create_html_report en Informes/.
+- Abrir → open_app / open_folder de inmediato.
+- Apagar/reiniciar: usa power con minutes (por defecto pocos segundos de gracia).`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
@@ -62,7 +70,6 @@ function ensureDefaultConfig() {
   }
 }
 
-/** Detecta proveedor por el prefijo de la key */
 function detectProviderFromKey(apiKey) {
   const k = (apiKey || '').trim();
   if (k.startsWith('gsk_')) {
@@ -102,20 +109,16 @@ function saveConfig(partial) {
   ensureDefaultConfig();
   const prev = getConfig();
   const next = { ...prev, ...partial };
-
-  // No borrar apiKey si llega vacía
   if (partial.apiKey === undefined || partial.apiKey === '') {
     next.apiKey = prev.apiKey;
   } else {
     next.apiKey = String(partial.apiKey).trim();
-    // Auto-ajustar proveedor si la key lo indica y no forzaron otra URL
     const detected = detectProviderFromKey(next.apiKey);
     if (detected) {
       if (!partial.baseUrl) next.baseUrl = detected.baseUrl;
       if (!partial.model) next.model = detected.model;
     }
   }
-
   fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2), 'utf-8');
   return next;
 }
@@ -147,7 +150,7 @@ async function callLLMOnce(messages, config, model) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${config.apiKey}`,
     },
-    body: JSON.stringify({ model, messages, temperature: 0.4, max_tokens: 2500 }),
+    body: JSON.stringify({ model, messages, temperature: 0.35, max_tokens: 2800 }),
   });
   if (!res.ok) {
     const errText = await res.text();
@@ -170,7 +173,6 @@ async function callLLM(messages, config, preferredModel) {
     } catch (e) {
       lastErr = e;
       if (e.status === 429 || /rate limit|429/i.test(String(e.message))) continue;
-      // Si el modelo no existe en el proveedor, probar siguiente
       if (e.status === 400 || e.status === 404) continue;
       throw e;
     }
@@ -178,7 +180,6 @@ async function callLLM(messages, config, preferredModel) {
   throw lastErr || new Error('Límite de uso');
 }
 
-/** Prueba real de la API (1 token) */
 async function testApiConnection(override = {}) {
   const config = { ...getConfig(), ...override };
   if (override.apiKey === '') config.apiKey = getConfig().apiKey;
@@ -286,6 +287,7 @@ function normalizeUserIntent(raw) {
     [/\bhaze?\s+una\s+captura\b/gi, 'haz una captura'],
     [/\bsube el vol\b/gi, 'sube el volumen'],
     [/\belira\b/gi, 'elyra'],
+    [/\bpapeler[ao]\b/gi, 'papelera'],
   ];
   for (const [re, rep] of fixes) t = t.replace(re, rep);
   return t;
@@ -293,6 +295,7 @@ function normalizeUserIntent(raw) {
 
 async function executeTool(tool, helpers) {
   const { name, params } = tool;
+  const pc = helpers.pc;
   try {
     switch (name) {
       case 'web_search': {
@@ -316,7 +319,7 @@ async function executeTool(tool, helpers) {
         try {
           const wr = await fetch(
             `https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`,
-            { headers: { 'User-Agent': 'ELYRA/4.1' } },
+            { headers: { 'User-Agent': 'ELYRA/5.0' } },
           );
           if (wr.ok) {
             const data = await wr.json();
@@ -341,7 +344,7 @@ async function executeTool(tool, helpers) {
         const title = params.title || 'Reporte ELYRA';
         const body = params.body || '<p>Sin contenido</p>';
         const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width"/><title>${title.replace(/</g, '')}</title>
-<style>body{font-family:Segoe UI,system-ui,sans-serif;max-width:880px;margin:40px auto;padding:0 20px;line-height:1.65;color:#0f172a;background:#f8fafc}h1{color:#0369a1;border-bottom:2px solid #bae6fd;padding-bottom:8px}h2{color:#0c4a6e}.meta{color:#64748b;font-size:14px}code{background:#e0f2fe;padding:2px 6px;border-radius:4px}</style></head>
+<style>body{font-family:Segoe UI,system-ui,sans-serif;max-width:880px;margin:40px auto;padding:0 20px;line-height:1.65;color:#0f172a;background:#f8fafc}h1{color:#0369a1;border-bottom:2px solid #bae6fd;padding-bottom:8px}h2{color:#0c4a6e}.meta{color:#64748b;font-size:14px}</style></head>
 <body><h1>${title.replace(/</g, '')}</h1><p class="meta">Generado por ELYRA · ${new Date().toLocaleString('es-ES')}</p>${body}</body></html>`;
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         const finalPath = filePath.toLowerCase().endsWith('.html') ? filePath : filePath + '.html';
@@ -381,6 +384,8 @@ async function executeTool(tool, helpers) {
           result: items.map((d) => `${d.isDirectory() ? '[DIR]' : '[FILE]'} ${d.name}`).join('\n'),
         };
       }
+      case 'search_files':
+        return pc ? await pc.searchFiles(params.query, params.root) : { ok: false, result: 'N/A' };
       case 'run_command':
         return await helpers.runCommand(params.command || '');
       case 'remember':
@@ -396,30 +401,40 @@ async function executeTool(tool, helpers) {
           ok: true,
           result: `Equipo ${os.hostname()}, ${os.platform()}, ${Math.round(os.totalmem() / 1e9)} GB RAM.`,
         };
+      case 'battery':
+        return pc ? await pc.battery() : { ok: false, result: 'N/A' };
+      case 'network_info':
+        return pc ? await pc.networkInfo() : { ok: false, result: 'N/A' };
+      case 'disk_space':
+        return pc ? await pc.systemExtras('disk_space') : { ok: false, result: 'N/A' };
+      case 'uptime':
+        return pc ? await pc.systemExtras('uptime') : { ok: false, result: 'N/A' };
       case 'volume':
-        return helpers.pc ? await helpers.pc.volume(params.action, params.value) : { ok: false, result: 'N/A' };
+        return pc ? await pc.volume(params.action, params.value) : { ok: false, result: 'N/A' };
       case 'media':
-        return helpers.pc ? await helpers.pc.media(params.action) : { ok: false, result: 'N/A' };
+        return pc ? await pc.media(params.action) : { ok: false, result: 'N/A' };
       case 'brightness':
-        return helpers.pc
-          ? await helpers.pc.brightness(params.action, params.value)
-          : { ok: false, result: 'N/A' };
+        return pc ? await pc.brightness(params.action, params.value) : { ok: false, result: 'N/A' };
       case 'clipboard':
-        return helpers.pc
-          ? await helpers.pc.clipboard(params.action, params.text)
-          : { ok: false, result: 'N/A' };
+        return pc ? await pc.clipboard(params.action, params.text) : { ok: false, result: 'N/A' };
       case 'screenshot':
-        return helpers.pc ? await helpers.pc.screenshot() : { ok: false, result: 'N/A' };
+        return pc ? await pc.screenshot() : { ok: false, result: 'N/A' };
       case 'list_processes':
-        return helpers.pc ? await helpers.pc.listProcesses() : { ok: false, result: 'N/A' };
+        return pc ? await pc.listProcesses() : { ok: false, result: 'N/A' };
       case 'kill_process':
-        return helpers.pc ? await helpers.pc.killProcess(params.name) : { ok: false, result: 'N/A' };
+        return pc ? await pc.killProcess(params.name) : { ok: false, result: 'N/A' };
       case 'windows':
-        return helpers.pc ? await helpers.pc.windows(params.action) : { ok: false, result: 'N/A' };
+        return pc ? await pc.windows(params.action) : { ok: false, result: 'N/A' };
       case 'input':
-        return helpers.pc
-          ? await helpers.pc.input(params.action, { text: params.text })
-          : { ok: false, result: 'N/A' };
+        return pc ? await pc.input(params.action, { text: params.text }) : { ok: false, result: 'N/A' };
+      case 'notify':
+        return pc ? await pc.notify(params.title, params.message) : { ok: false, result: 'N/A' };
+      case 'open_settings':
+        return pc ? await pc.openSettings(params.page || params.name) : { ok: false, result: 'N/A' };
+      case 'empty_recycle':
+        return pc ? await pc.emptyRecycle() : { ok: false, result: 'N/A' };
+      case 'power':
+        return pc ? await pc.power(params.action, params.minutes) : { ok: false, result: 'N/A' };
       default:
         return { ok: false, result: `Desconocida: ${name}` };
     }
