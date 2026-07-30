@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v8 — ReAct cognitivo + Function Calling + Python productivity
+ * ELYRA Agent v9 — conversación natural + ReAct + tools + productividad
  */
 const fs = require('fs');
 const path = require('path');
@@ -7,38 +7,53 @@ const os = require('os');
 const { TOOL_DEFINITIONS, toolsPromptSummary } = require('./tools-schema.cjs');
 const hooks = require('./agent-hooks.cjs');
 
+let smartKnowledgeFn = null;
+try {
+  smartKnowledgeFn = require('./smart-knowledge.cjs').smartKnowledge;
+} catch {}
+
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
 const MODEL_FAST = 'llama-3.1-8b-instant';
 const MODEL_SMART = 'llama-3.3-70b-versatile';
 const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 
 const COMPLEX_RE =
-  /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|presentacion|dashboard)\b/i;
+  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion)\b/i;
 
 const SYSTEM_PROMPT =
-  `Eres ELYRA, asistente de escritorio del usuario en Windows. Español natural, preciso, estilo sistema de élite (tipo JARVIS): útil, breve y honesto.
+  `Eres ELYRA, el asistente personal de escritorio del usuario en Windows.
+Hablas español natural, como un colega brillante (calidad ChatGPT / Claude / Gemini), no como un robot de comandos.
 
-PERSONALIDAD:
-- Entiendes errores de voz ("abre work" → Word).
-- Si es ambiguo, eliges la acción más útil y actúas.
-- Respuesta FINAL para voz: 1 a 3 frases. Sin markdown, sin JSON, sin rutas largas.
-- Si una herramienta falla, dilo. Nunca inventes éxitos.
-- Objetivos abstractos: descompones en pasos y usas herramientas en cadena hasta completar.
+QUIÉN ERES:
+- Razonas, explicas y actúas sobre el PC real del usuario.
+- Entiendes lenguaje coloquial, faltas de ortografía y errores de voz ("abre work" → Word, "crhome" → Chrome).
+- Si la petición es ambigua, eliges la interpretación más útil y avanzas.
+- Nunca inventes que hiciste algo si la herramienta falló.
 
-Puedes usar function calling nativo cuando esté disponible.
-También el formato:
+CÓMO RESPONDES:
+- Conversación / conocimiento: 2 a 6 frases claras, útiles, en español. Sin markdown agresivo, sin JSON, sin rutas largas de Windows.
+- Acciones del PC (abrir app, volumen, captura): 1 frase de confirmación.
+- Si el usuario pide detalle, profundiza. Si pide breve, sé breve.
+- Prohibido responder solo "No pude conectar ahora". Explica el problema y ofrece alternativa.
+
+HERRAMIENTAS:
+Puedes usar function calling nativo o el formato:
 [TOOL: nombre]
 parametro: valor
 [/TOOL]
 
-Herramientas:\n` + toolsPromptSummary() + `
+` + toolsPromptSummary() + `
 
-Reglas:
-- Conocimiento → web_search.
-- Datos en PC → scan_folder, analyze_excel, summarize_pdf, read_docx.
-- Entregables → write_docx, write_pptx, html_dashboard, create_file, create_html_report en Informes/.
-- Abrir → open_app / open_folder / open_url.
-- Apagar/reiniciar → power.`;
+GUÍA RÁPIDA:
+- Preguntas de conocimiento → web_search (y sintetiza en español claro).
+- "Gemini" en contexto de IA → Google Gemini (modelo de Google), no la constelación ni otros homónimos.
+- Archivos Excel/PDF/Word → analyze_excel, summarize_pdf, read_docx.
+- Informes → write_docx, write_pptx, html_dashboard, create_html_report en Informes/.
+- Abrir apps/webs → open_app, open_folder, open_url.
+- Sistema → get_system_info, battery, volume, screenshot, etc.
+- Preferencias del usuario → remember / recall.
+
+Actúa con autonomía: si hace falta buscar, abrir y luego resumir, haz la cadena completa antes de la respuesta final.`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
@@ -155,7 +170,10 @@ function pickModel(userMessage, config) {
   const provider = inferProvider(config);
   if (provider === 'groq') {
     if (COMPLEX_RE.test(userMessage || '')) return MODEL_SMART;
-    if ((userMessage || '').length > 180) return MODEL_SMART;
+    if ((userMessage || '').length > 100) return MODEL_SMART;
+    if (/\?$|^(qué|que|cómo|como|por qué|porque|quién|quien|cuál|cual)/i.test(userMessage || '')) {
+      return MODEL_SMART;
+    }
   }
   return config.model || MODEL_FAST;
 }
@@ -212,8 +230,8 @@ async function callAnthropic(messages, config, model) {
     },
     body: JSON.stringify({
       model: model || config.model || 'claude-3-5-sonnet-20241022',
-      max_tokens: 3200,
-      temperature: 0.3,
+      max_tokens: 4096,
+      temperature: 0.45,
       system: systemParts.join('\n\n') || undefined,
       messages: merged,
     }),
@@ -260,8 +278,8 @@ async function callOpenAICompat(messages, config, model, useTools) {
       }
       return { role: m.role, content: m.content };
     }),
-    temperature: 0.3,
-    max_tokens: 3200,
+    temperature: 0.45,
+    max_tokens: 4096,
   };
 
   if (useTools && supportsNativeTools(config)) {
@@ -408,14 +426,15 @@ function stripTools(text) {
 function polishForSpeech(text) {
   if (!text) return '';
   let t = stripTools(text);
-  if (/rate limit|429/i.test(t)) return 'El servicio está saturado un momento.';
+  if (/rate limit|429/i.test(t)) return 'El servicio de IA está saturado un momento. Intenta de nuevo en unos segundos.';
   t = t.replace(/[A-Za-z]:\\[^\s\]"']+/g, 'Documentos');
   t = t.replace(/\\+/g, ' ');
   t = t.replace(/\*\*?/g, '');
   t = t.replace(/`+/g, '');
-  t = t.replace(/\{[\s\S]*\}/g, '');
+  // No borrar todo el texto si hay llaves accidentales en prosa
+  t = t.replace(/```[\s\S]*?```/g, '');
   t = t.replace(/#{1,6}\s*/g, '');
-  return t.replace(/\s+/g, ' ').trim();
+  return t.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function normalizeUserIntent(raw) {
@@ -428,6 +447,7 @@ function normalizeUserIntent(raw) {
     [/\bnot pad\b/gi, 'notepad'],
     [/\bbloc\b/gi, 'notepad'],
     [/\bcrom\b/gi, 'chrome'],
+    [/\bcrhome\b/gi, 'chrome'],
     [/\bgrome\b/gi, 'chrome'],
     [/\bedch\b/gi, 'edge'],
     [/\bvisual estudio\b/gi, 'code'],
@@ -439,6 +459,23 @@ function normalizeUserIntent(raw) {
   ];
   for (const [re, rep] of fixes) t = t.replace(re, rep);
   return t;
+}
+
+function humanizeLlmError(e) {
+  const msg = String(e?.message || e || '');
+  if (msg === 'NO_API_KEY' || /NO_API_KEY/.test(msg)) {
+    return 'Falta la API key. Ve a Configuración, pégala y pulsa Probar conexión.';
+  }
+  if (/401|invalid|unauthorized|authentication/i.test(msg)) {
+    return 'La API key no es válida o está revocada. Revísala en Configuración.';
+  }
+  if (/403/i.test(msg)) return 'Acceso denegado al modelo. Revisa el plan de tu proveedor.';
+  if (/429|rate limit/i.test(msg)) return 'El servicio de IA está saturado. Espera unos segundos e inténtalo de nuevo.';
+  if (/404|model/i.test(msg)) return 'El modelo configurado no existe. Cambia el modelo en Configuración.';
+  if (/fetch|network|ENOTFOUND|ECONNREFUSED|timeout/i.test(msg)) {
+    return 'No hay conexión con el servidor de IA. Revisa internet o la Base URL.';
+  }
+  return 'No pude completar la consulta con el modelo (' + msg.slice(0, 60) + '). Puedo seguir controlando el PC y buscando información local.';
 }
 
 const PYTHON_TOOLS = new Set([
@@ -465,6 +502,14 @@ async function executeTool(tool, helpers) {
         const q = params.query || '';
         if (!q) return { ok: false, result: 'Falta query' };
         const results = [];
+
+        if (smartKnowledgeFn) {
+          try {
+            const sk = await smartKnowledgeFn(q);
+            if (sk.ok && sk.response) results.push('Resumen: ' + sk.response);
+          } catch {}
+        }
+
         try {
           const res = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), {
             headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -472,28 +517,19 @@ async function executeTool(tool, helpers) {
           const html = await res.text();
           const re = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td)>/gi;
           let sm;
-          while ((sm = re.exec(html)) !== null && results.length < 6) {
+          while ((sm = re.exec(html)) !== null && results.length < 7) {
             const t = sm[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
             if (t.length > 25) results.push(t);
           }
         } catch (e) {
-          results.push('(Busqueda: ' + e.message + ')');
+          results.push('(Búsqueda web: ' + e.message + ')');
         }
-        try {
-          const wr = await fetch(
-            'https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
-            { headers: { 'User-Agent': 'ELYRA/8.0' } },
-          );
-          if (wr.ok) {
-            const data = await wr.json();
-            if (data.extract) results.unshift('Wikipedia: ' + data.extract);
-          }
-        } catch {}
+
         return {
           ok: true,
           result: results.length
             ? results.map((r, i) => i + 1 + '. ' + r).join('\n')
-            : 'Sin resultados: ' + q,
+            : 'Sin resultados claros para: ' + q,
         };
       }
       case 'create_file': {
@@ -621,7 +657,7 @@ async function runAgent(userMessage, history, helpers) {
   if (!config.apiKey) {
     return {
       response:
-        'No hay API key configurada. Ve a Configuración, elige proveedor, pega tu clave y pulsa Guardar.',
+        'No hay API key configurada. Ve a Configuración, elige proveedor, pega tu clave y pulsa Guardar y Probar conexión.',
       iterations: 0,
     };
   }
@@ -635,7 +671,7 @@ async function runAgent(userMessage, history, helpers) {
 
   const messages = [
     { role: 'system', content: systemContent },
-    ...history.slice(-12).map((h) => ({
+    ...history.slice(-16).map((h) => ({
       role: h.role === 'user' ? 'user' : 'assistant',
       content: h.text,
     })),
@@ -652,16 +688,7 @@ async function runAgent(userMessage, history, helpers) {
     try {
       out = await callLLM(messages, config, preferred, native && iterations <= 6);
     } catch (e) {
-      if (/429|rate limit/i.test(String(e.message))) {
-        return { response: 'El servicio está saturado un momento.', iterations };
-      }
-      if (String(e.message) === 'NO_API_KEY') {
-        return { response: 'Falta la API key. Configúrala en la pestaña Configuración.', iterations };
-      }
-      if (/401|invalid|unauthorized|authentication/i.test(String(e.message))) {
-        return { response: 'La API key no es válida. Revísala en Configuración.', iterations };
-      }
-      return { response: 'No pude conectar ahora.', iterations };
+      return { response: humanizeLlmError(e), iterations };
     }
 
     const nativeTools = parseNativeToolCalls(out.tool_calls);
@@ -680,9 +707,9 @@ async function runAgent(userMessage, history, helpers) {
     }
 
     const obs =
-      'OBSERVATION (resultados internos — evalúa si basta o necesitas otra ACTION antes de responder al usuario):\n' +
+      'OBSERVATION (resultados internos):\n' +
       results.map((r) => '• ' + r.tool + ': ' + (r.ok ? 'OK' : 'ERROR') + ' — ' + r.result).join('\n') +
-      '\n\nSi el objetivo no está completo, llama más herramientas. Si ya está listo, respuesta FINAL breve para voz (1-3 frases), sin bloques TOOL.';
+      '\n\nSi falta algo, llama más herramientas. Si ya está listo, da la respuesta FINAL en español natural (sin bloques TOOL, sin JSON).';
 
     if (nativeTools.length && out.rawMessage) {
       messages.push({
@@ -716,7 +743,8 @@ async function runAgent(userMessage, history, helpers) {
 
 function fallbackResponse() {
   return {
-    response: 'Configura tu API key en la pestaña Configuración de ELYRA.',
+    response:
+      'Configura tu API key en Configuración de ELYRA y pulsa Probar conexión. Mientras tanto puedo abrir apps y controlar el PC.',
     intelligent: false,
   };
 }
