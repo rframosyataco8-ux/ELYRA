@@ -4,26 +4,13 @@ import { NetworkGlobe } from '@/components/NetworkGlobe';
 import { Sidebar } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
 import { ConversationLog, type Message } from '@/components/ConversationLog';
-import { ParticleField } from '@/components/ParticleField';
-import {
-  Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Sparkles,
-  FolderOpen, Chrome, Calculator, Camera, Volume2,
-} from 'lucide-react';
+import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
-
-const QUICK_ACTIONS = [
-  { label: 'Chrome', icon: Chrome, cmd: 'Abre Chrome' },
-  { label: 'Descargas', icon: FolderOpen, cmd: 'Abre la carpeta Descargas' },
-  { label: 'Calculadora', icon: Calculator, cmd: 'Abre la calculadora' },
-  { label: 'Captura', icon: Camera, cmd: 'Haz una captura de pantalla' },
-  { label: 'Volumen +', icon: Volume2, cmd: 'Sube el volumen' },
-];
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [booted, setBooted] = useState(false);
-  const [bootPhase, setBootPhase] = useState(0);
   const [page, setPage] = useState<'inicio' | 'asistente' | 'config'>('inicio');
   const [inputValue, setInputValue] = useState('');
   const [uptime, setUptime] = useState(0);
@@ -31,10 +18,14 @@ export default function App() {
   const [thinking, setThinking] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
   const [continuous, setContinuous] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState('');
-  const [configSaved, setConfigSaved] = useState(false);
-  const [configModel, setConfigModel] = useState('llama-3.1-8b-instant');
-  const [configBase, setConfigBase] = useState('https://api.groq.com/openai/v1');
+
+  // Config form state
+  const [cfgApiKey, setCfgApiKey] = useState('');
+  const [cfgBaseUrl, setCfgBaseUrl] = useState('https://api.groq.com/openai/v1');
+  const [cfgModel, setCfgModel] = useState('llama-3.1-8b-instant');
+  const [cfgSaving, setCfgSaving] = useState(false);
+  const [cfgSaved, setCfgSaved] = useState(false);
+  const [cfgLoaded, setCfgLoaded] = useState(false);
 
   const speakRef = useRef<(text: string) => void | Promise<void>>(() => {});
   const startTimeRef = useRef(Date.now());
@@ -72,19 +63,19 @@ export default function App() {
           const result = await window.elyra.agentChat(cleaned, history);
           let reply = (result.response || '').trim();
           if (/rate limit|"error".*429|org_[a-z0-9]+/i.test(reply)) {
-            reply = 'El servicio está saturado un momento. Espere un instante y lo intentamos de nuevo.';
+            reply = 'El servicio está saturado un momento. Espera un poco y lo intentamos otra vez.';
           }
           if (reply) {
             addMessage('elyra', reply);
             await speakRef.current(reply);
           }
         } else {
-          const msg = 'Abra la aplicación de escritorio para acceder a todas las funciones, señor.';
+          const msg = 'Abre la app de escritorio para usar todas las funciones.';
           addMessage('elyra', msg);
           await speakRef.current(msg);
         }
       } catch {
-        const msg = 'No pude completar esa solicitud ahora. Pruebe de nuevo en unos segundos.';
+        const msg = 'No pude completar eso ahora. Prueba de nuevo en unos segundos.';
         addMessage('elyra', msg);
         await speakRef.current(msg);
       } finally {
@@ -134,33 +125,24 @@ export default function App() {
     if (!booted || !isDesktop) return;
     window.elyra?.agentConfigGet().then((c) => {
       setHasApiKey(c.hasKey);
-      if (c.model) setConfigModel(c.model);
-      if (c.baseUrl) setConfigBase(c.baseUrl);
+      if (c.baseUrl) setCfgBaseUrl(c.baseUrl);
+      if (c.model) setCfgModel(c.model);
+      setCfgLoaded(true);
     });
   }, [booted]);
 
-  // Boot sequence cinematográfico
   useEffect(() => {
     if (bootOnceRef.current) return;
     bootOnceRef.current = true;
-    const timers = [
-      setTimeout(() => setBootPhase(1), 200),
-      setTimeout(() => setBootPhase(2), 700),
-      setTimeout(() => setBootPhase(3), 1200),
-      setTimeout(async () => {
-        setBooted(true);
-        setBootPhase(4);
-        const hour = new Date().getHours();
-        const saludo =
-          hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
-        const bootMsg = isDesktop
-          ? `${saludo}, Fabricio. Soy ELYRA. Sistemas online. Pulse el micrófono, hable, y pulse de nuevo para enviar.`
-          : 'Soy ELYRA. Use la versión de escritorio para el control total del sistema.';
-        addMessage('elyra', bootMsg);
-        await speak(bootMsg);
-      }, 1600),
-    ];
-    return () => timers.forEach(clearTimeout);
+    const t = setTimeout(async () => {
+      setBooted(true);
+      const bootMsg = isDesktop
+        ? 'Sistemas online. Soy ELYRA. Pulsa el micrófono, habla, y pulsa otra vez para enviar.'
+        : 'Soy ELYRA. Usa la versión de escritorio para el control total.';
+      addMessage('elyra', bootMsg);
+      await speak(bootMsg);
+    }, 600);
+    return () => clearTimeout(t);
   }, [addMessage, speak]);
 
   const handleToggleListen = () => {
@@ -186,16 +168,30 @@ export default function App() {
 
   const handleSaveConfig = async () => {
     if (!isDesktop || !window.elyra) return;
-    const partial: { apiKey?: string; baseUrl?: string; model?: string } = {};
-    if (apiKeyInput.trim()) partial.apiKey = apiKeyInput.trim();
-    if (configBase.trim()) partial.baseUrl = configBase.trim();
-    if (configModel.trim()) partial.model = configModel.trim();
-    await window.elyra.agentConfigSet(partial);
-    const c = await window.elyra.agentConfigGet();
-    setHasApiKey(c.hasKey);
-    setConfigSaved(true);
-    setApiKeyInput('');
-    setTimeout(() => setConfigSaved(false), 2500);
+    setCfgSaving(true);
+    setCfgSaved(false);
+    try {
+      await window.elyra.agentConfigSet({
+        apiKey: cfgApiKey.trim() || undefined,
+        baseUrl: cfgBaseUrl.trim(),
+        model: cfgModel.trim(),
+      });
+      const c = await window.elyra.agentConfigGet();
+      setHasApiKey(c.hasKey);
+      setCfgSaved(true);
+      setTimeout(() => setCfgSaved(false), 2500);
+      if (cfgApiKey.trim()) setCfgApiKey('');
+    } catch {
+      /* silent */
+    } finally {
+      setCfgSaving(false);
+    }
+  };
+
+  const handleClearMemory = async () => {
+    if (!isDesktop || !window.elyra) return;
+    await window.elyra.memoryClear();
+    addMessage('elyra', 'Memoria local borrada.');
   };
 
   const formatUptime = (s: number) => {
@@ -205,77 +201,52 @@ export default function App() {
   };
 
   const statusLabel = thinking
-    ? 'Procesando...'
+    ? 'Procesando…'
     : transcribing
-    ? 'Transcribiendo...'
+    ? 'Transcribiendo…'
     : speaking
-    ? 'Hablando...'
+    ? 'Hablando…'
     : listening
-    ? 'Escuchando… pulse el mic de nuevo'
+    ? 'Escuchando… pulsa el mic otra vez'
     : 'Lista';
 
-  if (!booted) {
-    return (
-      <div className="h-screen w-screen bg-[#02060e] flex flex-col items-center justify-center select-none relative overflow-hidden">
-        <ParticleField active={bootPhase >= 2} />
-        <div className={`relative z-10 text-center transition-all duration-700 ${bootPhase >= 1 ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
-          <div className="relative w-24 h-24 mx-auto mb-6">
-            <div className="absolute inset-0 rounded-full border border-sky-400/30 animate-pulse-glow" />
-            <div className="absolute inset-2 rounded-full border border-sky-500/20" style={{ animation: 'ring-spin 8s linear infinite' }} />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <svg viewBox="0 0 40 40" className="w-12 h-12">
-                <circle cx="20" cy="20" r="6" fill="none" stroke="#38bdf8" strokeWidth="1.5" />
-                <ellipse cx="20" cy="20" rx="14" ry="6" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.6" />
-                <ellipse cx="20" cy="20" rx="14" ry="6" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.6" transform="rotate(60 20 20)" />
-                <ellipse cx="20" cy="20" rx="14" ry="6" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.6" transform="rotate(120 20 20)" />
-                <circle cx="20" cy="20" r="2.5" fill="#7dd3fc" />
-              </svg>
-            </div>
-          </div>
-          <h1 className="text-2xl font-semibold tracking-[0.3em] text-white text-glow">ELYRA</h1>
-          <p className="text-xs text-sky-400/50 tracking-[0.25em] uppercase mt-2">
-            {bootPhase < 2 ? 'Inicializando...' : bootPhase < 3 ? 'Cargando sistemas...' : 'Sincronizando...'}
-          </p>
-          <div className="mt-6 w-48 h-0.5 mx-auto bg-sky-900/50 rounded overflow-hidden">
-            <div
-              className="h-full bg-gradient-to-r from-sky-600 to-sky-300 transition-all duration-500 rounded"
-              style={{ width: `${bootPhase * 25}%` }}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const providers = [
+    { label: 'Groq (rápido / gratis)', url: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
+    { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+    { label: 'xAI Grok', url: 'https://api.x.ai/v1', model: 'grok-2-latest' },
+    { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+    { label: 'Ollama local', url: 'http://localhost:11434/v1', model: 'llama3.2' },
+  ];
 
   return (
-    <div className="h-screen w-screen bg-[#02060e] text-sky-100 flex overflow-hidden select-none relative animate-boot">
-      <ParticleField active={speaking || listening || thinking} />
+    <div className="h-screen w-screen bg-[#030810] text-sky-100 flex overflow-hidden select-none relative">
+      {/* Ambient background glow */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-sky-600/5 blur-[120px]" />
+        <div className="absolute bottom-[-15%] right-[-10%] w-[40%] h-[40%] rounded-full bg-violet-600/5 blur-[100px]" />
+      </div>
 
-      <Sidebar active={page} onNavigate={setPage} />
+      <Sidebar active={page} onNavigate={setPage} hasApiKey={hasApiKey} />
 
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
-        <header className="h-10 flex items-center justify-between px-3 border-b border-sky-500/10 drag-region bg-[#030a14]/60 backdrop-blur-sm">
-          <div className="flex items-center gap-2.5 text-[11px] text-sky-400/40 pl-1">
-            <span className="font-semibold text-sky-300/80 tracking-[0.2em]">ELYRA</span>
+        <header className="h-10 flex items-center justify-between px-3 border-b border-sky-500/10 drag-region">
+          <div className="flex items-center gap-2 text-[11px] text-sky-400/45 pl-1">
+            <span className="font-medium text-sky-300/80 tracking-[0.18em]">ELYRA</span>
             {isDesktop && <span className="text-sky-500/40">· Escritorio</span>}
-            {naturalTts && <span className="text-emerald-400/50">· Voz neural</span>}
+            {naturalTts && <span className="text-emerald-400/55">· Voz neural</span>}
             {hasApiKey && <span className="text-violet-400/55">· IA activa</span>}
-            {!hasApiKey && isDesktop && (
-              <span className="text-amber-400/70 flex items-center gap-1">
-                <Key className="w-3 h-3" /> Sin API key
-              </span>
-            )}
+            {!hasApiKey && isDesktop && <span className="text-amber-400/65">· Sin API key</span>}
           </div>
           <div className="flex items-center gap-1 no-drag">
             {isDesktop && (
               <>
-                <button onClick={() => window.elyra?.minimize()} className="w-8 h-7 flex items-center justify-center rounded-md hover:bg-sky-500/10 text-sky-400/50 transition-colors">
+                <button onClick={() => window.elyra?.minimize()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50 transition-colors">
                   <Minus className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={() => window.elyra?.maximize()} className="w-8 h-7 flex items-center justify-center rounded-md hover:bg-sky-500/10 text-sky-400/50 transition-colors">
+                <button onClick={() => window.elyra?.maximize()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50 transition-colors">
                   <Square className="w-3 h-3" />
                 </button>
-                <button onClick={() => window.elyra?.close()} className="w-8 h-7 flex items-center justify-center rounded-md hover:bg-red-500/20 text-sky-400/50 hover:text-red-400 transition-colors">
+                <button onClick={() => window.elyra?.close()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-red-500/20 text-sky-400/50 hover:text-red-400 transition-colors">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </>
@@ -287,59 +258,40 @@ export default function App() {
           <main className="flex-1 flex flex-col min-w-0 px-5 py-4">
             {page === 'inicio' && (
               <>
-                <div className="text-center space-y-1.5 mb-1 animate-fade-in">
-                  <h2 className="text-2xl font-semibold text-white tracking-wide">
-                    Hola, Fabricio
-                  </h2>
-                  <p className="text-sm text-sky-300/50">
+                <div className="text-center space-y-1.5 mb-2 animate-boot">
+                  <h2 className="text-2xl font-semibold text-white tracking-wide text-glow-soft">Hola, Fabricio</h2>
+                  <p className="text-sm text-sky-300/55">
                     {listening
-                      ? 'Hable ahora… luego pulse el micrófono otra vez'
+                      ? 'Habla ahora… luego pulsa el micrófono otra vez'
                       : transcribing
-                      ? 'Convirtiendo su voz en texto…'
-                      : 'Pulse mic → hable → pulse mic otra vez'}
+                      ? 'Convirtiendo tu voz en texto…'
+                      : thinking
+                      ? 'Analizando y ejecutando…'
+                      : 'Pulsa mic → habla → pulsa mic otra vez'}
                   </p>
-                  <div className="inline-flex items-center gap-2 mt-2 px-3.5 py-1.5 rounded-full bg-sky-500/10 border border-sky-500/20">
+                  <div className="status-chip mt-2 mx-auto">
                     {thinking || transcribing ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
                     ) : (
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          speaking || listening
-                            ? 'bg-sky-400 animate-pulse shadow-[0_0_8px_#38bdf8]'
-                            : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                          speaking || listening ? 'bg-sky-400 animate-pulse shadow-[0_0_8px_#38bdf8]' : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
                         }`}
                       />
                     )}
-                    <span className="text-xs text-sky-300/85 tracking-wide">{statusLabel}</span>
+                    <span className="text-xs text-sky-300/85">{statusLabel}</span>
                   </div>
                 </div>
-
                 <div className="flex-1 flex items-center justify-center min-h-0">
                   <NetworkGlobe
                     speaking={speaking || thinking}
                     listening={listening || transcribing}
-                    size={360}
+                    size={340}
                     amplitude={amplitude}
                   />
                 </div>
-
-                {/* Quick actions */}
-                <div className="flex justify-center gap-2 mb-3 flex-wrap max-w-lg mx-auto">
-                  {QUICK_ACTIONS.map((qa) => (
-                    <button
-                      key={qa.label}
-                      onClick={() => processInput(qa.cmd)}
-                      disabled={thinking || processingRef.current}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] text-sky-300/70 bg-sky-500/8 border border-sky-500/15 hover:bg-sky-500/15 hover:text-sky-200 hover:border-sky-400/30 transition-all disabled:opacity-40"
-                    >
-                      <qa.icon className="w-3 h-3" />
-                      {qa.label}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="max-w-xl mx-auto w-full mb-2 max-h-24 overflow-hidden">
-                  <ConversationLog messages={messages.slice(-3)} compact />
+                  <ConversationLog messages={messages.slice(-4)} compact />
                 </div>
               </>
             )}
@@ -355,107 +307,156 @@ export default function App() {
             )}
 
             {page === 'config' && (
-              <div className="max-w-md mx-auto w-full space-y-4 pt-4 animate-fade-in">
-                <h2 className="text-lg font-medium text-white tracking-wide">Configuración</h2>
+              <div className="max-w-lg mx-auto w-full space-y-5 pt-4 animate-fade-in overflow-y-auto pb-4">
+                <div className="flex items-center gap-2">
+                  <Key className="w-4 h-4 text-sky-400" />
+                  <h2 className="text-lg font-medium text-white tracking-wide">Configuración</h2>
+                </div>
 
-                <div className="hud-glass rounded-2xl p-4 space-y-4 text-[12px]">
-                  <div>
-                    <label className="block text-sky-300/70 mb-1.5 tracking-wide">API Key (Groq / OpenAI / xAI)</label>
+                {/* API Config */}
+                <div className="hud-glass-strong rounded-2xl p-5 space-y-4 border border-sky-500/15">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm text-sky-100 font-medium">Proveedor de IA</h3>
+                    {hasApiKey ? (
+                      <span className="text-[11px] text-emerald-400/90 flex items-center gap-1">
+                        <Check className="w-3 h-3" /> Conectada
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-amber-400/80">Sin clave</span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-sky-400/60 tracking-wide uppercase">Proveedor rápido</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {providers.map((p) => (
+                        <button
+                          key={p.label}
+                          onClick={() => {
+                            setCfgBaseUrl(p.url);
+                            setCfgModel(p.model);
+                          }}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all ${
+                            cfgBaseUrl === p.url
+                              ? 'bg-sky-500/20 border-sky-400/40 text-sky-200'
+                              : 'border-sky-500/15 text-sky-400/60 hover:border-sky-500/30'
+                          }`}
+                        >
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-sky-400/60 tracking-wide uppercase">API Key</label>
                     <input
                       type="password"
-                      value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder={hasApiKey ? '••••••••  (ya configurada — pegue para cambiar)' : 'Pegue su API key aquí'}
-                      className="w-full bg-sky-950/40 border border-sky-500/20 rounded-xl px-3 py-2.5 text-sky-100 outline-none focus:border-sky-400/40 placeholder:text-sky-600/50"
+                      value={cfgApiKey}
+                      onChange={(e) => setCfgApiKey(e.target.value)}
+                      placeholder={hasApiKey ? '••••••••  (deja vacío para no cambiar)' : 'pega tu API key aquí'}
+                      className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/40 placeholder:text-sky-600/50"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sky-300/70 mb-1.5 tracking-wide">Base URL</label>
-                    <input
-                      value={configBase}
-                      onChange={(e) => setConfigBase(e.target.value)}
-                      className="w-full bg-sky-950/40 border border-sky-500/20 rounded-xl px-3 py-2.5 text-sky-100 outline-none focus:border-sky-400/40"
-                    />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-sky-400/60 tracking-wide uppercase">Base URL</label>
+                      <input
+                        value={cfgBaseUrl}
+                        onChange={(e) => setCfgBaseUrl(e.target.value)}
+                        className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-100 outline-none focus:border-sky-400/40"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-sky-400/60 tracking-wide uppercase">Modelo</label>
+                      <input
+                        value={cfgModel}
+                        onChange={(e) => setCfgModel(e.target.value)}
+                        className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-100 outline-none focus:border-sky-400/40"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sky-300/70 mb-1.5 tracking-wide">Modelo</label>
-                    <select
-                      value={configModel}
-                      onChange={(e) => setConfigModel(e.target.value)}
-                      className="w-full bg-sky-950/40 border border-sky-500/20 rounded-xl px-3 py-2.5 text-sky-100 outline-none focus:border-sky-400/40"
-                    >
-                      <option value="llama-3.1-8b-instant">llama-3.1-8b-instant (rápido)</option>
-                      <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (inteligente)</option>
-                      <option value="gemma2-9b-it">gemma2-9b-it</option>
-                      <option value="gpt-4o-mini">gpt-4o-mini</option>
-                      <option value="grok-2-latest">grok-2-latest</option>
-                    </select>
-                  </div>
+
                   <button
                     onClick={handleSaveConfig}
-                    disabled={!isDesktop}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/20 border border-sky-400/30 text-sky-200 hover:bg-sky-500/30 transition-all disabled:opacity-40"
+                    disabled={cfgSaving || !isDesktop}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/20 border border-sky-400/30 text-sky-100 text-sm hover:bg-sky-500/30 transition-all disabled:opacity-40"
                   >
-                    {configSaved ? (
+                    {cfgSaving ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : cfgSaved ? (
                       <>
                         <Check className="w-4 h-4 text-emerald-400" /> Guardado
                       </>
                     ) : (
                       <>
-                        <Key className="w-4 h-4" /> Guardar configuración
+                        <Save className="w-4 h-4" /> Guardar configuración
                       </>
                     )}
                   </button>
-                  <p className="text-sky-500/40 text-[11px] leading-relaxed">
-                    También puede editar manualmente:{' '}
-                    <code className="text-sky-400/60">%USERPROFILE%\.elyra\config.json</code>
+
+                  <p className="text-[11px] text-sky-500/50 leading-relaxed">
+                    También puedes editar manualmente:{' '}
+                    <code className="text-sky-400/70">%USERPROFILE%\.elyra\config.json</code>
                   </p>
                 </div>
 
-                <div className="hud-glass rounded-2xl p-4 space-y-3 text-[12px] text-sky-400/70">
-                  <p>
-                    <strong className="text-sky-200">Micrófono:</strong> pulse mic → hable → pulse mic otra vez.
+                {/* Voice & listen */}
+                <div className="hud-glass rounded-2xl p-5 space-y-4">
+                  <h3 className="text-sm text-sky-100 font-medium">Voz y micrófono</h3>
+                  <p className="text-[12px] text-sky-400/65 leading-relaxed">
+                    Pulsa el micrófono → habla → pulsa otra vez para enviar. Windows → Privacidad → Micrófono → permitir apps de escritorio.
                   </p>
-                  <p>Windows → Privacidad → Micrófono → permitir apps de escritorio.</p>
-                  <div className="flex items-center justify-between pt-2 border-t border-sky-500/10">
+                  <div className="flex items-center justify-between">
                     <span className="text-sky-100 text-sm">Escucha continua</span>
                     <button
                       onClick={() => setContinuous((v) => !v)}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${continuous ? 'bg-sky-500' : 'bg-sky-900'}`}
+                      className={`relative w-11 h-6 rounded-full transition-colors ${continuous ? 'bg-sky-500' : 'bg-sky-900 border border-sky-700'}`}
                     >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${
-                          continuous ? 'translate-x-5' : ''
-                        }`}
-                      />
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${continuous ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
                 </div>
+
+                {/* Memory */}
+                <div className="hud-glass rounded-2xl p-5 space-y-3">
+                  <h3 className="text-sm text-sky-100 font-medium">Memoria</h3>
+                  <p className="text-[12px] text-sky-400/65">Notas y hechos que ELYRA recuerda entre sesiones.</p>
+                  <button
+                    onClick={handleClearMemory}
+                    className="flex items-center gap-2 text-[12px] text-red-400/80 hover:text-red-300 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Borrar memoria local
+                  </button>
+                </div>
+
+                {!cfgLoaded && isDesktop && (
+                  <p className="text-center text-xs text-sky-500/40">Cargando configuración…</p>
+                )}
               </div>
             )}
 
             <div className="w-full max-w-xl mx-auto mt-auto pt-3">
-              {error && (
-                <p className="text-red-400/85 text-xs text-center mb-2 px-2 animate-fade-in">{error}</p>
-              )}
+              {error && <p className="text-red-400/80 text-xs text-center mb-2 px-2">{error}</p>}
               {!supported && null}
-              <div className="flex items-center gap-2 rounded-full hud-glass border border-sky-500/25 px-3 py-2 shadow-[0_0_30px_rgba(14,165,233,0.06)]">
+              <div className="flex items-center gap-2 rounded-full input-hud px-3 py-2">
                 <button
                   onClick={handleToggleListen}
                   disabled={thinking || transcribing}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
                     listening
-                      ? 'bg-red-500/35 text-red-100 shadow-[0_0_20px_rgba(248,113,113,0.4)] scale-105'
-                      : 'text-sky-400/70 hover:bg-sky-500/15 hover:text-sky-300'
+                      ? 'bg-red-500/35 text-red-100 shadow-[0_0_20px_rgba(248,113,113,0.4)]'
+                      : 'text-sky-400/70 hover:bg-sky-500/15'
                   } disabled:opacity-40`}
-                  title={listening ? 'Pulse para enviar' : 'Pulse para hablar'}
+                  title={listening ? 'Pulsa para enviar' : 'Pulsa para hablar'}
                 >
-                  {transcribing ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Mic className="w-4.5 h-4.5" />}
+                  {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={() => setContinuous((v) => !v)}
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                    continuous ? 'text-amber-300 bg-amber-500/15 shadow-[0_0_12px_rgba(251,191,36,0.25)]' : 'text-sky-500/40 hover:text-sky-400/70'
+                    continuous ? 'text-amber-300 bg-amber-500/20 shadow-[0_0_12px_rgba(251,191,36,0.25)]' : 'text-sky-500/40 hover:text-sky-400/60'
                   }`}
                   title="Escucha continua"
                 >
@@ -466,13 +467,13 @@ export default function App() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder={listening ? 'Grabando… pulse el mic rojo para enviar' : 'Hable o escriba un comando…'}
-                  className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/35"
+                  placeholder={listening ? 'Grabando… pulsa el mic rojo para enviar' : 'Habla o escribe…'}
+                  className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
                 />
                 <button
                   onClick={handleSend}
                   disabled={!inputValue.trim() || thinking}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:bg-sky-500/15 hover:text-sky-300 disabled:opacity-30 transition-all"
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:bg-sky-500/15 disabled:opacity-30 transition-all"
                 >
                   {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
@@ -487,17 +488,15 @@ export default function App() {
           )}
         </div>
 
-        <footer className="h-8 flex items-center justify-between px-5 border-t border-sky-500/10 text-[11px] text-sky-400/40 bg-[#030a14]/40">
+        <footer className="h-8 flex items-center justify-between px-5 border-t border-sky-500/10 text-[11px] text-sky-400/40">
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
               Activo
             </span>
-            <span className="tracking-wide">{formatUptime(uptime)}</span>
+            <span>{formatUptime(uptime)}</span>
           </span>
-          <span className="tracking-wider">
-            {currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </span>
+          <span className="tracking-wide">{currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
         </footer>
       </div>
     </div>
