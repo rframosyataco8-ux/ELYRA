@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
- * Escucha continua (Web Speech) esperando la palabra de activación "Elyra".
- * Estilo JARVIS: "Elyra, ¿estás ahí?" / "Elyra abre Chrome".
+ * Wake word continuo — "Elyra" / variantes de STT español.
+ * Robusto ante reinicios, eco y falsos positivos.
  */
 
 const WAKE_RE =
-  /\b(hey\s+)?(elyra|elira|eliara|elira|hey\s+elira|oiga\s+elyra)\b/i;
+  /\b(hey\s+|oiga\s+|oye\s+)?(elyra|elira|eliara|elira|elira|heira|heira|elera|el ara|eli ra)\b/i;
 
 function stripWake(raw: string): string {
   return String(raw || '')
     .replace(WAKE_RE, ' ')
-    .replace(/[,\.]+/g, ' ')
+    .replace(/\b(hey|oiga|oye)\b/gi, ' ')
+    .replace(/[,\.!?]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -19,14 +20,23 @@ function stripWake(raw: string): string {
 function isPresenceOnly(cmd: string): boolean {
   const t = cmd.toLowerCase().trim();
   if (!t) return true;
-  return /^(estas ahi|estás ahí|estas alli|estás allí|me escuchas|hola|buenos dias|buenas tardes|buenas noches|oye|hey|si|sí)$/i.test(
+  return /^(estas ahi|estás ahí|estas alli|estás allí|me escuchas|hola|buenos dias|buenas tardes|buenas noches|oye|hey|si|sí|ok|okay)$/i.test(
     t,
   );
 }
 
+function normalizeSpeak(s: string) {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 interface UseWakeWordOptions {
   enabled: boolean;
-  busy: boolean; // hablando / pensando / grabando whisper
+  busy: boolean;
   onWake: (commandAfterWake: string, isPresence: boolean) => void;
 }
 
@@ -39,6 +49,7 @@ export function useWakeWord({ enabled, busy, onWake }: UseWakeWordOptions) {
   const enabledRef = useRef(enabled);
   const restartTimer = useRef<number | null>(null);
   const cooldownUntil = useRef(0);
+  const startingRef = useRef(false);
 
   onWakeRef.current = onWake;
   busyRef.current = busy;
@@ -50,75 +61,112 @@ export function useWakeWord({ enabled, busy, onWake }: UseWakeWordOptions) {
       restartTimer.current = null;
     }
     try {
-      recRef.current?.stop();
+      recRef.current?.abort?.();
+    } catch {}
+    try {
+      recRef.current?.stop?.();
     } catch {}
     recRef.current = null;
+    startingRef.current = false;
     setActive(false);
   }, []);
 
-  const start = useCallback(() => {
+  const scheduleRestart = useCallback(
+    (ms: number) => {
+      if (restartTimer.current) window.clearTimeout(restartTimer.current);
+      restartTimer.current = window.setTimeout(() => {
+        if (enabledRef.current && !busyRef.current) startInternal();
+      }, ms);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const startInternal = () => {
+    if (!enabledRef.current || busyRef.current) return false;
+    if (startingRef.current) return false;
+
     const SR =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return false;
 
     stop();
+    startingRef.current = true;
 
     const rec = new SR();
     rec.lang = 'es-ES';
     rec.continuous = true;
     rec.interimResults = true;
-    rec.maxAlternatives = 1;
+    rec.maxAlternatives = 2;
 
-    rec.onstart = () => setActive(true);
+    rec.onstart = () => {
+      startingRef.current = false;
+      setActive(true);
+    };
 
     rec.onresult = (event: any) => {
       if (busyRef.current) return;
       if (Date.now() < cooldownUntil.current) return;
 
       let transcript = '';
+      let anyFinal = false;
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const r = event.results[i];
-        if (r.isFinal || r[0].confidence > 0.4) {
-          transcript += r[0].transcript + ' ';
+        const alt = r[0]?.transcript || '';
+        if (r.isFinal) {
+          anyFinal = true;
+          transcript += alt + ' ';
+        } else if ((r[0]?.confidence ?? 0.5) > 0.35) {
+          transcript += alt + ' ';
         }
       }
       transcript = transcript.trim();
       if (!transcript) return;
 
       setLastHeard(transcript);
+      const n = normalizeSpeak(transcript);
 
-      // Solo reaccionar en resultados finales o si ya contiene wake word clara
-      const isFinal = event.results[event.results.length - 1]?.isFinal;
-      const n = transcript
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
+      const hasWake =
+        WAKE_RE.test(n) ||
+        /\b(elyra|elira|eliara|elera|heira)\b/.test(n) ||
+        /\bel\s*ira\b/.test(n);
 
-      if (!WAKE_RE.test(n) && !/\belyra\b|\belira\b|\beliara\b/.test(n)) return;
-      if (!isFinal && transcript.split(/\s+/).length < 2) return;
+      if (!hasWake) return;
 
-      // Evitar eco de su propia voz
-      if (/sistemas online|soy elyra|configura tu api/i.test(transcript)) return;
+      // Preferir final; permitir interim si ya trae orden clara
+      const words = transcript.split(/\s+/).length;
+      if (!anyFinal && words < 2) return;
+
+      // Eco de la propia voz de ELYRA
+      if (
+        /sistemas operativos|estoy a su disposicion|buenos dias|buenas tardes|buenas noches|soy elyra|configura|api key/i.test(
+          transcript,
+        )
+      ) {
+        return;
+      }
 
       const cmd = stripWake(transcript);
       const presence = isPresenceOnly(cmd);
 
-      cooldownUntil.current = Date.now() + 2500;
+      cooldownUntil.current = Date.now() + 2800;
       onWakeRef.current(cmd, presence);
     };
 
     rec.onerror = (e: any) => {
-      if (e.error === 'aborted' || e.error === 'no-speech') return;
-      // reiniciar tras error de red temporal
-      if (e.error === 'network' || e.error === 'audio-capture') {
-        scheduleRestart(1500);
+      startingRef.current = false;
+      const err = e?.error || '';
+      if (err === 'aborted' || err === 'no-speech') return;
+      if (err === 'network' || err === 'audio-capture' || err === 'not-allowed') {
+        scheduleRestart(err === 'not-allowed' ? 4000 : 1600);
       }
     };
 
     rec.onend = () => {
+      startingRef.current = false;
       setActive(false);
       if (enabledRef.current && !busyRef.current) {
-        scheduleRestart(400);
+        scheduleRestart(350);
       }
     };
 
@@ -127,17 +175,13 @@ export function useWakeWord({ enabled, busy, onWake }: UseWakeWordOptions) {
       rec.start();
       return true;
     } catch {
-      scheduleRestart(800);
+      startingRef.current = false;
+      scheduleRestart(900);
       return false;
     }
-  }, [stop]);
+  };
 
-  function scheduleRestart(ms: number) {
-    if (restartTimer.current) window.clearTimeout(restartTimer.current);
-    restartTimer.current = window.setTimeout(() => {
-      if (enabledRef.current && !busyRef.current) start();
-    }, ms);
-  }
+  const start = useCallback(() => startInternal(), [stop, scheduleRestart]);
 
   useEffect(() => {
     if (!enabled) {
@@ -145,15 +189,15 @@ export function useWakeWord({ enabled, busy, onWake }: UseWakeWordOptions) {
       return;
     }
     if (busy) {
-      // Pausar wake mientras habla / graba
       try {
-        recRef.current?.stop();
+        recRef.current?.stop?.();
       } catch {}
       return;
     }
-    start();
+    startInternal();
     return () => stop();
-  }, [enabled, busy, start, stop]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, busy]);
 
   return { active, lastHeard, start, stop };
 }
