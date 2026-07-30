@@ -1,9 +1,8 @@
 /**
- * Apertura fiable de apps y sitios web en Windows
+ * Apertura fiable de apps y sitios web — ELYRA v2.2
  */
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { exec, spawn } = require('child_process');
 const { promisify } = require('util');
 const { shell } = require('electron');
@@ -22,7 +21,6 @@ const OFFICE_REL = [
   ['Microsoft Office', 'Office15'],
 ];
 
-/** Sitios web conocidos → URL (NUNCA como .exe) */
 const WEB_SITES = {
   youtube: 'https://www.youtube.com',
   yt: 'https://www.youtube.com',
@@ -31,6 +29,7 @@ const WEB_SITES = {
   maps: 'https://maps.google.com',
   drive: 'https://drive.google.com',
   docs: 'https://docs.google.com',
+  sheets: 'https://sheets.google.com',
   facebook: 'https://www.facebook.com',
   instagram: 'https://www.instagram.com',
   twitter: 'https://x.com',
@@ -46,6 +45,18 @@ const WEB_SITES = {
   linkedin: 'https://www.linkedin.com',
   reddit: 'https://www.reddit.com',
   tiktok: 'https://www.tiktok.com',
+  translate: 'https://translate.google.com',
+  traductor: 'https://translate.google.com',
+  canva: 'https://www.canva.com',
+  notion: 'https://www.notion.so',
+  spotify_web: 'https://open.spotify.com',
+  outlook_web: 'https://outlook.live.com',
+  calendar: 'https://calendar.google.com',
+  calendariogoogle: 'https://calendar.google.com',
+  meet: 'https://meet.google.com',
+  zoom: 'https://zoom.us',
+  weather: 'https://www.google.com/search?q=clima',
+  clima: 'https://www.google.com/search?q=clima',
 };
 
 function findOfficeExe(exeName) {
@@ -77,13 +88,10 @@ function normalizeName(appName) {
     .replace(/\s+/g, ' ');
 }
 
-/** Si es un sitio web conocido, devolver URL */
 function resolveWebUrl(appName) {
   const name = normalizeName(appName);
-  // URL directa
   if (/^https?:\/\//i.test(name)) return name;
   if (/^[\w-]+\.(com|org|net|es|io|app)\b/i.test(name)) return 'https://' + name;
-  // mapa
   for (const [key, url] of Object.entries(WEB_SITES)) {
     if (name === key || name.includes(key)) return url;
   }
@@ -131,8 +139,8 @@ function resolveApp(appName) {
   if (/\b(explorer|explorador)\b/.test(name)) {
     return { label: 'Explorador', targets: ['explorer.exe'], psName: 'explorer' };
   }
-  if (/\b(cmd|terminal|consola)\b/.test(name)) {
-    return { label: 'Terminal', targets: ['cmd.exe', 'wt.exe'], psName: 'cmd' };
+  if (/\b(cmd|terminal|consola|powershell)\b/.test(name)) {
+    return { label: 'Terminal', targets: ['wt.exe', 'powershell.exe', 'cmd.exe'], psName: 'WindowsTerminal' };
   }
   if (/\b(code|vscode|visual studio code)\b/.test(name)) {
     const code = findInLocal([
@@ -147,6 +155,24 @@ function resolveApp(appName) {
   if (/\b(discord)\b/.test(name)) {
     return { label: 'Discord', targets: ['discord'], psName: 'Discord' };
   }
+  if (/\b(teams|microsoft teams)\b/.test(name)) {
+    return { label: 'Teams', targets: ['ms-teams:', 'teams'], psName: 'Teams' };
+  }
+  if (/\b(slack)\b/.test(name)) {
+    return { label: 'Slack', targets: ['slack'], psName: 'slack' };
+  }
+  if (/\b(steam)\b/.test(name)) {
+    return { label: 'Steam', targets: ['steam'], psName: 'steam' };
+  }
+  if (/\b(task manager|administrador de tareas)\b/.test(name)) {
+    return { label: 'Administrador de tareas', targets: ['taskmgr.exe'], psName: 'Taskmgr' };
+  }
+  if (/\b(control panel|panel de control)\b/.test(name)) {
+    return { label: 'Panel de control', targets: ['control.exe'], psName: 'control' };
+  }
+  if (/\b(snipping|recorte)\b/.test(name)) {
+    return { label: 'Recortes', targets: ['SnippingTool.exe', 'ms-screenclip:'], psName: 'SnippingTool' };
+  }
 
   return { label: appName, targets: [name], psName: name };
 }
@@ -159,6 +185,12 @@ async function tryStartWindows(target) {
       spawn(target, [], { detached: true, stdio: 'ignore', shell: false }).unref();
       return true;
     }
+  }
+  if (/^[a-z][\w-]+:/i.test(target)) {
+    try {
+      await shell.openExternal(target);
+      return true;
+    } catch {}
   }
   try {
     await execAsync(`cmd /c start "" "${target}"`, { windowsHide: true, timeout: 8000 });
@@ -198,11 +230,8 @@ async function openUrl(url) {
 }
 
 async function openApp(appName) {
-  // 1) Sitios web primero
   const webUrl = resolveWebUrl(appName);
-  if (webUrl) {
-    return openUrl(webUrl);
-  }
+  if (webUrl) return openUrl(webUrl);
 
   const resolved = resolveApp(appName);
 

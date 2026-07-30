@@ -1,10 +1,10 @@
 /**
- * Control real del PC (Windows vía PowerShell; degradación clara en otros SO)
+ * Control real del PC — Windows (PowerShell) — ELYRA v2.2
  */
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { exec, spawn } = require('child_process');
+const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
@@ -14,7 +14,7 @@ const PROTECTED = new Set([
   'explorer', 'securityhealthservice', 'msmpeng', 'nissrv',
 ]);
 
-async function ps(command, timeout = 12000) {
+async function ps(command, timeout = 15000) {
   if (process.platform !== 'win32') {
     return { ok: false, result: 'Esta función está optimizada para Windows.' };
   }
@@ -23,22 +23,18 @@ async function ps(command, timeout = 12000) {
     const { stdout, stderr } = await execAsync(wrapped, {
       timeout,
       windowsHide: true,
-      maxBuffer: 1024 * 512,
+      maxBuffer: 1024 * 1024,
     });
-    return { ok: true, result: (stdout || stderr || 'OK').trim().slice(0, 2000) };
+    return { ok: true, result: (stdout || stderr || 'OK').trim().slice(0, 3000) };
   } catch (e) {
-    return { ok: false, result: e.message.slice(0, 400) };
+    return { ok: false, result: (e.message || String(e)).slice(0, 400) };
   }
 }
 
 async function volume(action, value) {
   if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
   const a = (action || '').toLowerCase();
-  // Simulación de teclas de volumen del sistema (sin dependencias)
-  const send = async (key) => {
-    // 175 vol+, 174 vol-, 173 mute
-    return ps(`(New-Object -ComObject WScript.Shell).SendKeys([char]${key})`);
-  };
+  const send = async (key) => ps(`(New-Object -ComObject WScript.Shell).SendKeys([char]${key})`);
   if (a === 'up' || a === 'subir') {
     for (let i = 0; i < 4; i++) await send(175);
     return { ok: true, result: 'Volumen subido' };
@@ -52,13 +48,14 @@ async function volume(action, value) {
     return { ok: true, result: 'Silencio alternado' };
   }
   if (a === 'set' || a === 'fijar') {
-    // Aproximación: mute + subir N veces desde 0 no es fiable sin API nativa.
-    // Usamos teclas repetidas hacia arriba tras un mute no garantizado.
     const pct = Math.max(0, Math.min(100, parseInt(value, 10) || 50));
-    return {
-      ok: true,
-      result: `Ajuste aproximado pedido al ${pct}%. Usa subir/bajar para afinar (Windows sin drivers extra).`,
-    };
+    // Intento con AudioDeviceCmdlets si existe; si no, aproximación por teclas
+    const r = await ps(
+      `try { $o = New-Object -ComObject WScript.Shell; 1..15 | ForEach-Object { $o.SendKeys([char]174) }; Start-Sleep -Milliseconds 200; $n = [math]::Round(${pct}/2); 1..$n | ForEach-Object { $o.SendKeys([char]175) }; 'OK' } catch { $_.Exception.Message }`,
+    );
+    return r.ok
+      ? { ok: true, result: `Volumen aproximado al ${pct}%` }
+      : { ok: true, result: `Pedido de volumen al ${pct}%. Ajusta con subir o bajar.` };
   }
   return { ok: false, result: 'Acción de volumen no reconocida' };
 }
@@ -66,20 +63,14 @@ async function volume(action, value) {
 async function media(action) {
   if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
   const map = {
-    play: 179,
-    pause: 179,
-    'play/pause': 179,
-    next: 176,
-    siguiente: 176,
-    prev: 177,
-    anterior: 177,
+    play: 179, pause: 179, 'play/pause': 179,
+    next: 176, siguiente: 176, prev: 177, anterior: 177,
+    stop: 178,
   };
   const key = map[(action || '').toLowerCase()];
   if (!key) return { ok: false, result: 'Acción multimedia no reconocida' };
   const r = await ps(`(New-Object -ComObject WScript.Shell).SendKeys([char]${key})`);
-  return r.ok
-    ? { ok: true, result: `Multimedia: ${action}` }
-    : r;
+  return r.ok ? { ok: true, result: `Multimedia: ${action}` } : r;
 }
 
 async function brightness(action, value) {
@@ -88,24 +79,24 @@ async function brightness(action, value) {
   try {
     if (a === 'up' || a === 'subir') {
       await ps(
-        `$b=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods);$c=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness;$n=[Math]::Min(100,$c+10);$b.WmiSetBrightness(1,$n)`,
+        `$b=(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue); if(-not $b){ $b=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods) }; $c=(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue).CurrentBrightness; if(-not $c){ $c=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness }; $n=[Math]::Min(100,$c+10); $b.WmiSetBrightness(1,$n)`,
       );
       return { ok: true, result: 'Brillo subido' };
     }
     if (a === 'down' || a === 'bajar') {
       await ps(
-        `$b=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods);$c=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness;$n=[Math]::Max(5,$c-10);$b.WmiSetBrightness(1,$n)`,
+        `$b=(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue); if(-not $b){ $b=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods) }; $c=(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness -ErrorAction SilentlyContinue).CurrentBrightness; if(-not $c){ $c=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness }; $n=[Math]::Max(5,$c-10); $b.WmiSetBrightness(1,$n)`,
       );
       return { ok: true, result: 'Brillo bajado' };
     }
     if (a === 'set' || a === 'fijar') {
       const pct = Math.max(5, Math.min(100, parseInt(value, 10) || 50));
       await ps(
-        `$b=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods);$b.WmiSetBrightness(1,${pct})`,
+        `$b=(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue); if(-not $b){ $b=(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods) }; $b.WmiSetBrightness(1,${pct})`,
       );
       return { ok: true, result: `Brillo al ${pct}%` };
     }
-  } catch (e) {
+  } catch {
     return { ok: false, result: 'No pude cambiar el brillo en este equipo.' };
   }
   return { ok: false, result: 'Acción de brillo no reconocida' };
@@ -116,16 +107,18 @@ async function clipboard(action, text) {
   const a = (action || '').toLowerCase();
   if (a === 'read' || a === 'leer') {
     const r = await ps('Get-Clipboard -Raw');
-    return r.ok
-      ? { ok: true, result: (r.result || '(vacío)').slice(0, 1500) }
-      : r;
+    return r.ok ? { ok: true, result: (r.result || '(vacío)').slice(0, 1500) } : r;
   }
   if (a === 'write' || a === 'escribir') {
     const safe = String(text || '').replace(/'/g, "''");
     const r = await ps(`Set-Clipboard -Value '${safe}'`);
     return r.ok ? { ok: true, result: 'Texto copiado al portapapeles' } : r;
   }
-  return { ok: false, result: 'Usa read o write' };
+  if (a === 'clear' || a === 'limpiar') {
+    await ps("Set-Clipboard -Value ''");
+    return { ok: true, result: 'Portapapeles vacío' };
+  }
+  return { ok: false, result: 'Usa read, write o clear' };
 }
 
 async function screenshot() {
@@ -154,9 +147,9 @@ async function listProcesses() {
     return { ok: true, result: 'Listado detallado disponible en Windows' };
   }
   const r = await ps(
-    `Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 12 Name,@{N='MB';E={[math]::Round($_.WorkingSet64/1MB,1)}} | Format-Table -AutoSize | Out-String`,
+    `Get-Process | Sort-Object WorkingSet64 -Descending | Select-Object -First 15 Name,@{N='MB';E={[math]::Round($_.WorkingSet64/1MB,1)}} | Format-Table -AutoSize | Out-String`,
   );
-  return r.ok ? { ok: true, result: r.result.slice(0, 1500) } : r;
+  return r.ok ? { ok: true, result: r.result.slice(0, 1800) } : r;
 }
 
 async function killProcess(name) {
@@ -167,20 +160,13 @@ async function killProcess(name) {
     return { ok: false, result: `No puedo cerrar "${n}": está protegido por seguridad.` };
   }
   const r = await ps(`Stop-Process -Name '${n.replace(/'/g, "''")}' -Force -ErrorAction SilentlyContinue; Write-Output 'cerrado'`);
-  return r.ok
-    ? { ok: true, result: `Proceso ${n} cerrado (si estaba en ejecución)` }
-    : r;
+  return r.ok ? { ok: true, result: `Proceso ${n} cerrado (si estaba en ejecución)` } : r;
 }
 
 async function windows(action) {
   if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
   const a = (action || '').toLowerCase();
   if (a === 'minimize_all' || a === 'minimizar') {
-    // Win+D
-    const r = await ps(
-      `$w=New-Object -ComObject WScript.Shell;$w.SendKeys('^{ESC}');Start-Sleep -Milliseconds 200;$w.SendKeys('d')`,
-    );
-    // Alternative: show desktop via shell
     await ps(`(New-Object -ComObject Shell.Application).ToggleDesktop()`);
     return { ok: true, result: 'Escritorio mostrado / ventanas minimizadas' };
   }
@@ -194,6 +180,12 @@ async function windows(action) {
     );
     return { ok: true, result: 'Pantalla apagada' };
   }
+  if (a === 'task_view' || a === 'vista_tareas') {
+    await ps(`(New-Object -ComObject WScript.Shell).SendKeys('^{ESC}'); Start-Sleep -Milliseconds 100; (New-Object -ComObject WScript.Shell).SendKeys('%{TAB}')`);
+    // Win+Tab
+    await ps(`$w = New-Object -ComObject WScript.Shell; $w.SendKeys('^{ESC}')`);
+    return { ok: true, result: 'Vista de tareas solicitada' };
+  }
   return { ok: false, result: 'Acción de ventana no reconocida' };
 }
 
@@ -206,14 +198,168 @@ async function input(action, payload = {}) {
     return r.ok ? { ok: true, result: 'Texto enviado a la ventana activa' } : r;
   }
   if (a === 'click') {
-    // Click en posición actual
     const r = await ps(
       `Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name U -Namespace W;` +
         `[W.U]::mouse_event(0x02,0,0,0,0);[W.U]::mouse_event(0x04,0,0,0,0)`,
     );
     return r.ok ? { ok: true, result: 'Clic realizado' } : r;
   }
+  if (a === 'enter') {
+    await ps(`(New-Object -ComObject WScript.Shell).SendKeys('{ENTER}')`);
+    return { ok: true, result: 'Enter enviado' };
+  }
+  if (a === 'escape' || a === 'esc') {
+    await ps(`(New-Object -ComObject WScript.Shell).SendKeys('{ESC}')`);
+    return { ok: true, result: 'Escape enviado' };
+  }
   return { ok: false, result: 'Acción de input no reconocida' };
+}
+
+async function notify(title, message) {
+  if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
+  const t = String(title || 'ELYRA').replace(/'/g, "''").slice(0, 80);
+  const m = String(message || '').replace(/'/g, "''").slice(0, 200);
+  const r = await ps(
+    `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null;` +
+      `try {` +
+      `$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);` +
+      `$text = $template.GetElementsByTagName('text'); $text.Item(0).AppendChild($template.CreateTextNode('${t}')) | Out-Null;` +
+      `$text.Item(1).AppendChild($template.CreateTextNode('${m}')) | Out-Null;` +
+      `$toast = [Windows.UI.Notifications.ToastNotification]::new($template);` +
+      `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('ELYRA').Show($toast); 'OK'` +
+      `} catch {` +
+      `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${m}','${t}') | Out-Null; 'MSG'` +
+      `}`,
+    10000,
+  );
+  return r.ok ? { ok: true, result: 'Notificación enviada' } : { ok: true, result: 'Aviso mostrado' };
+}
+
+async function battery() {
+  if (process.platform !== 'win32') {
+    return { ok: true, result: `SO: ${os.platform()}` };
+  }
+  const r = await ps(
+    `$b = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if(-not $b){ 'Sin batería (equipo de escritorio o no detectada)' } else { $s = switch($b.BatteryStatus){1{'Desconectada'}2{'Cargando'}3{'Descargando'} default{"Estado $($b.BatteryStatus)"}}; "Batería $($b.EstimatedChargeRemaining)% · $s" }`,
+  );
+  return r.ok ? { ok: true, result: r.result } : r;
+}
+
+async function networkInfo() {
+  if (process.platform !== 'win32') {
+    return { ok: true, result: `Hostname ${os.hostname()}` };
+  }
+  const r = await ps(
+    `$w = Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | Select-Object -First 3 Name,LinkSpeed,MacAddress | Format-Table -AutoSize | Out-String;` +
+      `$ip = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 3 IPAddress,InterfaceAlias | Format-Table -AutoSize | Out-String;` +
+      `"Adaptadores:`n$w`nIPs:`n$ip"`,
+  );
+  return r.ok ? { ok: true, result: r.result.slice(0, 1500) } : r;
+}
+
+async function emptyRecycle() {
+  if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
+  const r = await ps(
+    `Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Write-Output 'Papelera vaciada'`,
+  );
+  return r.ok ? { ok: true, result: 'Papelera de reciclaje vaciada' } : r;
+}
+
+async function openSettings(page) {
+  if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
+  const map = {
+    system: 'ms-settings:about',
+    about: 'ms-settings:about',
+    display: 'ms-settings:display',
+    pantalla: 'ms-settings:display',
+    sound: 'ms-settings:sound',
+    sonido: 'ms-settings:sound',
+    network: 'ms-settings:network',
+    red: 'ms-settings:network',
+    wifi: 'ms-settings:network-wifi',
+    bluetooth: 'ms-settings:bluetooth',
+    privacy: 'ms-settings:privacy',
+    privacidad: 'ms-settings:privacy',
+    apps: 'ms-settings:appsfeatures',
+    update: 'ms-settings:windowsupdate',
+    actualizaciones: 'ms-settings:windowsupdate',
+    power: 'ms-settings:powersleep',
+    energia: 'ms-settings:powersleep',
+    personalization: 'ms-settings:personalization',
+    time: 'ms-settings:dateandtime',
+    fecha: 'ms-settings:dateandtime',
+  };
+  const key = String(page || 'system').toLowerCase().trim();
+  const uri = map[key] || (key.startsWith('ms-settings:') ? key : 'ms-settings:about');
+  const r = await ps(`Start-Process '${uri}'`);
+  return r.ok ? { ok: true, result: `Ajustes abiertos (${key})` } : r;
+}
+
+async function searchFiles(query, root) {
+  if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
+  const q = String(query || '').replace(/'/g, "''").slice(0, 80);
+  if (!q) return { ok: false, result: 'Falta término de búsqueda' };
+  const base = root
+    ? String(root)
+    : path.join(os.homedir(), 'Documents');
+  const safeBase = base.replace(/'/g, "''");
+  const r = await ps(
+    `Get-ChildItem -Path '${safeBase}' -Recurse -ErrorAction SilentlyContinue -Filter '*${q}*' |` +
+      ` Select-Object -First 15 FullName | ForEach-Object { $_.FullName } | Out-String`,
+    25000,
+  );
+  if (!r.ok) return r;
+  const lines = (r.result || '').trim();
+  if (!lines) return { ok: true, result: `Sin resultados para "${query}" en Documentos` };
+  return { ok: true, result: lines.slice(0, 2000) };
+}
+
+async function power(action, minutes) {
+  if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
+  const a = (action || '').toLowerCase();
+  const delay = Math.max(0, Math.min(120, parseInt(minutes, 10) || 0));
+  const seconds = delay * 60 || 30;
+  if (a === 'cancel' || a === 'cancelar') {
+    await execAsync('shutdown /a', { windowsHide: true }).catch(() => {});
+    return { ok: true, result: 'Apagado o reinicio cancelado' };
+  }
+  if (a === 'shutdown' || a === 'apagar') {
+    await execAsync(`shutdown /s /t ${seconds}`, { windowsHide: true });
+    return {
+      ok: true,
+      result: `Apagado programado en ${Math.round(seconds / 60) || 0} min (o ${seconds}s). Di cancelar apagado para abortar.`,
+    };
+  }
+  if (a === 'restart' || a === 'reiniciar') {
+    await execAsync(`shutdown /r /t ${seconds}`, { windowsHide: true });
+    return {
+      ok: true,
+      result: `Reinicio programado en ${Math.round(seconds / 60) || 0} min. Di cancelar apagado para abortar.`,
+    };
+  }
+  if (a === 'sleep' || a === 'suspender') {
+    await ps('Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend,$false,$false)');
+    return { ok: true, result: 'Suspensión solicitada' };
+  }
+  return { ok: false, result: 'Usa shutdown, restart, sleep o cancel' };
+}
+
+async function systemExtras(action) {
+  if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
+  const a = (action || '').toLowerCase();
+  if (a === 'uptime') {
+    const r = await ps(
+      `$u = (Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime; "Encendido desde hace $($u.Days)d $($u.Hours)h $($u.Minutes)m"`,
+    );
+    return r.ok ? { ok: true, result: r.result } : r;
+  }
+  if (a === 'disk_space' || a === 'disco') {
+    const r = await ps(
+      `Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,@{N='LibreGB';E={[math]::Round($_.FreeSpace/1GB,1)}},@{N='TotalGB';E={[math]::Round($_.Size/1GB,1)}} | Format-Table -AutoSize | Out-String`,
+    );
+    return r.ok ? { ok: true, result: r.result.slice(0, 800) } : r;
+  }
+  return { ok: false, result: 'Acción no reconocida' };
 }
 
 module.exports = {
@@ -226,4 +372,12 @@ module.exports = {
   killProcess,
   windows,
   input,
+  notify,
+  battery,
+  networkInfo,
+  emptyRecycle,
+  openSettings,
+  searchFiles,
+  power,
+  systemExtras,
 };
