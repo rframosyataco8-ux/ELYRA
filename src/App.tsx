@@ -4,9 +4,18 @@ import { NetworkGlobe } from '@/components/NetworkGlobe';
 import { Sidebar } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
 import { ConversationLog, type Message } from '@/components/ConversationLog';
-import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles } from 'lucide-react';
+import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
+
+function detectFromKey(key: string) {
+  const k = key.trim();
+  if (k.startsWith('gsk_')) return { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' };
+  if (k.startsWith('sk-or-')) return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' };
+  if (k.startsWith('xai-')) return { baseUrl: 'https://api.x.ai/v1', model: 'grok-2-latest' };
+  if (k.startsWith('sk-') && k.length > 20) return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
+  return null;
+}
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -19,13 +28,14 @@ export default function App() {
   const [hasApiKey, setHasApiKey] = useState(false);
   const [continuous, setContinuous] = useState(false);
 
-  // Config form state
   const [cfgApiKey, setCfgApiKey] = useState('');
   const [cfgBaseUrl, setCfgBaseUrl] = useState('https://api.groq.com/openai/v1');
   const [cfgModel, setCfgModel] = useState('llama-3.1-8b-instant');
   const [cfgSaving, setCfgSaving] = useState(false);
   const [cfgSaved, setCfgSaved] = useState(false);
   const [cfgLoaded, setCfgLoaded] = useState(false);
+  const [cfgTesting, setCfgTesting] = useState(false);
+  const [cfgTestMsg, setCfgTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const speakRef = useRef<(text: string) => void | Promise<void>>(() => {});
   const startTimeRef = useRef(Date.now());
@@ -136,9 +146,18 @@ export default function App() {
     bootOnceRef.current = true;
     const t = setTimeout(async () => {
       setBooted(true);
-      const bootMsg = isDesktop
+      let bootMsg = isDesktop
         ? 'Sistemas online. Soy ELYRA. Pulsa el micrófono, habla, y pulsa otra vez para enviar.'
         : 'Soy ELYRA. Usa la versión de escritorio para el control total.';
+      if (isDesktop) {
+        try {
+          const c = await window.elyra?.agentConfigGet();
+          if (c && !c.hasKey) {
+            bootMsg =
+              'Sistemas online. Falta la API key: ve a Configuración, pega tu clave de Groq y guarda.';
+          }
+        } catch {}
+      }
       addMessage('elyra', bootMsg);
       await speak(bootMsg);
     }, 600);
@@ -166,25 +185,70 @@ export default function App() {
     await processInput(text);
   };
 
+  const onApiKeyChange = (value: string) => {
+    setCfgApiKey(value);
+    setCfgTestMsg(null);
+    const det = detectFromKey(value);
+    if (det) {
+      setCfgBaseUrl(det.baseUrl);
+      setCfgModel(det.model);
+    }
+  };
+
   const handleSaveConfig = async () => {
     if (!isDesktop || !window.elyra) return;
     setCfgSaving(true);
     setCfgSaved(false);
+    setCfgTestMsg(null);
     try {
-      await window.elyra.agentConfigSet({
+      const result = await window.elyra.agentConfigSet({
         apiKey: cfgApiKey.trim() || undefined,
+        baseUrl: cfgBaseUrl.trim(),
+        model: cfgModel.trim(),
+      });
+      setHasApiKey(result.hasKey);
+      if (result.baseUrl) setCfgBaseUrl(result.baseUrl);
+      if (result.model) setCfgModel(result.model);
+      setCfgSaved(true);
+      setTimeout(() => setCfgSaved(false), 2500);
+      if (cfgApiKey.trim()) setCfgApiKey('');
+    } catch {
+      setCfgTestMsg({ ok: false, text: 'No se pudo guardar.' });
+    } finally {
+      setCfgSaving(false);
+    }
+  };
+
+  const handleTestConfig = async () => {
+    if (!isDesktop || !window.elyra) return;
+    setCfgTesting(true);
+    setCfgTestMsg(null);
+    try {
+      // Si hay key nueva en el campo, guardar primero
+      if (cfgApiKey.trim()) {
+        await window.elyra.agentConfigSet({
+          apiKey: cfgApiKey.trim(),
+          baseUrl: cfgBaseUrl.trim(),
+          model: cfgModel.trim(),
+        });
+        setCfgApiKey('');
+      } else {
+        await window.elyra.agentConfigSet({
+          baseUrl: cfgBaseUrl.trim(),
+          model: cfgModel.trim(),
+        });
+      }
+      const test = await window.elyra.agentConfigTest({
         baseUrl: cfgBaseUrl.trim(),
         model: cfgModel.trim(),
       });
       const c = await window.elyra.agentConfigGet();
       setHasApiKey(c.hasKey);
-      setCfgSaved(true);
-      setTimeout(() => setCfgSaved(false), 2500);
-      if (cfgApiKey.trim()) setCfgApiKey('');
+      setCfgTestMsg({ ok: test.ok, text: test.message });
     } catch {
-      /* silent */
+      setCfgTestMsg({ ok: false, text: 'Error al probar la conexión.' });
     } finally {
-      setCfgSaving(false);
+      setCfgTesting(false);
     }
   };
 
@@ -220,7 +284,6 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen bg-[#030810] text-sky-100 flex overflow-hidden select-none relative">
-      {/* Ambient background glow */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-sky-600/5 blur-[120px]" />
         <div className="absolute bottom-[-15%] right-[-10%] w-[40%] h-[40%] rounded-full bg-violet-600/5 blur-[100px]" />
@@ -313,7 +376,6 @@ export default function App() {
                   <h2 className="text-lg font-medium text-white tracking-wide">Configuración</h2>
                 </div>
 
-                {/* API Config */}
                 <div className="hud-glass-strong rounded-2xl p-5 space-y-4 border border-sky-500/15">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm text-sky-100 font-medium">Proveedor de IA</h3>
@@ -335,6 +397,7 @@ export default function App() {
                           onClick={() => {
                             setCfgBaseUrl(p.url);
                             setCfgModel(p.model);
+                            setCfgTestMsg(null);
                           }}
                           className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all ${
                             cfgBaseUrl === p.url
@@ -353,10 +416,13 @@ export default function App() {
                     <input
                       type="password"
                       value={cfgApiKey}
-                      onChange={(e) => setCfgApiKey(e.target.value)}
-                      placeholder={hasApiKey ? '••••••••  (deja vacío para no cambiar)' : 'pega tu API key aquí'}
+                      onChange={(e) => onApiKeyChange(e.target.value)}
+                      placeholder={hasApiKey ? '••••••••  (deja vacío para no cambiar)' : 'pega tu API key aquí (gsk_…)'}
                       className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/40 placeholder:text-sky-600/50"
                     />
+                    <p className="text-[10px] text-sky-500/50">
+                      Keys gsk_ → Groq automático. La clave se guarda solo en tu PC (~/.elyra/config.json).
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -378,31 +444,58 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={handleSaveConfig}
-                    disabled={cfgSaving || !isDesktop}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/20 border border-sky-400/30 text-sky-100 text-sm hover:bg-sky-500/30 transition-all disabled:opacity-40"
-                  >
-                    {cfgSaving ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : cfgSaved ? (
-                      <>
-                        <Check className="w-4 h-4 text-emerald-400" /> Guardado
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4" /> Guardar configuración
-                      </>
-                    )}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleSaveConfig}
+                      disabled={cfgSaving || !isDesktop}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/20 border border-sky-400/30 text-sky-100 text-sm hover:bg-sky-500/30 transition-all disabled:opacity-40"
+                    >
+                      {cfgSaving ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : cfgSaved ? (
+                        <>
+                          <Check className="w-4 h-4 text-emerald-400" /> Guardado
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" /> Guardar
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={handleTestConfig}
+                      disabled={cfgTesting || !isDesktop}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-500/15 border border-violet-400/25 text-sky-100 text-sm hover:bg-violet-500/25 transition-all disabled:opacity-40"
+                    >
+                      {cfgTesting ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Wifi className="w-4 h-4" /> Probar conexión
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {cfgTestMsg && (
+                    <div
+                      className={`flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5 border ${
+                        cfgTestMsg.ok
+                          ? 'bg-emerald-500/10 border-emerald-400/25 text-emerald-300/90'
+                          : 'bg-red-500/10 border-red-400/25 text-red-300/90'
+                      }`}
+                    >
+                      {cfgTestMsg.ok ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                      <span>{cfgTestMsg.text}</span>
+                    </div>
+                  )}
 
                   <p className="text-[11px] text-sky-500/50 leading-relaxed">
-                    También puedes editar manualmente:{' '}
+                    Archivo local:{' '}
                     <code className="text-sky-400/70">%USERPROFILE%\.elyra\config.json</code>
                   </p>
                 </div>
 
-                {/* Voice & listen */}
                 <div className="hud-glass rounded-2xl p-5 space-y-4">
                   <h3 className="text-sm text-sky-100 font-medium">Voz y micrófono</h3>
                   <p className="text-[12px] text-sky-400/65 leading-relaxed">
@@ -419,7 +512,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Memory */}
                 <div className="hud-glass rounded-2xl p-5 space-y-3">
                   <h3 className="text-sm text-sky-100 font-medium">Memoria</h3>
                   <p className="text-[12px] text-sky-400/65">Notas y hechos que ELYRA recuerda entre sesiones.</p>
@@ -439,7 +531,6 @@ export default function App() {
 
             <div className="w-full max-w-xl mx-auto mt-auto pt-3">
               {error && <p className="text-red-400/80 text-xs text-center mb-2 px-2">{error}</p>}
-              {!supported && null}
               <div className="flex items-center gap-2 rounded-full input-hud px-3 py-2">
                 <button
                   onClick={handleToggleListen}
