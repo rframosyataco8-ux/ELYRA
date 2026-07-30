@@ -328,6 +328,7 @@ ipcMain.handle('agent-config-test', async (_e, partial) => {
 async function trySimpleIntent(input) {
   const text = (input || '').toLowerCase().trim();
 
+  // Volumen
   if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
     const r = await pc.volume('up');
     return { response: r.result, intelligent: false };
@@ -340,6 +341,32 @@ async function trySimpleIntent(input) {
     const r = await pc.volume('mute');
     return { response: r.result, intelligent: false };
   }
+
+  // Brillo
+  if (/\b(sube|subir)\s+(el\s+)?brillo\b/.test(text)) {
+    const r = await pc.brightness('up');
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(baja|bajar)\s+(el\s+)?brillo\b/.test(text)) {
+    const r = await pc.brightness('down');
+    return { response: r.result, intelligent: false };
+  }
+
+  // Media
+  if (/\b(pausa|pausar|play|reproducir|reproduce)\b/.test(text) && /\b(música|musica|canción|cancion|spotify|video)\b/.test(text) || /\b(pausa|reanuda|play pause)\b/.test(text)) {
+    const r = await pc.media('play');
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(siguiente|next)\s+(canción|cancion|pista)?\b/.test(text)) {
+    const r = await pc.media('next');
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(anterior|prev)\s+(canción|cancion|pista)?\b/.test(text)) {
+    const r = await pc.media('prev');
+    return { response: r.result, intelligent: false };
+  }
+
+  // Captura / bloqueo / escritorio
   if (/\b(captura|screenshot|captura de pantalla)\b/.test(text)) {
     const r = await pc.screenshot();
     return { response: r.result, intelligent: false };
@@ -348,7 +375,73 @@ async function trySimpleIntent(input) {
     const r = await pc.windows('lock');
     return { response: r.result, intelligent: false };
   }
+  if (/\b(minimiza|minimizar)\s+(todas|ventanas|todo)\b/.test(text) || /\bmostrar escritorio\b/.test(text)) {
+    const r = await pc.windows('minimize_all');
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(apaga|apagar)\s+(la\s+)?pantalla\b/.test(text)) {
+    const r = await pc.windows('screen_off');
+    return { response: r.result, intelligent: false };
+  }
 
+  // Batería / red / disco
+  if (/\b(batería|bateria|cuánta batería|cuanta bateria)\b/.test(text)) {
+    const r = await pc.battery();
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(estado de (la )?red|mi ip|wifi|conexión|conexion)\b/.test(text)) {
+    const r = await pc.networkInfo();
+    return { response: (r.result || '').slice(0, 400), intelligent: false };
+  }
+  if (/\b(espacio en disco|disco libre|cuánto disco)\b/.test(text)) {
+    const r = await pc.systemExtras('disk_space');
+    return { response: (r.result || '').slice(0, 400), intelligent: false };
+  }
+
+  // Papelera
+  if (/\b(vacía|vacia|vaciar)\s+(la\s+)?papelera\b/.test(text)) {
+    const r = await pc.emptyRecycle();
+    return { response: r.result, intelligent: false };
+  }
+
+  // Ajustes Windows
+  if (/\b(abre|abrir)\s+(ajustes|configuración|configuracion|settings)\b/.test(text)) {
+    let page = 'system';
+    if (/wifi|red/.test(text)) page = 'wifi';
+    else if (/bluetooth/.test(text)) page = 'bluetooth';
+    else if (/pantalla|display/.test(text)) page = 'display';
+    else if (/sonido|audio/.test(text)) page = 'sound';
+    else if (/privacidad/.test(text)) page = 'privacy';
+    else if (/actualiz/.test(text)) page = 'update';
+    const r = await pc.openSettings(page);
+    return { response: r.result, intelligent: false };
+  }
+
+  // Power (con cancelación)
+  if (/\b(cancela|cancelar)\s+(el\s+)?(apagado|reinicio)\b/.test(text) || /\bcancelar apagado\b/.test(text)) {
+    const r = await pc.power('cancel');
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(apaga|apagar)\s+(el\s+)?(pc|equipo|ordenador)\b/.test(text) && !/pantalla/.test(text)) {
+    const r = await pc.power('shutdown', 1);
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(reinicia|reiniciar)\s+(el\s+)?(pc|equipo)?\b/.test(text)) {
+    const r = await pc.power('restart', 1);
+    return { response: r.result, intelligent: false };
+  }
+  if (/\b(suspende|suspender|duerme|modo sueño)\b/.test(text)) {
+    const r = await pc.power('sleep');
+    return { response: r.result, intelligent: false };
+  }
+
+  // Notificación de prueba
+  if (/\b(notifica|notificación|notificacion)\b/.test(text)) {
+    const r = await pc.notify('ELYRA', 'Sistemas operativos. Notificación de prueba.');
+    return { response: r.result, intelligent: false };
+  }
+
+  // Abrir apps / webs / carpetas
   const openMatch = text.match(
     /\b(?:abre|abrir|abre\s+me|abrir\s+me|lanza|ejecuta|abre\s+el|abre\s+la)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
@@ -369,6 +462,7 @@ async function trySimpleIntent(input) {
         'youtube', 'google', 'gmail', 'facebook', 'instagram', 'netflix', 'github',
         'word', 'excel', 'chrome', 'edge', 'notepad', 'calculadora', 'spotify',
         'discord', 'code', 'firefox', 'paint', 'powerpoint', 'outlook', 'whatsapp',
+        'teams', 'steam', 'slack',
       ];
       for (const app of candidates) {
         if (text.includes(app)) {
