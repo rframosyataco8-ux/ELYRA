@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v3 — más inteligente, memoria de contexto, herramientas PC
+ * ELYRA Agent v4 — personalidad Jarvis, memoria, herramientas PC, cadena de modelos
  */
 const fs = require('fs');
 const path = require('path');
@@ -13,13 +13,15 @@ const MODEL_CHAIN = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 const COMPLEX_RE =
   /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta)\b/i;
 
-const SYSTEM_PROMPT = `Eres ELYRA, asistente de escritorio del usuario en Windows. Hablas español natural, claro y cercano, como una compañera inteligente.
+const SYSTEM_PROMPT = `Eres ELYRA, el asistente de escritorio del usuario en Windows. Hablas español natural, claro, elegante y cercano — con el estilo de un mayordomo tecnológico brillante (tipo JARVIS): profesional, proactivo, con un toque de ingenio seco cuando corresponde.
 
 PERSONALIDAD:
+- Tratas al usuario con respeto (puede usar "señor" de forma natural, sin exagerar).
 - Entiendes pedidos incompletos o con errores de voz (por ejemplo "abre word" aunque diga "abre work").
 - Si el pedido es ambiguo, asumes la intención más útil y actúas.
-- Respuestas FINALES para voz: 1 a 3 frases cortas. Sin markdown, sin JSON, sin rutas de Windows, sin listas largas.
+- Respuestas FINALES para voz: 1 a 3 frases cortas. Sin markdown, sin JSON, sin rutas largas de Windows, sin listas extensas.
 - Si una herramienta falla (ERROR), dilo con honestidad. Nunca inventes que algo se abrió o guardó.
+- Cuando termines una acción, confirma de forma concisa: "Listo, abrí Chrome." / "Captura guardada."
 
 CAPACIDADES (usa TOOLS cuando haga falta):
 - Abrir apps y carpetas, buscar en web, crear archivos e informes HTML.
@@ -40,7 +42,7 @@ brightness (action: up|down|set, value), clipboard (action: read|write, text),
 screenshot, list_processes, kill_process (name), windows (action: minimize_all|lock|screen_off),
 input (action: type|click, text)
 
-Cuando el usuario pide algo de conocimiento (quién inventó X, qué es Y, historia, ciencia), usa web_search y responde con lo esencial.
+Cuando el usuario pide conocimiento (quién inventó X, qué es Y, historia, ciencia), usa web_search y responde con lo esencial.
 Cuando pide crear documentos, usa create_file o create_html_report en Informes/.
 Cuando pide abrir algo, open_app u open_folder de inmediato.`;
 
@@ -88,7 +90,6 @@ function saveConfig(partial) {
 
 function pickModel(userMessage, config) {
   if (COMPLEX_RE.test(userMessage || '')) return MODEL_SMART;
-  // Mensajes largos → modelo más capaz
   if ((userMessage || '').length > 180) return MODEL_SMART;
   return config.model || MODEL_FAST;
 }
@@ -184,7 +185,6 @@ function polishForSpeech(text) {
   return t.replace(/\s+/g, ' ').trim();
 }
 
-/** Corrección ligera de errores típicos de STT en español */
 function normalizeUserIntent(raw) {
   let t = (raw || '').trim();
   const fixes = [
@@ -231,7 +231,7 @@ async function executeTool(tool, helpers) {
         try {
           const wr = await fetch(
             `https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`,
-            { headers: { 'User-Agent': 'ELYRA/3.0' } },
+            { headers: { 'User-Agent': 'ELYRA/4.0' } },
           );
           if (wr.ok) {
             const data = await wr.json();
@@ -348,7 +348,7 @@ async function runAgent(userMessage, history, helpers) {
   if (!config.apiKey) {
     return {
       response:
-        'No hay API key configurada. Pon tu clave de Groq en el archivo de configuración de ELYRA.',
+        'No hay API key configurada. Puede ponerla desde Configuración en la app, o en el archivo de configuración de ELYRA.',
       iterations: 0,
     };
   }
@@ -356,7 +356,6 @@ async function runAgent(userMessage, history, helpers) {
   const cleanedUser = normalizeUserIntent(userMessage);
   const preferred = pickModel(cleanedUser, config);
 
-  // Inyectar memoria reciente si existe
   let memoryHint = '';
   try {
     if (helpers.recall) {
@@ -390,7 +389,7 @@ async function runAgent(userMessage, history, helpers) {
         return { response: 'El servicio está saturado un momento.', iterations };
       }
       if (String(e.message) === 'NO_API_KEY') {
-        return { response: 'Falta la API key de Groq.', iterations };
+        return { response: 'Falta la API key. Configúrela en la pestaña Configuración.', iterations };
       }
       return { response: 'No pude conectar ahora.', iterations };
     }
@@ -412,7 +411,7 @@ async function runAgent(userMessage, history, helpers) {
       content:
         'Resultados de herramientas:\n' +
         results.map((r) => `• ${r.tool}: ${r.ok ? 'OK' : 'ERROR'} — ${r.result}`).join('\n') +
-        '\n\nDa la respuesta FINAL breve y natural para voz. Si hubo ERROR, dilo. Sin bloques TOOL.',
+        '\n\nDa la respuesta FINAL breve y natural para voz, estilo JARVIS. Si hubo ERROR, dilo. Sin bloques TOOL.',
     });
   }
 
@@ -425,7 +424,7 @@ async function runAgent(userMessage, history, helpers) {
 
 function fallbackResponse() {
   return {
-    response: 'Configura tu API key de Groq en el archivo local de ELYRA.',
+    response: 'Configure su API key desde Configuración en la app, o en el archivo local de ELYRA.',
     intelligent: false,
   };
 }
