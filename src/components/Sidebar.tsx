@@ -1,11 +1,12 @@
-import { Home, MessageSquare, Settings, Zap, Activity } from 'lucide-react';
+import { Home, MessageSquare, Settings, Zap, Activity, Cpu } from 'lucide-react';
 
 interface SidebarProps {
   active: 'inicio' | 'asistente' | 'config';
   onNavigate: (page: 'inicio' | 'asistente' | 'config') => void;
+  hasApiKey?: boolean;
 }
 
-export function Sidebar({ active, onNavigate }: SidebarProps) {
+export function Sidebar({ active, onNavigate, hasApiKey }: SidebarProps) {
   const items = [
     { id: 'inicio' as const, label: 'Inicio', icon: Home },
     { id: 'asistente' as const, label: 'Conversación', icon: MessageSquare },
@@ -13,24 +14,28 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
   ];
 
   return (
-    <aside className="w-[228px] flex-shrink-0 flex flex-col hud-glass border-r border-sky-500/10 h-full relative overflow-hidden">
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-sky-400/40 to-transparent" />
+    <aside className="w-[232px] flex-shrink-0 flex flex-col hud-glass border-r border-sky-500/12 h-full relative overflow-hidden">
+      {/* Top accent line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-sky-400/50 to-transparent" />
+      {/* Side glow */}
+      <div className="absolute top-0 right-0 bottom-0 w-px bg-gradient-to-b from-sky-500/20 via-sky-500/5 to-transparent" />
 
       <div className="px-5 pt-6 pb-7 flex items-center gap-3">
-        <div className="relative w-10 h-10 flex items-center justify-center">
-          <div className="absolute inset-0 rounded-full bg-sky-500/25 animate-pulse-glow" />
+        <div className="relative w-11 h-11 flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full bg-sky-500/20 animate-pulse-glow" />
+          <div className="absolute inset-1 rounded-full border border-sky-400/30" />
           <svg viewBox="0 0 40 40" className="w-9 h-9 relative z-10">
-            <circle cx="20" cy="20" r="7" fill="none" stroke="#38bdf8" strokeWidth="1.5" opacity="0.9" />
-            <ellipse cx="20" cy="20" rx="15" ry="6.5" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.55" />
-            <ellipse cx="20" cy="20" rx="15" ry="6.5" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.55" transform="rotate(60 20 20)" />
-            <ellipse cx="20" cy="20" rx="15" ry="6.5" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.55" transform="rotate(120 20 20)" />
+            <circle cx="20" cy="20" r="7" fill="none" stroke="#38bdf8" strokeWidth="1.5" opacity="0.95" />
+            <ellipse cx="20" cy="20" rx="15" ry="6.5" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.5" />
+            <ellipse cx="20" cy="20" rx="15" ry="6.5" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.5" transform="rotate(60 20 20)" />
+            <ellipse cx="20" cy="20" rx="15" ry="6.5" fill="none" stroke="#38bdf8" strokeWidth="1" opacity="0.5" transform="rotate(120 20 20)" />
             <circle cx="20" cy="20" r="2.8" fill="#7dd3fc" />
             <circle cx="20" cy="20" r="1.2" fill="#e0f2fe" />
           </svg>
         </div>
         <div>
-          <h1 className="text-white font-semibold text-[15px] tracking-[0.12em] leading-tight text-glow">ELYRA</h1>
-          <p className="text-[10px] text-sky-400/55 tracking-[0.18em] uppercase">Sistema Inteligente</p>
+          <h1 className="text-white font-semibold text-[15px] tracking-[0.15em] leading-tight text-glow">ELYRA</h1>
+          <p className="text-[10px] text-sky-400/60 tracking-[0.2em] uppercase mt-0.5">Sistema Inteligente</p>
         </div>
       </div>
 
@@ -41,37 +46,50 @@ export function Sidebar({ active, onNavigate }: SidebarProps) {
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition-all duration-200 ${
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition-all duration-250 ${
                 isActive
-                  ? 'bg-sky-500/18 text-sky-200 border border-sky-400/30 shadow-[0_0_24px_rgba(14,165,233,0.18)]'
-                  : 'text-sky-200/45 hover:text-sky-100/80 hover:bg-sky-500/8 border border-transparent'
+                  ? 'bg-sky-500/20 text-sky-100 border border-sky-400/35 shadow-[0_0_28px_rgba(14,165,233,0.2)]'
+                  : 'text-sky-200/50 hover:text-sky-100/85 hover:bg-sky-500/10 border border-transparent'
               }`}
             >
               <item.icon className={`w-4 h-4 ${isActive ? 'text-sky-300' : ''}`} />
               <span className="tracking-wide">{item.label}</span>
               {isActive && (
-                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8]" />
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8]" />
               )}
             </button>
           );
         })}
       </nav>
 
-      <div className="px-4 pb-5 pt-4 border-t border-sky-500/10 space-y-3">
+      <div className="px-4 pb-5 pt-4 border-t border-sky-500/12 space-y-3">
         <div className="flex items-center gap-2.5 px-1">
-          <div className="relative w-8 h-8 rounded-full border border-sky-500/25 flex items-center justify-center bg-sky-500/5">
+          <div className="relative w-8 h-8 rounded-full border border-sky-500/30 flex items-center justify-center bg-sky-500/8">
             <Activity className="w-3.5 h-3.5 text-sky-400" />
           </div>
           <div>
-            <p className="text-xs text-white/85 font-medium tracking-wide">ELYRA Online</p>
-            <p className="text-[10px] text-sky-400/50 flex items-center gap-1">
+            <p className="text-xs text-white/90 font-medium tracking-wide">ELYRA Online</p>
+            <p className="text-[10px] text-sky-400/55 flex items-center gap-1">
               <Zap className="w-2.5 h-2.5" /> Modo autónomo
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 px-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
-          <span className="text-[11px] text-emerald-400/85 tracking-wide">Sistemas operativos</span>
+
+        <div className="space-y-1.5 px-1">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399] animate-pulse" />
+            <span className="text-[11px] text-emerald-400/90 tracking-wide">Sistemas operativos</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${hasApiKey ? 'bg-violet-400 shadow-[0_0_8px_#a78bfa]' : 'bg-amber-400/70'}`} />
+            <span className={`text-[11px] tracking-wide ${hasApiKey ? 'text-violet-300/85' : 'text-amber-400/80'}`}>
+              {hasApiKey ? 'IA conectada' : 'Sin API key'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Cpu className="w-3 h-3 text-sky-500/50" />
+            <span className="text-[10px] text-sky-500/50">v2.0 · Holographic</span>
+          </div>
         </div>
       </div>
     </aside>

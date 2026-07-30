@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CircularGauge } from './CircularGauge';
-import { Shield, ShieldCheck, Cpu, HardDrive } from 'lucide-react';
+import { Shield, ShieldCheck, Cpu, HardDrive, Keyboard } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
 
@@ -45,22 +45,22 @@ export function SystemPanel() {
   ];
 
   return (
-    <div className="w-[268px] flex-shrink-0 flex flex-col gap-3.5">
-      <div className="hud-glass rounded-2xl p-4 animate-slide-up">
+    <div className="w-[272px] flex-shrink-0 flex flex-col gap-3.5">
+      <div className="hud-glass rounded-2xl p-4 animate-slide-up corner-brackets">
         <div className="flex items-center gap-2 mb-3.5">
-          <div className="w-6 h-6 rounded-lg bg-sky-500/15 flex items-center justify-center">
+          <div className="w-7 h-7 rounded-lg bg-sky-500/15 border border-sky-500/20 flex items-center justify-center">
             <Cpu className="w-3.5 h-3.5 text-sky-400" />
           </div>
           <div>
-            <h3 className="text-sm text-sky-100/90 font-medium tracking-wide">Sistema</h3>
+            <h3 className="text-sm text-sky-100/95 font-medium tracking-wide">Sistema</h3>
             {hostname && (
-              <p className="text-[10px] text-sky-500/50 truncate max-w-[160px]">{hostname}</p>
+              <p className="text-[10px] text-sky-500/55 truncate max-w-[160px]">{hostname}</p>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 mb-4">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse" />
           <span className="text-[11px] text-emerald-400/90">
             {isDesktop ? 'Telemetría en vivo' : 'Simulación activa'}
           </span>
@@ -77,7 +77,7 @@ export function SystemPanel() {
       <div className="hud-glass rounded-2xl p-4 animate-slide-up" style={{ animationDelay: '80ms' }}>
         <div className="flex items-center gap-2 mb-3">
           <Shield className="w-4 h-4 text-sky-400" />
-          <h3 className="text-sm text-sky-100/90 font-medium tracking-wide">Protección</h3>
+          <h3 className="text-sm text-sky-100/95 font-medium tracking-wide">Protección</h3>
         </div>
 
         <div className="flex items-center gap-1.5 mb-3.5">
@@ -89,28 +89,28 @@ export function SystemPanel() {
           {protections.map((p) => (
             <div
               key={p.label}
-              className="flex items-center justify-between py-2 px-2.5 rounded-xl bg-sky-500/5 border border-sky-500/8"
+              className="flex items-center justify-between py-2 px-2.5 rounded-xl bg-sky-500/5 border border-sky-500/10"
             >
               <div className="flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-sky-400/70" />
-                <span className="text-[12px] text-sky-200/75">{p.label}</span>
+                <ShieldCheck className="w-3.5 h-3.5 text-sky-400/75" />
+                <span className="text-[12px] text-sky-200/80">{p.label}</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-[10px] text-emerald-400/80">ON</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+                <span className="text-[10px] text-emerald-400/85 font-medium">ON</span>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="hud-glass rounded-2xl p-3.5 animate-slide-up" style={{ animationDelay: '140ms' }}>
-        <div className="flex items-center gap-2 text-[11px] text-sky-400/60">
-          <HardDrive className="w-3.5 h-3.5" />
-          <span>Ctrl+Shift+E · Mostrar/Ocultar</span>
+      <div className="hud-glass rounded-2xl p-3.5 animate-slide-up space-y-2" style={{ animationDelay: '140ms' }}>
+        <div className="flex items-center gap-2 text-[11px] text-sky-400/65">
+          <Keyboard className="w-3.5 h-3.5" />
+          <span>Ctrl+Shift+E · Mostrar / Ocultar</span>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-sky-400/60 mt-1.5">
-          <span className="w-3.5 text-center">⌘</span>
+        <div className="flex items-center gap-2 text-[11px] text-sky-400/65">
+          <HardDrive className="w-3.5 h-3.5" />
           <span>Ctrl+Espacio · Interrumpir voz</span>
         </div>
       </div>
