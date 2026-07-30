@@ -52,6 +52,8 @@ function fixSpanishTranscript(raw: string) {
     [/\bnot pad\b/gi, 'notepad'],
     [/\bbloc de nota\b/gi, 'bloc de notas'],
     [/\bvs code\b/gi, 'code'],
+    [/\belira\b/gi, 'elyra'],
+    [/\bhazme\b/gi, 'hazme'],
   ];
   for (const [re, rep] of pairs) t = t.replace(re, rep);
   return t;
@@ -93,17 +95,18 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const ignoreUntilRef = useRef(0);
   const listeningModeRef = useRef<'whisper' | 'webspeech' | 'python' | null>(null);
   const maxTimerRef = useRef<number | null>(null);
+  const silenceTimerRef = useRef<number | null>(null);
   const ampRafRef = useRef(0);
   const ampCtxRef = useRef<AudioContext | null>(null);
   const ampAnalyserRef = useRef<AnalyserNode | null>(null);
   const levelTimerRef = useRef<number | null>(null);
+  const speechStartedRef = useRef(false);
   onCommandRef.current = onCommand;
 
   useEffect(() => {
     if (isDesktop()) window.elyra?.ttsStatus().then((s) => setNaturalTts(!!s.edgeTts));
   }, []);
 
-  // Pedir permiso de mic al arrancar (Electron)
   useEffect(() => {
     if (!isDesktop()) return;
     navigator.mediaDevices
@@ -111,9 +114,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       .then((stream) => {
         stream.getTracks().forEach((t) => t.stop());
       })
-      .catch(() => {
-        /* se pedirá al pulsar mic */
-      });
+      .catch(() => {});
   }, []);
 
   const stopMediaTracks = () => {
@@ -125,6 +126,10 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     if (maxTimerRef.current) {
       window.clearTimeout(maxTimerRef.current);
       maxTimerRef.current = null;
+    }
+    if (silenceTimerRef.current) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
     }
     if (levelTimerRef.current) {
       window.clearInterval(levelTimerRef.current);
@@ -304,10 +309,11 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   }, []);
 
   /**
-   * Micrófono fiable:
-   * 1) Pulsa mic → graba
-   * 2) Pulsa otra vez → para y transcribe (o auto a los 10s)
-   * Sin sampleRate forzado (rompe en muchos PCs Windows)
+   * Grabación con VAD ligero:
+   * - Auto-corte tras ~1.4s de silencio una vez detectó voz
+   * - Máximo 12s
+   * - Segundo clic sigue detiene al instante
+   * Listo para modo continuo (App relanza con elyra-relisten)
    */
   const startWhisperListening = useCallback(async () => {
     try {
@@ -317,8 +323,8 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       }
       setError(null);
       setTranscribing(false);
+      speechStartedRef.current = false;
 
-      // Constraints simples = máxima compatibilidad Windows/Electron
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
@@ -349,14 +355,18 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
 
-      // Nivel visual mientras graba
+      // Nivel + VAD (silencio)
       try {
         const ctx = new AudioContext();
         const src = ctx.createMediaStreamSource(stream);
         const an = ctx.createAnalyser();
-        an.fftSize = 256;
+        an.fftSize = 512;
         src.connect(an);
         const data = new Uint8Array(an.frequencyBinCount);
+        const SILENCE_THRESHOLD = 0.018;
+        const SPEECH_THRESHOLD = 0.035;
+        const SILENCE_MS = 1400;
+
         levelTimerRef.current = window.setInterval(() => {
           an.getByteTimeDomainData(data);
           let sum = 0;
@@ -364,9 +374,25 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             const v = (data[i] - 128) / 128;
             sum += v * v;
           }
-          setAmplitude(Math.min(1, Math.sqrt(sum / data.length) * 5));
-        }, 80);
-        // guardar ctx para cerrar
+          const rms = Math.sqrt(sum / data.length);
+          setAmplitude(Math.min(1, rms * 5));
+
+          if (rms >= SPEECH_THRESHOLD) {
+            speechStartedRef.current = true;
+            if (silenceTimerRef.current) {
+              window.clearTimeout(silenceTimerRef.current);
+              silenceTimerRef.current = null;
+            }
+          } else if (speechStartedRef.current && rms < SILENCE_THRESHOLD && !silenceTimerRef.current) {
+            silenceTimerRef.current = window.setTimeout(() => {
+              try {
+                if (mediaRecorderRef.current?.state === 'recording') {
+                  mediaRecorderRef.current.stop();
+                }
+              } catch {}
+            }, SILENCE_MS);
+          }
+        }, 60);
         (recorder as any)._elyraCtx = ctx;
       } catch {}
 
@@ -409,7 +435,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             acceptTranscript(result.text);
           } else {
             const err = result.error || 'No entendí. Habla más cerca y prueba otra vez.';
-            // Mensajes claros
             if (/api key|sin api/i.test(err)) {
               setError('Falta API key de Groq en %USERPROFILE%\\.elyra\\config.json');
             } else if (/429|límite/i.test(err)) {
@@ -429,14 +454,13 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       recorder.start(250);
       setListening(true);
 
-      // Auto-corte a 10s por si no pulsan de nuevo
       maxTimerRef.current = window.setTimeout(() => {
         try {
           if (mediaRecorderRef.current?.state === 'recording') {
             mediaRecorderRef.current.stop();
           }
         } catch {}
-      }, 10000);
+      }, 12000);
 
       return true;
     } catch (e: any) {
@@ -524,11 +548,9 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       setError('Espera a que termine de hablar.');
       return;
     }
-    // Solo Whisper en escritorio (Web Speech en Electron falla mucho)
     if (isDesktop() && window.elyra?.sttTranscribe) {
       const ok = await startWhisperListening();
       if (ok) return;
-      // no caer a webspeech automáticamente en Electron si falló getUserMedia
       return;
     }
     if (isDesktop() && window.elyra?.sttListenPython) {
@@ -541,14 +563,12 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     }
   }, [startWhisperListening, startPythonListening, startWebSpeechListening]);
 
-  /** Segundo clic: detiene grabación → onstop transcribe */
   const stopListening = useCallback(() => {
     clearTimers();
     if (mediaRecorderRef.current?.state === 'recording') {
       try {
         mediaRecorderRef.current.stop();
       } catch {}
-      // onstop hará el resto
       return;
     }
     mediaRecorderRef.current = null;
