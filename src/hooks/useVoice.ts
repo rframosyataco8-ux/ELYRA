@@ -42,7 +42,6 @@ function normalize(s: string) {
     .trim();
 }
 
-/** Correcciones post-STT en el cliente */
 function fixSpanishTranscript(raw: string) {
   let t = (raw || '').trim();
   const pairs: [RegExp, string][] = [
@@ -53,15 +52,29 @@ function fixSpanishTranscript(raw: string) {
     [/\bnot pad\b/gi, 'notepad'],
     [/\bbloc de nota\b/gi, 'bloc de notas'],
     [/\bvs code\b/gi, 'code'],
-    [/\bvisual estudio code\b/gi, 'code'],
   ];
   for (const [re, rep] of pairs) t = t.replace(re, rep);
   return t;
 }
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = String(reader.result || '');
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      if (!base64) reject(new Error('Audio vacío'));
+      else resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('No pude leer el audio'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [supported, setSupported] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [naturalTts, setNaturalTts] = useState(false);
@@ -79,19 +92,44 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const speakingRef = useRef(false);
   const ignoreUntilRef = useRef(0);
   const listeningModeRef = useRef<'whisper' | 'webspeech' | 'python' | null>(null);
-  const vadTimerRef = useRef<number | null>(null);
+  const maxTimerRef = useRef<number | null>(null);
   const ampRafRef = useRef(0);
   const ampCtxRef = useRef<AudioContext | null>(null);
   const ampAnalyserRef = useRef<AnalyserNode | null>(null);
+  const levelTimerRef = useRef<number | null>(null);
   onCommandRef.current = onCommand;
 
   useEffect(() => {
     if (isDesktop()) window.elyra?.ttsStatus().then((s) => setNaturalTts(!!s.edgeTts));
   }, []);
 
+  // Pedir permiso de mic al arrancar (Electron)
+  useEffect(() => {
+    if (!isDesktop()) return;
+    navigator.mediaDevices
+      ?.getUserMedia({ audio: true })
+      .then((stream) => {
+        stream.getTracks().forEach((t) => t.stop());
+      })
+      .catch(() => {
+        /* se pedirá al pulsar mic */
+      });
+  }, []);
+
   const stopMediaTracks = () => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     mediaStreamRef.current = null;
+  };
+
+  const clearTimers = () => {
+    if (maxTimerRef.current) {
+      window.clearTimeout(maxTimerRef.current);
+      maxTimerRef.current = null;
+    }
+    if (levelTimerRef.current) {
+      window.clearInterval(levelTimerRef.current);
+      levelTimerRef.current = null;
+    }
   };
 
   const stopAmplitudeMonitor = useCallback(() => {
@@ -128,8 +166,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             const v = (data[i] - 128) / 128;
             sum += v * v;
           }
-          const rms = Math.sqrt(sum / data.length);
-          const level = Math.min(1, rms * 4.5);
+          const level = Math.min(1, Math.sqrt(sum / data.length) * 4.5);
           setAmplitude((prev) => prev * 0.55 + level * 0.45);
           ampRafRef.current = requestAnimationFrame(tick);
         };
@@ -205,6 +242,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       } catch {}
       recognitionRef.current?.stop();
       stopMediaTracks();
+      clearTimers();
       setListening(false);
       listeningModeRef.current = null;
 
@@ -261,57 +299,39 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     if (last) {
       if (n === last || last.includes(n) || (n.length < 18 && last.includes(n))) return;
     }
-    // Filtrar basura típica
-    if (/^(thanks for watching|thank you|gracias por ver)/i.test(text)) return;
+    if (/^(thanks for watching|thank you|gracias por ver|subtitles by)/i.test(text)) return;
     onCommandRef.current?.(text);
   }, []);
 
   /**
-   * VAD adaptativo: umbral según ruido de fondo, más tiempo de habla, silencio más tolerante.
+   * Micrófono fiable:
+   * 1) Pulsa mic → graba
+   * 2) Pulsa otra vez → para y transcribe (o auto a los 10s)
+   * Sin sampleRate forzado (rompe en muchos PCs Windows)
    */
   const startWhisperListening = useCallback(async () => {
     try {
-      if (speakingRef.current || Date.now() < ignoreUntilRef.current - 400) {
-        setError('Espera a que termine de hablar.');
+      if (speakingRef.current) {
+        setError('Espera a que termine de hablar (o Ctrl+Espacio).');
         return false;
       }
       setError(null);
+      setTranscribing(false);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-          sampleRate: 16000,
-        },
-      });
-      mediaStreamRef.current = stream;
-
-      const audioCtx = new AudioContext({ sampleRate: 16000 });
-      const source = audioCtx.createMediaStreamSource(stream);
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser);
-      const data = new Uint8Array(analyser.fftSize);
-
-      // Calibrar ruido ambiente ~400ms
-      let noiseFloor = 8;
-      {
-        const samples: number[] = [];
-        for (let i = 0; i < 5; i++) {
-          await new Promise((r) => setTimeout(r, 80));
-          analyser.getByteTimeDomainData(data);
-          let sum = 0;
-          for (let j = 0; j < data.length; j++) {
-            const v = (data[j] - 128) / 128;
-            sum += v * v;
-          }
-          samples.push(Math.sqrt(sum / data.length) * 100);
-        }
-        noiseFloor = samples.reduce((a, b) => a + b, 0) / samples.length;
+      // Constraints simples = máxima compatibilidad Windows/Electron
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
-      const SPEECH_THRESHOLD = Math.max(6, noiseFloor * 1.8 + 2);
+      mediaStreamRef.current = stream;
 
       const mimeCandidates = [
         'audio/webm;codecs=opus',
@@ -321,112 +341,116 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       ];
       const mimeType = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
       const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 })
+        ? new MediaRecorder(stream, { mimeType })
         : new MediaRecorder(stream);
+
       chunksRef.current = [];
       recorder.ondataavailable = (e) => {
-        if (e.data?.size) chunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
       };
 
-      let speechStarted = false;
-      let silenceMs = 0;
-      let speechMs = 0;
-      let totalMs = 0;
-      const TICK = 60;
-      const SILENCE_TO_STOP = 1100;
-      const MAX_MS = 12000;
-      const MIN_SPEECH_MS = 280;
-
-      const finish = () => {
-        if (vadTimerRef.current) {
-          window.clearInterval(vadTimerRef.current);
-          vadTimerRef.current = null;
-        }
-        try {
-          if (recorder.state === 'recording') recorder.stop();
-        } catch {}
-        try {
-          audioCtx.close();
-        } catch {}
-      };
+      // Nivel visual mientras graba
+      try {
+        const ctx = new AudioContext();
+        const src = ctx.createMediaStreamSource(stream);
+        const an = ctx.createAnalyser();
+        an.fftSize = 256;
+        src.connect(an);
+        const data = new Uint8Array(an.frequencyBinCount);
+        levelTimerRef.current = window.setInterval(() => {
+          an.getByteTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) {
+            const v = (data[i] - 128) / 128;
+            sum += v * v;
+          }
+          setAmplitude(Math.min(1, Math.sqrt(sum / data.length) * 5));
+        }, 80);
+        // guardar ctx para cerrar
+        (recorder as any)._elyraCtx = ctx;
+      } catch {}
 
       recorder.onstop = async () => {
+        clearTimers();
         setListening(false);
+        setAmplitude(0);
         listeningModeRef.current = null;
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const mime = recorder.mimeType || mimeType || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type: mime });
         stopMediaTracks();
-        if (speakingRef.current || Date.now() < ignoreUntilRef.current) return;
-        if (!speechStarted || blob.size < 800) {
-          setError('No capturé tu voz. Habla un poco más fuerte y cerca del micrófono.');
+        try {
+          const ctx = (recorder as any)._elyraCtx as AudioContext | undefined;
+          await ctx?.close();
+        } catch {}
+
+        if (speakingRef.current) return;
+
+        if (!blob.size || blob.size < 400) {
+          setError('No se grabó audio. Revisa el micrófono en Windows → Privacidad → Micrófono.');
           return;
         }
+
+        setTranscribing(true);
+        setError(null);
         try {
-          const buffer = await blob.arrayBuffer();
-          const bytes = new Uint8Array(buffer);
-          let binary = '';
-          const chunk = 0x8000;
-          for (let i = 0; i < bytes.length; i += chunk) {
-            binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+          const base64 = await blobToBase64(blob);
+          if (!window.elyra?.sttTranscribe) {
+            setError('STT no disponible. Reinicia la app de escritorio.');
+            setTranscribing(false);
+            return;
           }
-          const base64 = btoa(binary);
-          const result = await window.elyra!.sttTranscribe({
+          const result = await window.elyra.sttTranscribe({
             base64,
-            mimeType: blob.type || 'audio/webm',
+            mimeType: mime,
           });
+          setTranscribing(false);
           if (result.ok && result.text) {
             setError(null);
             acceptTranscript(result.text);
           } else {
-            setError(result.error || 'No entendí. Intenta de nuevo, un poco más despacio.');
+            const err = result.error || 'No entendí. Habla más cerca y prueba otra vez.';
+            // Mensajes claros
+            if (/api key|sin api/i.test(err)) {
+              setError('Falta API key de Groq en %USERPROFILE%\\.elyra\\config.json');
+            } else if (/429|límite/i.test(err)) {
+              setError('Límite de voz de Groq. Espera 20–30 s.');
+            } else {
+              setError(err);
+            }
           }
         } catch (e: any) {
-          setError(e?.message || 'Error al transcribir.');
+          setTranscribing(false);
+          setError(e?.message || 'Error al transcribir. Revisa internet y la API key.');
         }
       };
 
       mediaRecorderRef.current = recorder;
       listeningModeRef.current = 'whisper';
-      recorder.start(150);
+      recorder.start(250);
       setListening(true);
 
-      vadTimerRef.current = window.setInterval(() => {
-        analyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) {
-          const v = (data[i] - 128) / 128;
-          sum += v * v;
-        }
-        const rms = Math.sqrt(sum / data.length) * 100;
-        totalMs += TICK;
-
-        if (rms > SPEECH_THRESHOLD) {
-          speechStarted = true;
-          silenceMs = 0;
-          speechMs += TICK;
-          setAmplitude(Math.min(1, rms / 40));
-        } else if (speechStarted) {
-          silenceMs += TICK;
-          setAmplitude((a) => a * 0.85);
-        }
-
-        if (
-          speechStarted &&
-          silenceMs >= SILENCE_TO_STOP &&
-          speechMs >= MIN_SPEECH_MS
-        ) {
-          finish();
-        } else if (totalMs >= MAX_MS) {
-          finish();
-        }
-      }, TICK);
+      // Auto-corte a 10s por si no pulsan de nuevo
+      maxTimerRef.current = window.setTimeout(() => {
+        try {
+          if (mediaRecorderRef.current?.state === 'recording') {
+            mediaRecorderRef.current.stop();
+          }
+        } catch {}
+      }, 10000);
 
       return true;
     } catch (e: any) {
       stopMediaTracks();
+      clearTimers();
       setListening(false);
       listeningModeRef.current = null;
-      if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
-        setError('Permiso de micrófono denegado. Actívalo en Windows → Privacidad → Micrófono.');
+      const name = e?.name || '';
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setError(
+          'Micrófono bloqueado. Windows → Configuración → Privacidad → Micrófono → permitir apps de escritorio.',
+        );
+      } else if (name === 'NotFoundError') {
+        setError('No hay micrófono detectado en este PC.');
       } else {
         setError(e?.message || 'No pude acceder al micrófono.');
       }
@@ -439,6 +463,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     try {
       setError(null);
       setListening(true);
+      setTranscribing(false);
       listeningModeRef.current = 'python';
       const result = await window.elyra.sttListenPython(6);
       setListening(false);
@@ -452,7 +477,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     } catch (e: any) {
       setListening(false);
       listeningModeRef.current = null;
-      setError(e?.message || 'Error en STT Python');
+      setError(e?.message || 'Error STT Python');
       return false;
     }
   }, [acceptTranscript]);
@@ -460,7 +485,9 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const startWebSpeechListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR || speakingRef.current) return false;
-    if (recognitionRef.current) recognitionRef.current.stop();
+    try {
+      if (recognitionRef.current) recognitionRef.current.stop();
+    } catch {}
     const recognition = new SR();
     recognition.lang = 'es-ES';
     recognition.continuous = false;
@@ -472,12 +499,15 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       listeningModeRef.current = 'webspeech';
     };
     recognition.onresult = (event: RecognitionEvent) => {
-      acceptTranscript(event.results[0][0].transcript as string);
+      const t = event.results?.[0]?.[0]?.transcript;
+      if (t) acceptTranscript(String(t));
     };
     recognition.onerror = (event: RecognitionEvent) => {
-      if (event.error === 'no-speech') setError('No detecté voz.');
-      else if (event.error === 'not-allowed') setError('Permiso de micrófono necesario.');
-      else if (event.error !== 'aborted') setError('Error de reconocimiento.');
+      const code = event.error || '';
+      if (code === 'no-speech') setError('No detecté voz. Habla al pulsar el mic.');
+      else if (code === 'not-allowed') setError('Permiso de micrófono necesario.');
+      else if (code === 'network') setError('Web Speech necesita red. Usa el modo escritorio con Whisper.');
+      else if (code !== 'aborted') setError(`Reconocimiento: ${code}`);
     };
     recognition.onend = () => {
       setListening(false);
@@ -494,9 +524,12 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       setError('Espera a que termine de hablar.');
       return;
     }
+    // Solo Whisper en escritorio (Web Speech en Electron falla mucho)
     if (isDesktop() && window.elyra?.sttTranscribe) {
       const ok = await startWhisperListening();
       if (ok) return;
+      // no caer a webspeech automáticamente en Electron si falló getUserMedia
+      return;
     }
     if (isDesktop() && window.elyra?.sttListenPython) {
       const ok = await startPythonListening();
@@ -508,18 +541,20 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     }
   }, [startWhisperListening, startPythonListening, startWebSpeechListening]);
 
+  /** Segundo clic: detiene grabación → onstop transcribe */
   const stopListening = useCallback(() => {
-    if (vadTimerRef.current) {
-      window.clearInterval(vadTimerRef.current);
-      vadTimerRef.current = null;
-    }
+    clearTimers();
     if (mediaRecorderRef.current?.state === 'recording') {
       try {
         mediaRecorderRef.current.stop();
       } catch {}
+      // onstop hará el resto
+      return;
     }
     mediaRecorderRef.current = null;
-    recognitionRef.current?.stop();
+    try {
+      recognitionRef.current?.stop();
+    } catch {}
     stopMediaTracks();
     setListening(false);
     setAmplitude(0);
@@ -541,11 +576,13 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
     }
     return () => {
-      recognitionRef.current?.stop();
+      try {
+        recognitionRef.current?.stop();
+      } catch {}
       try {
         mediaRecorderRef.current?.stop();
       } catch {}
-      if (vadTimerRef.current) window.clearInterval(vadTimerRef.current);
+      clearTimers();
       stopMediaTracks();
       stopSpeaking();
     };
@@ -558,6 +595,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     stopListening,
     speaking,
     listening,
+    transcribing,
     supported,
     error,
     naturalTts,

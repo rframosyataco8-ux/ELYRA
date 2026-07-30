@@ -88,6 +88,7 @@ export default function App() {
     stopListening,
     speaking,
     listening,
+    transcribing,
     supported,
     error,
     naturalTts,
@@ -123,7 +124,7 @@ export default function App() {
     const t = setTimeout(async () => {
       setBooted(true);
       const bootMsg = isDesktop
-        ? 'Hola. Soy ELYRA. Dime qué necesitas y lo hacemos.'
+        ? 'Hola. Soy ELYRA. Pulsa el micrófono, habla, y pulsa otra vez para enviar.'
         : 'Soy ELYRA. Usa la versión de escritorio para el control total.';
       addMessage('elyra', bootMsg);
       await speak(bootMsg);
@@ -132,13 +133,18 @@ export default function App() {
   }, [addMessage, speak]);
 
   const handleToggleListen = () => {
+    if (transcribing) return;
     if (listening) {
+      // Segundo clic: para y transcribe
       stopListening();
       return;
     }
-    if (speaking || thinking) return;
-    stopSpeaking();
-    setTimeout(() => startListening(), 200);
+    if (speaking || thinking) {
+      stopSpeaking();
+      setTimeout(() => startListening(), 400);
+      return;
+    }
+    startListening();
   };
 
   const handleSend = async () => {
@@ -156,12 +162,12 @@ export default function App() {
 
   const statusLabel = thinking
     ? 'Trabajando...'
+    : transcribing
+    ? 'Transcribiendo...'
     : speaking
     ? 'Hablando...'
     : listening
-    ? continuous
-      ? 'Escucha continua'
-      : 'Escuchando…'
+    ? 'Escuchando… pulsa el mic otra vez'
     : 'Lista';
 
   return (
@@ -175,6 +181,7 @@ export default function App() {
             {isDesktop && <span>· Escritorio</span>}
             {naturalTts && <span className="text-emerald-400/50">· Voz Dalia</span>}
             {hasApiKey && <span className="text-violet-400/50">· IA</span>}
+            {!hasApiKey && isDesktop && <span className="text-amber-400/60">· Sin API key</span>}
           </div>
           <div className="flex items-center gap-1 no-drag">
             {isDesktop && (
@@ -200,10 +207,14 @@ export default function App() {
                 <div className="text-center space-y-1 mb-2">
                   <h2 className="text-2xl font-semibold text-white">Hola, Fabricio</h2>
                   <p className="text-sm text-sky-300/50">
-                    {listening ? 'Habla ahora… al callarte envío solo' : 'Dime qué hacemos. Ctrl+Espacio corta la voz.'}
+                    {listening
+                      ? 'Habla ahora… luego pulsa el micrófono otra vez'
+                      : transcribing
+                      ? 'Convirtiendo tu voz en texto…'
+                      : 'Pulsa mic → habla → pulsa mic otra vez'}
                   </p>
                   <div className="inline-flex items-center gap-2 mt-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20">
-                    {thinking ? (
+                    {thinking || transcribing ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
                     ) : (
                       <span
@@ -218,7 +229,7 @@ export default function App() {
                 <div className="flex-1 flex items-center justify-center min-h-0">
                   <NetworkGlobe
                     speaking={speaking || thinking}
-                    listening={listening}
+                    listening={listening || transcribing}
                     size={340}
                     amplitude={amplitude}
                   />
@@ -239,43 +250,42 @@ export default function App() {
             {page === 'config' && (
               <div className="max-w-md mx-auto w-full space-y-4 pt-6">
                 <h2 className="text-lg font-medium text-white">Configuración</h2>
-                <div className="rounded-xl border border-sky-500/15 bg-[#0a1525]/80 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-sky-100">Escucha continua</p>
-                      <p className="text-[11px] text-sky-400/50">Se reactiva sola tras responder</p>
-                    </div>
+                <div className="rounded-xl border border-sky-500/15 bg-[#0a1525]/80 p-4 space-y-3 text-[12px] text-sky-400/70">
+                  <p>
+                    <strong className="text-sky-200">Micrófono:</strong> pulsa mic → habla → pulsa mic otra vez.
+                  </p>
+                  <p>
+                    API key: <code className="text-sky-300">%USERPROFILE%\.elyra\config.json</code>
+                  </p>
+                  <p>Windows → Privacidad → Micrófono → permitir apps de escritorio.</p>
+                  <div className="flex items-center justify-between pt-2">
+                    <span className="text-sky-100 text-sm">Escucha continua</span>
                     <button
                       onClick={() => setContinuous((v) => !v)}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${continuous ? 'bg-sky-500' : 'bg-sky-900'}`}
+                      className={`relative w-11 h-6 rounded-full ${continuous ? 'bg-sky-500' : 'bg-sky-900'}`}
                     >
                       <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${continuous ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
-                  <p className="text-[12px] text-sky-400/60 leading-relaxed">
-                    Ctrl+Espacio: interrumpir voz · Ctrl+Shift+E: mostrar/ocultar
-                    <br />
-                    API key en: %USERPROFILE%\.elyra\config.json
-                  </p>
                 </div>
               </div>
             )}
 
             <div className="w-full max-w-xl mx-auto mt-auto pt-3">
-              {error && <p className="text-red-400/70 text-xs text-center mb-2">{error}</p>}
+              {error && <p className="text-red-400/80 text-xs text-center mb-2 px-2">{error}</p>}
               {!supported && null}
               <div className="flex items-center gap-2 rounded-full bg-[#0a1525]/95 border border-sky-500/25 px-3 py-2">
                 <button
                   onClick={handleToggleListen}
-                  disabled={thinking || speaking}
+                  disabled={thinking || transcribing}
                   className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
                     listening
-                      ? 'bg-sky-500/35 text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.4)]'
+                      ? 'bg-red-500/30 text-red-200 shadow-[0_0_16px_rgba(248,113,113,0.35)]'
                       : 'text-sky-400/60 hover:bg-sky-500/10'
                   } disabled:opacity-40`}
-                  title={listening ? 'Detener' : 'Hablar'}
+                  title={listening ? 'Pulsa para enviar' : 'Pulsa para hablar'}
                 >
-                  <Mic className="w-4 h-4" />
+                  {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
                 </button>
                 <button
                   onClick={() => setContinuous((v) => !v)}
@@ -291,7 +301,7 @@ export default function App() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder={listening ? 'Escuchando…' : 'Habla o escribe…'}
+                  placeholder={listening ? 'Grabando… pulsa el mic rojo para enviar' : 'Habla o escribe…'}
                   className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
                 />
                 <button
