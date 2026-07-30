@@ -17,7 +17,8 @@ const {
   testApiConnection,
 } = require('./agent.cjs');
 const { runPythonStt } = require('./stt-python-ipc.cjs');
-const { openApp: openAppReliable, openUrl: openUrlReliable, resolveWebUrl } = require('./apps.cjs');
+const { openApp: openAppReliable, openUrl: openUrlReliable } = require('./apps.cjs');
+const { applyTypos, parseCompound, cleanOpenName } = require('./intent-compound.cjs');
 const pc = require('./pc-control.cjs');
 const { transcribeBuffer } = require('./stt.cjs');
 const { chatOpenClaw, pingOpenClaw, getOpenClawConfig } = require('./openclaw-bridge.cjs');
@@ -172,7 +173,6 @@ async function recallHelper() {
   return { ok: true, result: parts.join(' ') };
 }
 
-/** Búsqueda rápida Wikipedia / DuckDuckGo sin LLM (modo autónomo) */
 async function knowledgeLookup(query) {
   const q = (query || '').trim().slice(0, 120);
   if (!q) return null;
@@ -180,19 +180,18 @@ async function knowledgeLookup(query) {
   try {
     const wr = await fetch(
       'https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
-      { headers: { 'User-Agent': 'ELYRA/3.1' } },
+      { headers: { 'User-Agent': 'ELYRA/3.2' } },
     );
     if (wr.ok) {
       const data = await wr.json();
       if (data.extract) bits.push(data.extract);
-      else if (data.type === 'disambiguation' && data.extract) bits.push(data.extract);
     }
   } catch {}
   if (!bits.length) {
     try {
       const wr2 = await fetch(
         'https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
-        { headers: { 'User-Agent': 'ELYRA/3.1' } },
+        { headers: { 'User-Agent': 'ELYRA/3.2' } },
       );
       if (wr2.ok) {
         const data = await wr2.json();
@@ -202,8 +201,9 @@ async function knowledgeLookup(query) {
   }
   if (!bits.length) {
     try {
-      const res = await fetch('https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1',
-        { headers: { 'User-Agent': 'ELYRA/3.1' } },
+      const res = await fetch(
+        'https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1',
+        { headers: { 'User-Agent': 'ELYRA/3.2' } },
       );
       if (res.ok) {
         const data = await res.json();
@@ -218,10 +218,11 @@ async function knowledgeLookup(query) {
 
 function extractKnowledgeTopic(text) {
   const t = (text || '').trim();
+  if (/\b(abre|abrir)\b/.test(t) && /\b(busca|buscar|buscame)\b/.test(t)) return null;
   const patterns = [
-    /(?:dime|cuéntame|cuentame|explícame|explicame|qué sabes|que sabes|habla|información|informacion|busca|busca info)\s+(?:sobre|de|acerca de)\s+(.+)/i,
+    /(?:dime|cuéntame|cuentame|explícame|explicame|qué sabes|que sabes|habla|información|informacion)\s+(?:sobre|de|acerca de)\s+(.+)/i,
     /(?:qué es|que es|quién es|quien es|quién fue|quien fue)\s+(.+)/i,
-    /(?:busca|buscar|investiga|investigar)\s+(.+)/i,
+    /(?:busca información|busca info|investiga|investigar)\s+(?:sobre\s+)?(.+)/i,
     /(?:resume|resumen de|haz un resumen de)\s+(.+)/i,
   ];
   for (const re of patterns) {
@@ -367,7 +368,6 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
 
   const config = getConfig();
   if (!config.apiKey) {
-    // Autonomía sin key: conocimiento web + memoria
     const topic = extractKnowledgeTopic(fixed);
     if (topic) {
       const info = await knowledgeLookup(topic);
@@ -378,7 +378,6 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
 
   try {
     const result = await runAgent(fixed, history || [], agentHelpers);
-    // Si el agente solo devolvió error de API, intenta conocimiento local
     if (/api key no es válida|no hay api key|falta la api|no pude conectar/i.test(result.response || '')) {
       const topic = extractKnowledgeTopic(fixed);
       if (topic) {
@@ -404,7 +403,10 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
       const info = await knowledgeLookup(topic);
       if (info) return { response: info, intelligent: true, via: 'wiki-fallback' };
     }
-    return { response: 'No pude completar eso ahora. Revisa la API key en Configuración si el problema continúa.', intelligent: false };
+    return {
+      response: 'No pude completar eso ahora. Revisa la API key en Configuración si el problema continúa.',
+      intelligent: false,
+    };
   }
 });
 
@@ -421,9 +423,8 @@ ipcMain.handle('agent-config-test', async (_e, partial) => {
 });
 
 async function trySimpleIntent(input) {
-  const text = (input || '').toLowerCase().trim();
+  let text = applyTypos((input || '').toLowerCase().trim());
 
-  // Memoria
   if (
     /\b(qué recuerdas|que recuerdas|dime (todo )?lo que recuerdas|qué sabes de mí|que sabes de mi|tu memoria|muestra (tu )?memoria)\b/.test(
       text,
@@ -432,15 +433,26 @@ async function trySimpleIntent(input) {
     const r = await recallHelper();
     return { response: r.result, intelligent: false };
   }
-  const rememberMatch = text.match(
-    /\b(?:recuerda|anota|guarda|no olvides)\s+(?:que\s+)?(.+)/i,
-  );
+  const rememberMatch = text.match(/\b(?:recuerda|anota|guarda|no olvides)\s+(?:que\s+)?(.+)/i);
   if (rememberMatch) {
     await rememberHelper(rememberMatch[1].trim());
     return { response: 'Listo, lo guardé en mi memoria.', intelligent: false };
   }
 
-  // Volumen
+  const compound = parseCompound(text);
+  if (compound && compound.type === 'compound_search') {
+    await openAppHelper(compound.browser || 'chrome');
+    await openUrlHelper('https://www.google.com/search?q=' + encodeURIComponent(compound.query));
+    return {
+      response: 'Abrí ' + (compound.browser || 'Chrome') + ' y busqué "' + compound.query + '".',
+      intelligent: false,
+    };
+  }
+  if (compound && compound.type === 'google_search') {
+    await openUrlHelper('https://www.google.com/search?q=' + encodeURIComponent(compound.query));
+    return { response: 'Busqué "' + compound.query + '" en Google.', intelligent: false };
+  }
+
   if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
     const r = await pc.volume('up');
     return { response: r.result, intelligent: false };
@@ -454,7 +466,6 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Brillo
   if (/\b(sube|subir)\s+(el\s+)?brillo\b/.test(text)) {
     const r = await pc.brightness('up');
     return { response: r.result, intelligent: false };
@@ -464,7 +475,6 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Media
   if (
     (/\b(pausa|pausar|play|reproducir|reproduce)\b/.test(text) &&
       /\b(música|musica|canción|cancion|spotify|video)\b/.test(text)) ||
@@ -482,7 +492,6 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Captura / bloqueo / escritorio
   if (/\b(captura|screenshot|captura de pantalla)\b/.test(text)) {
     const r = await pc.screenshot();
     return { response: r.result, intelligent: false };
@@ -500,7 +509,6 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Batería / red / disco
   if (/\b(batería|bateria|cuánta batería|cuanta bateria)\b/.test(text)) {
     const r = await pc.battery();
     return { response: r.result, intelligent: false };
@@ -514,13 +522,11 @@ async function trySimpleIntent(input) {
     return { response: (r.result || '').slice(0, 400), intelligent: false };
   }
 
-  // Papelera
   if (/\b(vacía|vacia|vaciar)\s+(la\s+)?papelera\b/.test(text)) {
     const r = await pc.emptyRecycle();
     return { response: r.result, intelligent: false };
   }
 
-  // Ajustes Windows
   if (/\b(abre|abrir)\s+(ajustes|configuración|configuracion|settings)\b/.test(text)) {
     let page = 'system';
     if (/wifi|red/.test(text)) page = 'wifi';
@@ -533,7 +539,6 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Power
   if (/\b(cancela|cancelar)\s+(el\s+)?(apagado|reinicio)\b/.test(text) || /\bcancelar apagado\b/.test(text)) {
     const r = await pc.power('cancel');
     return { response: r.result, intelligent: false };
@@ -556,14 +561,12 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Conocimiento rápido (sin esperar LLM)
   const topic = extractKnowledgeTopic(text);
   if (topic && topic.length > 2) {
     const info = await knowledgeLookup(topic);
     if (info) return { response: info, intelligent: true, via: 'wiki' };
   }
 
-  // Abrir apps / webs / carpetas
   const openMatch = text.match(
     /\b(?:abre|abrir|abre\s+me|abrir\s+me|lanza|ejecuta|abre\s+el|abre\s+la)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
@@ -576,8 +579,7 @@ async function trySimpleIntent(input) {
       }
     }
 
-    let name = openMatch ? openMatch[1] : '';
-    name = name.replace(/\s+(por favor|please|ahora|ya)$/i, '').trim();
+    let name = cleanOpenName(openMatch ? openMatch[1] : '');
 
     if (!name) {
       const candidates = [
@@ -587,7 +589,7 @@ async function trySimpleIntent(input) {
         'teams', 'steam', 'slack', 'chatgpt', 'gemini', 'claude',
       ];
       for (const app of candidates) {
-        if (text.includes(app)) {
+        if (new RegExp('\\b' + app + '\\b', 'i').test(text)) {
           name = app;
           break;
         }
