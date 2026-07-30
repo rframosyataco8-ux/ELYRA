@@ -18,7 +18,7 @@ const {
 } = require('./agent.cjs');
 const { runPythonStt } = require('./stt-python-ipc.cjs');
 const { openApp: openAppReliable, openUrl: openUrlReliable } = require('./apps.cjs');
-const pc = require('./pc-control.cjs');
+const pc = require('./pc-bridge.cjs');
 const { transcribeBuffer } = require('./stt.cjs');
 const { chatOpenClaw, pingOpenClaw, getOpenClawConfig } = require('./openclaw-bridge.cjs');
 const { routeChat } = require('./chat-router.cjs');
@@ -220,6 +220,7 @@ const agentHelpers = {
   remember: rememberHelper,
   recall: recallHelper,
   pc,
+  getSystemStats,
 };
 
 ipcMain.handle('get-system-stats', async () => getSystemStats());
