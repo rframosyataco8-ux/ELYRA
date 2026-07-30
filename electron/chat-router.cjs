@@ -1,9 +1,11 @@
 /**
- * Router de conversación ELYRA v5 — JARVIS-like + presencia + PC máximo
+ * Router ELYRA v6 — skills nativos (tipo OpenClaw) + presencia + PC
+ * Sin depender de demonio externo.
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
 const { applyTypos, parseCompound, cleanOpenName } = require('./intent-compound.cjs');
+const { trySkillIntent } = require('./skills-router.cjs');
 
 const PRESENCE_REPLIES = [
   'Sí, señor. Estoy aquí.',
@@ -34,13 +36,11 @@ async function routeChat({
     typeof normalizeUserIntent === 'function' ? normalizeUserIntent(message) : message;
   let text = applyTypos((fixed || '').toLowerCase().trim());
 
-  // Quitar wake word residual
   text = text
     .replace(/\b(hey\s+)?(elyra|elira|eliara)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Presencia: "estás ahí", solo "elyra", "hola"
   if (
     !text ||
     /^(estas ahi|estás ahí|estas alli|me escuchas|hola|oye|hey|buenos dias|buenas tardes|buenas noches)$/i.test(
@@ -50,9 +50,16 @@ async function routeChat({
     return { response: pickPresence(), intelligent: true, via: 'presence' };
   }
 
+  // Skills multi-paso nativos (rápido, sin LLM ni OpenClaw)
+  try {
+    const skill = await trySkillIntent(text);
+    if (skill) return skill;
+  } catch {}
+
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
   if (quick) return quick;
 
+  // OpenClaw solo si el usuario lo activó explícitamente
   try {
     const oc = getOpenClawConfig && getOpenClawConfig();
     if (oc?.enabled && chatOpenClaw) {
@@ -70,7 +77,7 @@ async function routeChat({
     return (
       fallbackResponse?.(message) || {
         response:
-          'No hay API key. Ve a Configuración, pega tu clave y pulsa Probar conexión. Mientras tanto controlo el PC.',
+          'No hay API key. En Configuración puede añadirla para razonamiento avanzado. El control del PC y las skills de archivos ya funcionan.',
         intelligent: false,
       }
     );
@@ -93,7 +100,7 @@ async function routeChat({
         response:
           resp.includes('API') || resp.includes('key')
             ? resp
-            : 'El modelo no respondió. Revisa la API key. Sigo disponible para controlar el PC.',
+            : 'El modelo no respondió. Revisa la API key. Sigo con el PC y archivos.',
         intelligent: false,
         via: 'error',
       };
@@ -113,8 +120,7 @@ async function routeChat({
     const sk = await trySmartTopic(fixed, text);
     if (sk) return { ...sk, via: 'smart-error' };
     return {
-      response:
-        'Problema con el modelo. Sigo operativa para apps, volumen, capturas y el resto del sistema.',
+      response: 'Problema con el modelo. Sigo operativa para el sistema y archivos.',
       intelligent: false,
     };
   }
@@ -190,7 +196,6 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     };
   }
 
-  // Task manager / extras
   if (/\b(administrador de tareas|task ?manager|gestor de tareas)\b/.test(text)) {
     if (pc.openTaskManager) {
       const r = await pc.openTaskManager();
@@ -203,35 +208,25 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
       return { response: r.result, intelligent: false };
     }
   }
-  if (/\b(estado (del )?wifi|wifi status)\b/.test(text)) {
-    if (pc.wifiStatus) {
-      const r = await pc.wifiStatus();
-      return { response: (r.result || '').slice(0, 400), intelligent: false };
-    }
+  if (/\b(estado (del )?wifi|wifi status)\b/.test(text) && pc.wifiStatus) {
+    const r = await pc.wifiStatus();
+    return { response: (r.result || '').slice(0, 400), intelligent: false };
   }
-  if (/\b(activa|activar|enciende|encender)\s+(el\s+)?wifi\b/.test(text)) {
-    if (pc.setWifi) {
-      const r = await pc.setWifi(true);
-      return { response: r.result, intelligent: false };
-    }
+  if (/\b(activa|activar|enciende|encender)\s+(el\s+)?wifi\b/.test(text) && pc.setWifi) {
+    const r = await pc.setWifi(true);
+    return { response: r.result, intelligent: false };
   }
-  if (/\b(desactiva|desactivar|apaga|apagar)\s+(el\s+)?wifi\b/.test(text)) {
-    if (pc.setWifi) {
-      const r = await pc.setWifi(false);
-      return { response: r.result, intelligent: false };
-    }
+  if (/\b(desactiva|desactivar|apaga|apagar)\s+(el\s+)?wifi\b/.test(text) && pc.setWifi) {
+    const r = await pc.setWifi(false);
+    return { response: r.result, intelligent: false };
   }
-  if (/\b(flush|vacía|vacia)\s+dns\b/.test(text) || /\blimpia (la )?dns\b/.test(text)) {
-    if (pc.flushDns) {
-      const r = await pc.flushDns();
-      return { response: r.result, intelligent: false };
-    }
+  if ((/\b(flush|vacía|vacia)\s+dns\b/.test(text) || /\blimpia (la )?dns\b/.test(text)) && pc.flushDns) {
+    const r = await pc.flushDns();
+    return { response: r.result, intelligent: false };
   }
-  if (/\b(qué ventanas|que ventanas|ventanas abiertas)\b/.test(text)) {
-    if (pc.listWindows) {
-      const r = await pc.listWindows();
-      return { response: (r.result || 'Sin datos').slice(0, 500), intelligent: false };
-    }
+  if (/\b(qué ventanas|que ventanas|ventanas abiertas)\b/.test(text) && pc.listWindows) {
+    const r = await pc.listWindows();
+    return { response: (r.result || 'Sin datos').slice(0, 500), intelligent: false };
   }
 
   const compound = parseCompound(text);
