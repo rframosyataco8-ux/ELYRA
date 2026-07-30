@@ -4,6 +4,7 @@ import { NetworkGlobe } from '@/components/NetworkGlobe';
 import { Sidebar } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
 import { ConversationLog, type Message } from '@/components/ConversationLog';
+import { LoginGate } from '@/components/LoginGate';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
@@ -25,6 +26,8 @@ function detectFromKey(key: string) {
 }
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(false);
+  const [operator, setOperator] = useState('Operador');
   const [messages, setMessages] = useState<Message[]>([]);
   const [booted, setBooted] = useState(false);
   const [page, setPage] = useState<'inicio' | 'asistente' | 'config'>('inicio');
@@ -100,7 +103,7 @@ export default function App() {
         setThinking(false);
         processingRef.current = false;
         if (continuousRef.current) {
-          setTimeout(() => window.dispatchEvent(new CustomEvent('elyra-relisten')), 1800);
+          setTimeout(() => window.dispatchEvent(new CustomEvent('elyra-relisten')), 1600);
         }
       }
     },
@@ -150,27 +153,27 @@ export default function App() {
   }, [booted]);
 
   useEffect(() => {
-    if (bootOnceRef.current) return;
+    if (!authenticated || bootOnceRef.current) return;
     bootOnceRef.current = true;
     const t = setTimeout(async () => {
       setBooted(true);
       let bootMsg = isDesktop
-        ? 'Sistemas online. Soy ELYRA. Pulsa el micrófono, habla, y pulsa otra vez para enviar.'
+        ? `Sistemas online. Hola ${operator}. Habla con naturalidad: preguntas, órdenes o ambas.`
         : 'Soy ELYRA. Usa la versión de escritorio para el control total.';
       if (isDesktop) {
         try {
           const c = await window.elyra?.agentConfigGet();
           if (c && !c.hasKey) {
             bootMsg =
-              'Sistemas online. Falta la API key: ve a Configuración, elige proveedor y guarda tu clave.';
+              `Hola ${operator}. Falta la API key: ve a Configuración, guarda tu clave y prueba la conexión.`;
           }
         } catch {}
       }
       addMessage('elyra', bootMsg);
       await speak(bootMsg);
-    }, 600);
+    }, 500);
     return () => clearTimeout(t);
-  }, [addMessage, speak]);
+  }, [authenticated, operator, addMessage, speak]);
 
   const handleToggleListen = () => {
     if (transcribing) return;
@@ -180,7 +183,7 @@ export default function App() {
     }
     if (speaking || thinking) {
       stopSpeaking();
-      setTimeout(() => startListening(), 400);
+      setTimeout(() => startListening(), 350);
       return;
     }
     startListening();
@@ -291,6 +294,17 @@ export default function App() {
     { label: 'Ollama local', url: 'http://localhost:11434/v1', model: 'llama3.2' },
   ];
 
+  if (!authenticated) {
+    return (
+      <LoginGate
+        onAuthenticated={(name) => {
+          setOperator(name);
+          setAuthenticated(true);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="h-screen w-screen bg-[#030810] text-sky-100 flex overflow-hidden select-none relative">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -337,15 +351,15 @@ export default function App() {
             {page === 'inicio' && (
               <>
                 <div className="text-center space-y-1.5 mb-2 animate-boot">
-                  <h2 className="text-2xl font-semibold text-white tracking-wide text-glow-soft">Hola, Fabricio</h2>
+                  <h2 className="text-2xl font-semibold text-white tracking-wide text-glow-soft">Hola, {operator}</h2>
                   <p className="text-sm text-sky-300/55">
                     {listening
-                      ? 'Habla ahora… luego pulsa el micrófono otra vez'
+                      ? 'Te escucho… al terminar de hablar se envía solo, o pulsa el mic'
                       : transcribing
                       ? 'Convirtiendo tu voz en texto…'
                       : thinking
                       ? 'Analizando y ejecutando…'
-                      : 'Pulsa mic → habla → pulsa mic otra vez'}
+                      : 'Habla con naturalidad o escribe lo que necesites'}
                   </p>
                   <div className="status-chip mt-2 mx-auto">
                     {thinking || transcribing ? (
@@ -435,9 +449,6 @@ export default function App() {
                       placeholder={hasApiKey ? '••••••••  (deja vacío para no cambiar)' : 'pega tu API key aquí'}
                       className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/40 placeholder:text-sky-600/50"
                     />
-                    <p className="text-[10px] text-sky-500/50 leading-relaxed">
-                      Auto-detecta: gsk_ (Groq), AIza… (Gemini), sk-ant- (Claude), sk- (OpenAI), xai- (Grok). Se guarda solo en tu PC.
-                    </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -465,55 +476,29 @@ export default function App() {
                       disabled={cfgSaving || !isDesktop}
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/20 border border-sky-400/30 text-sky-100 text-sm hover:bg-sky-500/30 transition-all disabled:opacity-40"
                     >
-                      {cfgSaving ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : cfgSaved ? (
-                        <>
-                          <Check className="w-4 h-4 text-emerald-400" /> Guardado
-                        </>
-                      ) : (
-                        <>
-                          <Save className="w-4 h-4" /> Guardar
-                        </>
-                      )}
+                      {cfgSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : cfgSaved ? <><Check className="w-4 h-4 text-emerald-400" /> Guardado</> : <><Save className="w-4 h-4" /> Guardar</>}
                     </button>
                     <button
                       onClick={handleTestConfig}
                       disabled={cfgTesting || !isDesktop}
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-500/15 border border-violet-400/25 text-sky-100 text-sm hover:bg-violet-500/25 transition-all disabled:opacity-40"
                     >
-                      {cfgTesting ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <>
-                          <Wifi className="w-4 h-4" /> Probar conexión
-                        </>
-                      )}
+                      {cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar conexión</>}
                     </button>
                   </div>
 
                   {cfgTestMsg && (
-                    <div
-                      className={`flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5 border ${
-                        cfgTestMsg.ok
-                          ? 'bg-emerald-500/10 border-emerald-400/25 text-emerald-300/90'
-                          : 'bg-red-500/10 border-red-400/25 text-red-300/90'
-                      }`}
-                    >
+                    <div className={`flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5 border ${cfgTestMsg.ok ? 'bg-emerald-500/10 border-emerald-400/25 text-emerald-300/90' : 'bg-red-500/10 border-red-400/25 text-red-300/90'}`}>
                       {cfgTestMsg.ok ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
                       <span>{cfgTestMsg.text}</span>
                     </div>
                   )}
-
-                  <p className="text-[11px] text-sky-500/50 leading-relaxed">
-                    Archivo local: <code className="text-sky-400/70">%USERPROFILE%\.elyra\config.json</code>
-                  </p>
                 </div>
 
                 <div className="hud-glass rounded-2xl p-5 space-y-4">
                   <h3 className="text-sm text-sky-100 font-medium">Voz y micrófono</h3>
                   <p className="text-[12px] text-sky-400/65 leading-relaxed">
-                    Pulsa el micrófono → habla → pulsa otra vez para enviar. Windows → Privacidad → Micrófono → permitir apps de escritorio.
+                    Whisper + VAD: al callar ~1,4 s se envía solo. Escucha continua reabre el mic tras cada respuesta.
                   </p>
                   <div className="flex items-center justify-between">
                     <span className="text-sky-100 text-sm">Escucha continua</span>
@@ -528,18 +513,12 @@ export default function App() {
 
                 <div className="hud-glass rounded-2xl p-5 space-y-3">
                   <h3 className="text-sm text-sky-100 font-medium">Memoria</h3>
-                  <p className="text-[12px] text-sky-400/65">Notas y hechos que ELYRA recuerda entre sesiones.</p>
-                  <button
-                    onClick={handleClearMemory}
-                    className="flex items-center gap-2 text-[12px] text-red-400/80 hover:text-red-300 transition-colors"
-                  >
+                  <button onClick={handleClearMemory} className="flex items-center gap-2 text-[12px] text-red-400/80 hover:text-red-300 transition-colors">
                     <Trash2 className="w-3.5 h-3.5" /> Borrar memoria local
                   </button>
                 </div>
 
-                {!cfgLoaded && isDesktop && (
-                  <p className="text-center text-xs text-sky-500/40">Cargando configuración…</p>
-                )}
+                {!cfgLoaded && isDesktop && <p className="text-center text-xs text-sky-500/40">Cargando configuración…</p>}
               </div>
             )}
 
@@ -550,9 +529,7 @@ export default function App() {
                   onClick={handleToggleListen}
                   disabled={thinking || transcribing}
                   className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
-                    listening
-                      ? 'bg-red-500/35 text-red-100 shadow-[0_0_20px_rgba(248,113,113,0.4)]'
-                      : 'text-sky-400/70 hover:bg-sky-500/15'
+                    listening ? 'bg-red-500/35 text-red-100 shadow-[0_0_20px_rgba(248,113,113,0.4)]' : 'text-sky-400/70 hover:bg-sky-500/15'
                   } disabled:opacity-40`}
                   title={listening ? 'Pulsa para enviar' : 'Pulsa para hablar'}
                 >
@@ -572,7 +549,7 @@ export default function App() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder={listening ? 'Grabando… pulsa el mic rojo para enviar' : 'Habla o escribe…'}
+                  placeholder={listening ? 'Escuchando…' : 'Habla o escribe con naturalidad…'}
                   className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
                 />
                 <button
@@ -597,7 +574,7 @@ export default function App() {
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-              Activo
+              Activo · {operator}
             </span>
             <span>{formatUptime(uptime)}</span>
           </span>
