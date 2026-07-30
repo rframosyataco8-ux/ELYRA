@@ -5,7 +5,7 @@ import { NetworkGlobe } from '@/components/NetworkGlobe';
 import { Sidebar } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
 import { ConversationLog, type Message } from '@/components/ConversationLog';
-import { LoginGate } from '@/components/LoginGate';
+import { LoginGate, clearSession } from '@/components/LoginGate';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
@@ -24,6 +24,12 @@ function detectFromKey(key: string) {
   if (k.startsWith('xai-')) return { baseUrl: 'https://api.x.ai/v1', model: 'grok-2-latest' };
   if (k.startsWith('sk-') && k.length > 20) return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
   return null;
+}
+
+function greetingFor(operator: string) {
+  const h = new Date().getHours();
+  const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
+  return `${saludo}, ${operator}. Sistemas operativos. Estoy a su disposición.`;
 }
 
 export default function App() {
@@ -86,19 +92,19 @@ export default function App() {
           const result = await window.elyra.agentChat(cleaned, history);
           let reply = (result.response || '').trim();
           if (/rate limit|"error".*429|org_[a-z0-9]+/i.test(reply)) {
-            reply = 'El servicio está saturado un momento. Espera un poco y lo intentamos otra vez.';
+            reply = 'El servicio está saturado un momento. Inténtelo de nuevo en unos segundos.';
           }
           if (reply) {
             addMessage('elyra', reply);
             await speakRef.current(reply);
           }
         } else {
-          const msg = 'Abre la app de escritorio para usar todas las funciones.';
+          const msg = 'Use la versión de escritorio para el control total del sistema.';
           addMessage('elyra', msg);
           await speakRef.current(msg);
         }
       } catch {
-        const msg = 'No pude completar eso ahora. Prueba de nuevo en unos segundos.';
+        const msg = 'No pude completar la solicitud. Reintente en unos segundos.';
         addMessage('elyra', msg);
         await speakRef.current(msg);
       } finally {
@@ -179,22 +185,31 @@ export default function App() {
     const t = setTimeout(async () => {
       setBooted(true);
       let bootMsg = isDesktop
-        ? `Sistemas online. Hola ${operator}. Diga «Elyra» y le respondo. También puede hablar tras pulsar el micrófono.`
-        : 'Soy ELYRA. Usa la versión de escritorio para el control total.';
+        ? greetingFor(operator)
+        : 'ELYRA lista. Use la versión de escritorio para el control total.';
       if (isDesktop) {
         try {
           const c = await window.elyra?.agentConfigGet();
           if (c && !c.hasKey) {
             bootMsg =
-              `Hola ${operator}. Falta la API key en Configuración. Aun así respondo a «Elyra» y controlo el PC.`;
+              greetingFor(operator) +
+              ' Configure la API key cuando desee razonamiento avanzado; el control del PC ya está activo.';
           }
         } catch {}
       }
       addMessage('elyra', bootMsg);
       await speak(bootMsg);
-    }, 500);
+    }, 450);
     return () => clearTimeout(t);
   }, [authenticated, operator, addMessage, speak]);
+
+  const handleLogout = () => {
+    clearSession();
+    bootOnceRef.current = false;
+    setBooted(false);
+    setMessages([]);
+    setAuthenticated(false);
+  };
 
   const handleToggleListen = () => {
     if (transcribing) return;
@@ -302,9 +317,9 @@ export default function App() {
     : speaking
     ? 'Hablando…'
     : listening
-    ? 'Escuchando orden…'
+    ? 'Escuchando…'
     : wakeListening
-    ? 'A la espera de «Elyra»…'
+    ? 'En espera'
     : 'Lista';
 
   const providers = [
@@ -341,6 +356,8 @@ export default function App() {
         hasApiKey={hasApiKey}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+        operator={operator}
+        onLogout={handleLogout}
       />
 
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
@@ -348,7 +365,7 @@ export default function App() {
           <div className="flex items-center gap-2 text-[11px] text-sky-400/45 pl-1">
             <span className="font-medium text-sky-300/80 tracking-[0.18em]">ELYRA</span>
             {isDesktop && <span className="text-sky-500/40">· Escritorio</span>}
-            {wakeEnabled && wakeListening && <span className="text-cyan-400/70">· Wake word</span>}
+            {wakeEnabled && wakeListening && <span className="text-cyan-400/70">· Escucha activa</span>}
             {naturalTts && <span className="text-emerald-400/55">· Voz neural</span>}
             {hasApiKey && <span className="text-violet-400/55">· IA activa</span>}
             {!hasApiKey && isDesktop && <span className="text-amber-400/65">· Sin API key</span>}
@@ -375,17 +392,17 @@ export default function App() {
             {page === 'inicio' && (
               <>
                 <div className="text-center space-y-1.5 mb-2 animate-boot">
-                  <h2 className="text-2xl font-semibold text-white tracking-wide text-glow-soft">Hola, {operator}</h2>
+                  <h2 className="text-2xl font-semibold text-white tracking-wide text-glow-soft">{operator}</h2>
                   <p className="text-sm text-sky-300/55">
                     {listening
-                      ? 'Te escucho…'
+                      ? 'Le escucho…'
                       : transcribing
-                      ? 'Convirtiendo tu voz…'
+                      ? 'Procesando voz…'
                       : thinking
                       ? 'Analizando…'
                       : wakeEnabled
-                      ? 'Diga «Elyra» o «Elyra, abre Chrome» — como JARVIS'
-                      : 'Pulsa el micrófono o escribe'}
+                      ? 'En espera · diga mi nombre cuando me necesite'
+                      : 'Micrófono o teclado listos'}
                   </p>
                   <div className="status-chip mt-2 mx-auto">
                     {thinking || transcribing ? (
@@ -474,7 +491,7 @@ export default function App() {
                       type="password"
                       value={cfgApiKey}
                       onChange={(e) => onApiKeyChange(e.target.value)}
-                      placeholder={hasApiKey ? '••••••••' : 'pega tu API key'}
+                      placeholder={hasApiKey ? '••••••••' : 'pegue su API key'}
                       className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/40"
                     />
                   </div>
@@ -508,18 +525,18 @@ export default function App() {
                 </div>
 
                 <div className="hud-glass rounded-2xl p-5 space-y-4">
-                  <h3 className="text-sm text-sky-100 font-medium">Voz estilo JARVIS</h3>
+                  <h3 className="text-sm text-sky-100 font-medium">Voz</h3>
                   <p className="text-[12px] text-sky-400/65 leading-relaxed">
-                    Wake word: diga «Elyra» o «Elyra, abre Word». Responde como asistente de élite. Requiere permiso de micrófono y Chrome/Edge speech (red).
+                    En cualquier momento diga «Elyra» para llamar mi atención, o «Elyra, abre Word» para una orden directa. También puede escribir o usar el micrófono.
                   </p>
                   <div className="flex items-center justify-between">
-                    <span className="text-sky-100 text-sm flex items-center gap-2"><Radio className="w-3.5 h-3.5" /> Activación por «Elyra»</span>
+                    <span className="text-sky-100 text-sm flex items-center gap-2"><Radio className="w-3.5 h-3.5" /> Activación por voz</span>
                     <button onClick={() => setWakeEnabled((v) => !v)} className={`relative w-11 h-6 rounded-full transition-colors ${wakeEnabled ? 'bg-sky-500' : 'bg-sky-900 border border-sky-700'}`}>
                       <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${wakeEnabled ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sky-100 text-sm">Escucha continua (post-respuesta)</span>
+                    <span className="text-sky-100 text-sm">Reescucha tras responder</span>
                     <button onClick={() => setContinuous((v) => !v)} className={`relative w-11 h-6 rounded-full transition-colors ${continuous ? 'bg-sky-500' : 'bg-sky-900 border border-sky-700'}`}>
                       <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${continuous ? 'translate-x-5' : ''}`} />
                     </button>
@@ -527,9 +544,12 @@ export default function App() {
                 </div>
 
                 <div className="hud-glass rounded-2xl p-5 space-y-3">
-                  <h3 className="text-sm text-sky-100 font-medium">Memoria</h3>
+                  <h3 className="text-sm text-sky-100 font-medium">Memoria y sesión</h3>
                   <button onClick={handleClearMemory} className="flex items-center gap-2 text-[12px] text-red-400/80 hover:text-red-300">
                     <Trash2 className="w-3.5 h-3.5" /> Borrar memoria local
+                  </button>
+                  <button onClick={handleLogout} className="flex items-center gap-2 text-[12px] text-sky-400/70 hover:text-sky-200">
+                    Cerrar sesión del operador
                   </button>
                 </div>
 
@@ -554,7 +574,7 @@ export default function App() {
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                     wakeEnabled ? 'text-cyan-300 bg-cyan-500/20' : 'text-sky-500/40'
                   }`}
-                  title="Wake word Elyra"
+                  title="Activación por voz"
                 >
                   <Radio className="w-3.5 h-3.5" />
                 </button>
@@ -563,7 +583,7 @@ export default function App() {
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                     continuous ? 'text-amber-300 bg-amber-500/20' : 'text-sky-500/40'
                   }`}
-                  title="Escucha continua"
+                  title="Reescucha"
                 >
                   <Ear className="w-3.5 h-3.5" />
                 </button>
@@ -572,7 +592,7 @@ export default function App() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder={wakeEnabled ? 'Diga «Elyra…» o escriba aquí' : 'Habla o escribe…'}
+                  placeholder="Escriba o diga mi nombre…"
                   className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
                 />
                 <button onClick={handleSend} disabled={!inputValue.trim() || thinking} className="w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:bg-sky-500/15 disabled:opacity-30">
