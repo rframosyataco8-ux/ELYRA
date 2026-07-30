@@ -7,7 +7,15 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 
 const { synthesizeToBase64, checkEdgeTts, VOICE } = require('./tts.cjs');
-const { runAgent, getConfig, saveConfig, fallbackResponse, ensureDefaultConfig, normalizeUserIntent } = require('./agent.cjs');
+const {
+  runAgent,
+  getConfig,
+  saveConfig,
+  fallbackResponse,
+  ensureDefaultConfig,
+  normalizeUserIntent,
+  testApiConnection,
+} = require('./agent.cjs');
 const { runPythonStt } = require('./stt-python-ipc.cjs');
 const { openApp: openAppReliable, openUrl: openUrlReliable, resolveWebUrl } = require('./apps.cjs');
 const pc = require('./pc-control.cjs');
@@ -281,11 +289,9 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   ensureDefaultConfig();
   const fixed = typeof normalizeUserIntent === 'function' ? normalizeUserIntent(message) : message;
 
-  // Atajos locales (apps, webs, volumen…) — siempre primero
   const quick = await trySimpleIntent(fixed);
   if (quick) return quick;
 
-  // OpenClaw opcional
   const oc = getOpenClawConfig();
   if (oc.enabled) {
     const ocRes = await chatOpenClaw(fixed, history || []);
@@ -311,7 +317,13 @@ ipcMain.handle('agent-config-get', () => {
   const c = getConfig();
   return { hasKey: !!c.apiKey, baseUrl: c.baseUrl, model: c.model };
 });
-ipcMain.handle('agent-config-set', (_e, partial) => saveConfig(partial));
+ipcMain.handle('agent-config-set', (_e, partial) => {
+  const next = saveConfig(partial || {});
+  return { hasKey: !!next.apiKey, baseUrl: next.baseUrl, model: next.model };
+});
+ipcMain.handle('agent-config-test', async (_e, partial) => {
+  return testApiConnection(partial || {});
+});
 
 async function trySimpleIntent(input) {
   const text = (input || '').toLowerCase().trim();
@@ -337,7 +349,6 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Abrir apps o webs
   const openMatch = text.match(
     /\b(?:abre|abrir|abre\s+me|abrir\s+me|lanza|ejecuta|abre\s+el|abre\s+la)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
@@ -368,7 +379,6 @@ async function trySimpleIntent(input) {
     }
 
     if (name) {
-      // Web primero
       const web = resolveWebUrl(name);
       if (web) {
         const r = await openUrlHelper(web);

@@ -20,7 +20,6 @@ contextBridge.exposeInMainWorld('elyra', {
   sttTranscribe: (payload) => ipcRenderer.invoke('stt-transcribe', payload),
   sttListenPython: (seconds) => ipcRenderer.invoke('stt-listen-python', seconds),
 
-  // Control PC
   pcVolume: (action, value) => ipcRenderer.invoke('pc-volume', { action, value }),
   pcMedia: (action) => ipcRenderer.invoke('pc-media', { action }),
   pcBrightness: (action, value) => ipcRenderer.invoke('pc-brightness', { action, value }),
@@ -34,6 +33,7 @@ contextBridge.exposeInMainWorld('elyra', {
   agentChat: (message, history) => ipcRenderer.invoke('agent-chat', { message, history }),
   agentConfigGet: () => ipcRenderer.invoke('agent-config-get'),
   agentConfigSet: (partial) => ipcRenderer.invoke('agent-config-set', partial),
+  agentConfigTest: (partial) => ipcRenderer.invoke('agent-config-test', partial),
 
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
@@ -45,7 +45,6 @@ contextBridge.exposeInMainWorld('elyra', {
     return () => ipcRenderer.removeListener('autonomous-mode', handler);
   },
 
-  // Barge-in: Ctrl+Espacio
   onBargeIn: (cb) => {
     const handler = () => cb();
     ipcRenderer.on('elyra-barge-in', handler);

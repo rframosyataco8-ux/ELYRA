@@ -37,7 +37,16 @@ interface ElyraAPI {
   pcInput: (action: string, payload?: { text?: string }) => Promise<{ ok: boolean; result?: string }>;
   agentChat: (message: string, history: { role: string; text: string }[]) => Promise<{ response: string; intelligent?: boolean }>;
   agentConfigGet: () => Promise<{ hasKey: boolean; baseUrl: string; model: string }>;
-  agentConfigSet: (partial: { apiKey?: string; baseUrl?: string; model?: string }) => Promise<any>;
+  agentConfigSet: (partial: { apiKey?: string; baseUrl?: string; model?: string }) => Promise<{ hasKey: boolean; baseUrl: string; model: string }>;
+  agentConfigTest: (partial?: { apiKey?: string; baseUrl?: string; model?: string }) => Promise<{
+    ok: boolean;
+    message: string;
+    error?: string;
+    detail?: string;
+    model?: string;
+    baseUrl?: string;
+    sample?: string;
+  }>;
   minimize: () => void;
   maximize: () => void;
   close: () => void;
