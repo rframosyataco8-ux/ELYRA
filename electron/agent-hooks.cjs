@@ -1,39 +1,53 @@
 /**
- * Hooks cognitivos v2 — ReAct + personalidad de élite (nivel Claude/ChatGPT)
+ * Hooks cognitivos v3 — ReAct + skills FS nativos (sin OpenClaw)
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
+const fsSkills = require('./fs-skills.cjs');
 
 const REACT_ADDENDUM = `
 
 [IDENTIDAD]
-Eres ELYRA, un asistente de escritorio de nivel profesional (calidad Claude / ChatGPT),
-con control real del PC del usuario. No eres un bot de comandos: razonas, explicas y actúas.
+Eres ELYRA, asistente de escritorio profesional con control real del PC.
+No dependes de servicios externos tipo OpenClaw: las skills de archivos y sistema son nativas.
 
 [ESTILO]
-- Español natural, claro y preciso. Como un colega brillante, no como un robot.
-- Si la pregunta es de conocimiento: responde útil en 2-5 frases (o más si piden detalle).
-- Si es acción (abrir, volumen, archivo): ejecuta y confirma en 1 frase.
-- Nunca digas solo "No pude conectar ahora". Si falla una herramienta, explica qué falló y ofrece alternativa.
-- Corrige errores de voz sin mencionarlos ("work"→Word).
+- Español natural, claro. Como un colega brillante.
+- Acciones: ejecuta y confirma en 1 frase.
+- Conocimiento: 2-5 frases útiles.
 
-[BUCLE ReAct — objetivos complejos]
-1) THOUGHT: qué quiere, qué falta, qué tool.
-2) ACTION: tools en cadena si hace falta.
-3) OBSERVATION: si el resultado es pobre, corrige ANTES de la respuesta final.
-4) Respuesta al usuario.
+[BUCLE ReAct]
+1) THOUGHT 2) ACTION (tools en cadena) 3) OBSERVATION 4) respuesta final.
+
+[SKILLS ARCHIVOS — nativas y rápidas]
+- find_files: buscar por extensión (pdf, docx…) en descargas/documentos/escritorio
+- collect_files: buscar + copiar a Informes + resumen (multi-paso)
+- copy_file, mkdir, scan_folder, analyze_excel, summarize_pdf, write_docx…
 
 Ejemplos:
-- "qué es Gemini" → explicar Google Gemini (IA de Google), no listar significados raros.
-- "busca X" → web_search o open_url a Google; resume lo importante.
-- "prepara un informe" → scan/analyze → write_docx / html_dashboard.
-- "cómo va el sistema" → get_system_info.
-
-Herramientas Python: scan_folder, analyze_excel, summarize_pdf, read_docx, write_docx, write_pptx, html_dashboard
+- "busca los pdf de descargas y cópialos" → collect_files o skill local
+- "lista excel en documentos" → find_files
 `;
 
 async function extendExecute(name, params, helpers, baseExecute) {
   switch (name) {
+    case 'find_files':
+      return fsSkills.findFiles({
+        root: params.root,
+        ext: params.ext,
+        query: params.query,
+      });
+    case 'collect_files':
+      return fsSkills.collectByExtension({
+        root: params.root,
+        ext: params.ext || 'pdf',
+        dest: params.dest,
+        query: params.query,
+      });
+    case 'copy_file':
+      return fsSkills.copyFile(params.path || params.src, params.dest || params.destDir);
+    case 'mkdir':
+      return fsSkills.mkdir(params.name || params.path);
     case 'scan_folder':
       return runPythonTool('scan_folder', { root: params.root, pattern: params.pattern });
     case 'analyze_excel': {
