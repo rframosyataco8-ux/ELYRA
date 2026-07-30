@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useVoice } from '@/hooks/useVoice';
+import { useWakeWord } from '@/hooks/useWakeWord';
 import { NetworkGlobe } from '@/components/NetworkGlobe';
 import { Sidebar } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
 import { ConversationLog, type Message } from '@/components/ConversationLog';
 import { LoginGate } from '@/components/LoginGate';
-import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle } from 'lucide-react';
+import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
 
@@ -37,6 +38,7 @@ export default function App() {
   const [thinking, setThinking] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
   const [continuous, setContinuous] = useState(false);
+  const [wakeEnabled, setWakeEnabled] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [cfgApiKey, setCfgApiKey] = useState('');
@@ -118,13 +120,32 @@ export default function App() {
     speaking,
     listening,
     transcribing,
-    supported,
     error,
     naturalTts,
     amplitude,
   } = useVoice({ onCommand: processInput });
 
   speakRef.current = speak;
+
+  const busy = speaking || thinking || listening || transcribing;
+
+  const onWake = useCallback(
+    (cmd: string, isPresence: boolean) => {
+      if (processingRef.current || busy) return;
+      if (isPresence || !cmd) {
+        processInput('estás ahí');
+      } else {
+        processInput(cmd);
+      }
+    },
+    [processInput, busy],
+  );
+
+  const { active: wakeListening } = useWakeWord({
+    enabled: authenticated && wakeEnabled && booted,
+    busy,
+    onWake,
+  });
 
   useEffect(() => {
     const onRelisten = () => {
@@ -158,14 +179,14 @@ export default function App() {
     const t = setTimeout(async () => {
       setBooted(true);
       let bootMsg = isDesktop
-        ? `Sistemas online. Hola ${operator}. Habla con naturalidad: preguntas, órdenes o ambas.`
+        ? `Sistemas online. Hola ${operator}. Diga «Elyra» y le respondo. También puede hablar tras pulsar el micrófono.`
         : 'Soy ELYRA. Usa la versión de escritorio para el control total.';
       if (isDesktop) {
         try {
           const c = await window.elyra?.agentConfigGet();
           if (c && !c.hasKey) {
             bootMsg =
-              `Hola ${operator}. Falta la API key: ve a Configuración, guarda tu clave y prueba la conexión.`;
+              `Hola ${operator}. Falta la API key en Configuración. Aun así respondo a «Elyra» y controlo el PC.`;
           }
         } catch {}
       }
@@ -281,7 +302,9 @@ export default function App() {
     : speaking
     ? 'Hablando…'
     : listening
-    ? 'Escuchando… pulsa el mic otra vez'
+    ? 'Escuchando orden…'
+    : wakeListening
+    ? 'A la espera de «Elyra»…'
     : 'Lista';
 
   const providers = [
@@ -325,6 +348,7 @@ export default function App() {
           <div className="flex items-center gap-2 text-[11px] text-sky-400/45 pl-1">
             <span className="font-medium text-sky-300/80 tracking-[0.18em]">ELYRA</span>
             {isDesktop && <span className="text-sky-500/40">· Escritorio</span>}
+            {wakeEnabled && wakeListening && <span className="text-cyan-400/70">· Wake word</span>}
             {naturalTts && <span className="text-emerald-400/55">· Voz neural</span>}
             {hasApiKey && <span className="text-violet-400/55">· IA activa</span>}
             {!hasApiKey && isDesktop && <span className="text-amber-400/65">· Sin API key</span>}
@@ -354,12 +378,14 @@ export default function App() {
                   <h2 className="text-2xl font-semibold text-white tracking-wide text-glow-soft">Hola, {operator}</h2>
                   <p className="text-sm text-sky-300/55">
                     {listening
-                      ? 'Te escucho… al terminar de hablar se envía solo, o pulsa el mic'
+                      ? 'Te escucho…'
                       : transcribing
-                      ? 'Convirtiendo tu voz en texto…'
+                      ? 'Convirtiendo tu voz…'
                       : thinking
-                      ? 'Analizando y ejecutando…'
-                      : 'Habla con naturalidad o escribe lo que necesites'}
+                      ? 'Analizando…'
+                      : wakeEnabled
+                      ? 'Diga «Elyra» o «Elyra, abre Chrome» — como JARVIS'
+                      : 'Pulsa el micrófono o escribe'}
                   </p>
                   <div className="status-chip mt-2 mx-auto">
                     {thinking || transcribing ? (
@@ -367,7 +393,9 @@ export default function App() {
                     ) : (
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          speaking || listening ? 'bg-sky-400 animate-pulse shadow-[0_0_8px_#38bdf8]' : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                          speaking || listening || wakeListening
+                            ? 'bg-sky-400 animate-pulse shadow-[0_0_8px_#38bdf8]'
+                            : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
                         }`}
                       />
                     )}
@@ -377,7 +405,7 @@ export default function App() {
                 <div className="flex-1 flex items-center justify-center min-h-0">
                   <NetworkGlobe
                     speaking={speaking || thinking}
-                    listening={listening || transcribing}
+                    listening={listening || transcribing || wakeListening}
                     size={340}
                     amplitude={amplitude}
                   />
@@ -446,44 +474,28 @@ export default function App() {
                       type="password"
                       value={cfgApiKey}
                       onChange={(e) => onApiKeyChange(e.target.value)}
-                      placeholder={hasApiKey ? '••••••••  (deja vacío para no cambiar)' : 'pega tu API key aquí'}
-                      className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/40 placeholder:text-sky-600/50"
+                      placeholder={hasApiKey ? '••••••••' : 'pega tu API key'}
+                      className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/40"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <label className="text-[11px] text-sky-400/60 tracking-wide uppercase">Base URL</label>
-                      <input
-                        value={cfgBaseUrl}
-                        onChange={(e) => setCfgBaseUrl(e.target.value)}
-                        className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-100 outline-none focus:border-sky-400/40"
-                      />
+                      <input value={cfgBaseUrl} onChange={(e) => setCfgBaseUrl(e.target.value)} className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-100 outline-none focus:border-sky-400/40" />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[11px] text-sky-400/60 tracking-wide uppercase">Modelo</label>
-                      <input
-                        value={cfgModel}
-                        onChange={(e) => setCfgModel(e.target.value)}
-                        className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-100 outline-none focus:border-sky-400/40"
-                      />
+                      <input value={cfgModel} onChange={(e) => setCfgModel(e.target.value)} className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3 py-2 text-xs text-sky-100 outline-none focus:border-sky-400/40" />
                     </div>
                   </div>
 
                   <div className="flex gap-2">
-                    <button
-                      onClick={handleSaveConfig}
-                      disabled={cfgSaving || !isDesktop}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/20 border border-sky-400/30 text-sky-100 text-sm hover:bg-sky-500/30 transition-all disabled:opacity-40"
-                    >
+                    <button onClick={handleSaveConfig} disabled={cfgSaving || !isDesktop} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-sky-500/20 border border-sky-400/30 text-sky-100 text-sm hover:bg-sky-500/30 disabled:opacity-40">
                       {cfgSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : cfgSaved ? <><Check className="w-4 h-4 text-emerald-400" /> Guardado</> : <><Save className="w-4 h-4" /> Guardar</>}
                     </button>
-                    <button
-                      onClick={handleTestConfig}
-                      disabled={cfgTesting || !isDesktop}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-500/15 border border-violet-400/25 text-sky-100 text-sm hover:bg-violet-500/25 transition-all disabled:opacity-40"
-                    >
-                      {cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar conexión</>}
+                    <button onClick={handleTestConfig} disabled={cfgTesting || !isDesktop} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-500/15 border border-violet-400/25 text-sky-100 text-sm hover:bg-violet-500/25 disabled:opacity-40">
+                      {cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar</>}
                     </button>
                   </div>
 
@@ -496,16 +508,19 @@ export default function App() {
                 </div>
 
                 <div className="hud-glass rounded-2xl p-5 space-y-4">
-                  <h3 className="text-sm text-sky-100 font-medium">Voz y micrófono</h3>
+                  <h3 className="text-sm text-sky-100 font-medium">Voz estilo JARVIS</h3>
                   <p className="text-[12px] text-sky-400/65 leading-relaxed">
-                    Whisper + VAD: al callar ~1,4 s se envía solo. Escucha continua reabre el mic tras cada respuesta.
+                    Wake word: diga «Elyra» o «Elyra, abre Word». Responde como asistente de élite. Requiere permiso de micrófono y Chrome/Edge speech (red).
                   </p>
                   <div className="flex items-center justify-between">
-                    <span className="text-sky-100 text-sm">Escucha continua</span>
-                    <button
-                      onClick={() => setContinuous((v) => !v)}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${continuous ? 'bg-sky-500' : 'bg-sky-900 border border-sky-700'}`}
-                    >
+                    <span className="text-sky-100 text-sm flex items-center gap-2"><Radio className="w-3.5 h-3.5" /> Activación por «Elyra»</span>
+                    <button onClick={() => setWakeEnabled((v) => !v)} className={`relative w-11 h-6 rounded-full transition-colors ${wakeEnabled ? 'bg-sky-500' : 'bg-sky-900 border border-sky-700'}`}>
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${wakeEnabled ? 'translate-x-5' : ''}`} />
+                    </button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sky-100 text-sm">Escucha continua (post-respuesta)</span>
+                    <button onClick={() => setContinuous((v) => !v)} className={`relative w-11 h-6 rounded-full transition-colors ${continuous ? 'bg-sky-500' : 'bg-sky-900 border border-sky-700'}`}>
                       <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${continuous ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
@@ -513,12 +528,12 @@ export default function App() {
 
                 <div className="hud-glass rounded-2xl p-5 space-y-3">
                   <h3 className="text-sm text-sky-100 font-medium">Memoria</h3>
-                  <button onClick={handleClearMemory} className="flex items-center gap-2 text-[12px] text-red-400/80 hover:text-red-300 transition-colors">
+                  <button onClick={handleClearMemory} className="flex items-center gap-2 text-[12px] text-red-400/80 hover:text-red-300">
                     <Trash2 className="w-3.5 h-3.5" /> Borrar memoria local
                   </button>
                 </div>
 
-                {!cfgLoaded && isDesktop && <p className="text-center text-xs text-sky-500/40">Cargando configuración…</p>}
+                {!cfgLoaded && isDesktop && <p className="text-center text-xs text-sky-500/40">Cargando…</p>}
               </div>
             )}
 
@@ -531,14 +546,22 @@ export default function App() {
                   className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
                     listening ? 'bg-red-500/35 text-red-100 shadow-[0_0_20px_rgba(248,113,113,0.4)]' : 'text-sky-400/70 hover:bg-sky-500/15'
                   } disabled:opacity-40`}
-                  title={listening ? 'Pulsa para enviar' : 'Pulsa para hablar'}
                 >
                   {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
                 </button>
                 <button
+                  onClick={() => setWakeEnabled((v) => !v)}
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                    wakeEnabled ? 'text-cyan-300 bg-cyan-500/20' : 'text-sky-500/40'
+                  }`}
+                  title="Wake word Elyra"
+                >
+                  <Radio className="w-3.5 h-3.5" />
+                </button>
+                <button
                   onClick={() => setContinuous((v) => !v)}
                   className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                    continuous ? 'text-amber-300 bg-amber-500/20 shadow-[0_0_12px_rgba(251,191,36,0.25)]' : 'text-sky-500/40 hover:text-sky-400/60'
+                    continuous ? 'text-amber-300 bg-amber-500/20' : 'text-sky-500/40'
                   }`}
                   title="Escucha continua"
                 >
@@ -549,14 +572,10 @@ export default function App() {
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                   disabled={thinking}
-                  placeholder={listening ? 'Escuchando…' : 'Habla o escribe con naturalidad…'}
+                  placeholder={wakeEnabled ? 'Diga «Elyra…» o escriba aquí' : 'Habla o escribe…'}
                   className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
                 />
-                <button
-                  onClick={handleSend}
-                  disabled={!inputValue.trim() || thinking}
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:bg-sky-500/15 disabled:opacity-30 transition-all"
-                >
+                <button onClick={handleSend} disabled={!inputValue.trim() || thinking} className="w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:bg-sky-500/15 disabled:opacity-30">
                   {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 </button>
               </div>
