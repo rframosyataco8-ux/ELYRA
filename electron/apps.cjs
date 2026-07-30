@@ -1,5 +1,5 @@
 /**
- * Apertura fiable de apps y sitios web — ELYRA v3.1
+ * Apertura fiable de apps y sitios web — ELYRA v3.2
  */
 const path = require('path');
 const fs = require('fs');
@@ -23,7 +23,6 @@ const OFFICE_REL = [
 
 const WEB_SITES = {
   youtube: 'https://www.youtube.com',
-  yt: 'https://www.youtube.com',
   google: 'https://www.google.com',
   gmail: 'https://mail.google.com',
   maps: 'https://maps.google.com',
@@ -33,7 +32,6 @@ const WEB_SITES = {
   facebook: 'https://www.facebook.com',
   instagram: 'https://www.instagram.com',
   twitter: 'https://x.com',
-  x: 'https://x.com',
   whatsapp: 'https://web.whatsapp.com',
   netflix: 'https://www.netflix.com',
   github: 'https://github.com',
@@ -50,10 +48,8 @@ const WEB_SITES = {
   canva: 'https://www.canva.com',
   notion: 'https://www.notion.so',
   spotify: 'https://open.spotify.com',
-  spotify_web: 'https://open.spotify.com',
   outlook_web: 'https://outlook.live.com',
   calendar: 'https://calendar.google.com',
-  calendariogoogle: 'https://calendar.google.com',
   meet: 'https://meet.google.com',
   zoom: 'https://zoom.us',
   weather: 'https://www.google.com/search?q=clima',
@@ -62,7 +58,12 @@ const WEB_SITES = {
   perplexity: 'https://www.perplexity.ai',
 };
 
-// Apps que si fallan en escritorio se abren en web
+// Alias cortos: SOLO coincidencia exacta (evita python ⊃ yt → YouTube)
+const WEB_ALIASES_EXACT = {
+  yt: 'https://www.youtube.com',
+  x: 'https://x.com',
+};
+
 const APP_WEB_FALLBACK = {
   spotify: 'https://open.spotify.com',
   discord: 'https://discord.com/app',
@@ -95,8 +96,20 @@ function findInLocal(names) {
   return null;
 }
 
+function fixTypos(s) {
+  return String(s || '')
+    .replace(/\bcrhome\b/gi, 'chrome')
+    .replace(/\bcrom\b/gi, 'chrome')
+    .replace(/\bgrome\b/gi, 'chrome')
+    .replace(/\bchroem\b/gi, 'chrome')
+    .replace(/\bchorme\b/gi, 'chrome')
+    .replace(/\byoutub\b/gi, 'youtube')
+    .replace(/\bgogle\b/gi, 'google')
+    .replace(/\bgoogel\b/gi, 'google');
+}
+
 function normalizeName(appName) {
-  return (appName || '')
+  return fixTypos(appName || '')
     .toLowerCase()
     .trim()
     .replace(/^el\s+|^la\s+|^los\s+|^las\s+/, '')
@@ -110,12 +123,24 @@ function wantsWeb(appName) {
   return /\ben\s+(la\s+)?(web|navegador|browser|internet)\b/i.test(appName || '');
 }
 
+/** Coincidencia por palabra completa, no substring (python ≠ yt) */
+function wordIn(hay, needle) {
+  const re = new RegExp('\\b' + needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+  return re.test(hay);
+}
+
 function resolveWebUrl(appName) {
   const name = normalizeName(appName);
+  if (!name) return null;
   if (/^https?:\/\//i.test(name)) return name;
   if (/^[\w-]+\.(com|org|net|es|io|app)\b/i.test(name)) return 'https://' + name;
+
+  // Alias exactos cortos
+  if (WEB_ALIASES_EXACT[name]) return WEB_ALIASES_EXACT[name];
+
+  // Solo si el nombre ES el sitio o lo contiene como palabra completa
   for (const [key, url] of Object.entries(WEB_SITES)) {
-    if (name === key || name.includes(key)) return url;
+    if (name === key || wordIn(name, key)) return url;
   }
   return null;
 }
@@ -139,7 +164,7 @@ function resolveApp(appName) {
     const exe = findOfficeExe('OUTLOOK.EXE');
     return { label: 'Outlook', targets: [exe, 'outlook'].filter(Boolean), psName: 'OUTLOOK', key: 'outlook' };
   }
-  if (/\b(chrome|google chrome)\b/.test(name)) {
+  if (/\b(chrome|google chrome)\b/.test(name) || name === 'chrome') {
     const chrome = findInLocal([path.join('Google', 'Chrome', 'Application', 'chrome.exe')]) || 'chrome';
     return { label: 'Chrome', targets: [chrome, 'chrome'].filter(Boolean), psName: 'chrome', key: 'chrome' };
   }
@@ -271,19 +296,21 @@ async function openUrl(url) {
 }
 
 async function openApp(appName) {
-  // Forzar web si el usuario lo pidió
   if (wantsWeb(appName)) {
     const web = resolveWebUrl(appName) || APP_WEB_FALLBACK[normalizeName(appName)];
     if (web) return openUrl(web);
   }
 
-  // Sitios web conocidos
   const webUrl = resolveWebUrl(appName);
-  // Para spotify y similares: intentar app primero, luego web
   const resolved = resolveApp(appName);
-  const preferAppFirst = ['spotify', 'discord', 'slack', 'teams', 'steam'].includes(resolved.key);
+  const preferAppFirst = ['spotify', 'discord', 'slack', 'teams', 'steam', 'chrome', 'edge', 'firefox', 'word', 'excel'].includes(
+    resolved.key,
+  );
 
-  if (webUrl && !preferAppFirst) return openUrl(webUrl);
+  // Sitios web puros (youtube, google…) — no confundir con frases largas
+  if (webUrl && !preferAppFirst && normalizeName(appName).split(/\s+/).length <= 3) {
+    return openUrl(webUrl);
+  }
 
   if (process.platform === 'win32') {
     for (const t of resolved.targets) {
@@ -297,7 +324,6 @@ async function openApp(appName) {
         }
       } catch {}
     }
-    // Fallback web
     const fb = APP_WEB_FALLBACK[resolved.key] || webUrl;
     if (fb) {
       const r = await openUrl(fb);
@@ -330,4 +356,4 @@ async function openApp(appName) {
   }
 }
 
-module.exports = { openApp, openUrl, resolveApp, resolveWebUrl, WEB_SITES, APP_WEB_FALLBACK };
+module.exports = { openApp, openUrl, resolveApp, resolveWebUrl, WEB_SITES, APP_WEB_FALLBACK, fixTypos, normalizeName };
