@@ -1,10 +1,11 @@
 /**
- * ELYRA Agent v7 — multi-IA + Function Calling nativo + fallback [TOOL]
+ * ELYRA Agent v8 — ReAct cognitivo + Function Calling + Python productivity
  */
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { TOOL_DEFINITIONS, toolsPromptSummary } = require('./tools-schema.cjs');
+const hooks = require('./agent-hooks.cjs');
 
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
 const MODEL_FAST = 'llama-3.1-8b-instant';
@@ -12,7 +13,7 @@ const MODEL_SMART = 'llama-3.3-70b-versatile';
 const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 
 const COMPLEX_RE =
-  /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta|guarda|archivo|documento)\b/i;
+  /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|presentacion|dashboard)\b/i;
 
 const SYSTEM_PROMPT =
   `Eres ELYRA, asistente de escritorio del usuario en Windows. Español natural, preciso, estilo sistema de élite (tipo JARVIS): útil, breve y honesto.
@@ -22,10 +23,10 @@ PERSONALIDAD:
 - Si es ambiguo, eliges la acción más útil y actúas.
 - Respuesta FINAL para voz: 1 a 3 frases. Sin markdown, sin JSON, sin rutas largas.
 - Si una herramienta falla, dilo. Nunca inventes éxitos.
-- Si piden información + guardar/resumir en archivo: busca y luego create_file o create_html_report en Informes/.
+- Objetivos abstractos: descompones en pasos y usas herramientas en cadena hasta completar.
 
 Puedes usar function calling nativo cuando esté disponible.
-También puedes usar el formato texto:
+También el formato:
 [TOOL: nombre]
 parametro: valor
 [/TOOL]
@@ -34,8 +35,9 @@ Herramientas:\n` + toolsPromptSummary() + `
 
 Reglas:
 - Conocimiento → web_search.
-- Documentos/resúmenes → create_file o create_html_report en Informes/.
-- Abrir → open_app / open_folder / open_url de inmediato.
+- Datos en PC → scan_folder, analyze_excel, summarize_pdf, read_docx.
+- Entregables → write_docx, write_pptx, html_dashboard, create_file, create_html_report en Informes/.
+- Abrir → open_app / open_folder / open_url.
 - Apagar/reiniciar → power.`;
 
 function getConfigPath() {
@@ -101,7 +103,6 @@ function inferProvider(config) {
 
 function supportsNativeTools(config) {
   const p = inferProvider(config);
-  // Groq, OpenAI, OpenRouter, xAI suelen soportar tools; Gemini compat variable; Anthropic distinto
   return p === 'groq' || p === 'openai' || p === 'openrouter' || p === 'xai' || p === 'openai-compatible';
 }
 
@@ -211,8 +212,8 @@ async function callAnthropic(messages, config, model) {
     },
     body: JSON.stringify({
       model: model || config.model || 'claude-3-5-sonnet-20241022',
-      max_tokens: 2800,
-      temperature: 0.35,
+      max_tokens: 3200,
+      temperature: 0.3,
       system: systemParts.join('\n\n') || undefined,
       messages: merged,
     }),
@@ -259,8 +260,8 @@ async function callOpenAICompat(messages, config, model, useTools) {
       }
       return { role: m.role, content: m.content };
     }),
-    temperature: 0.35,
-    max_tokens: 2800,
+    temperature: 0.3,
+    max_tokens: 3200,
   };
 
   if (useTools && supportsNativeTools(config)) {
@@ -275,7 +276,6 @@ async function callOpenAICompat(messages, config, model, useTools) {
   });
   if (!res.ok) {
     const errText = await res.text();
-    // Si el proveedor rechaza tools, reintentar sin tools una vez
     if (useTools && (res.status === 400 || res.status === 422) && /tool/i.test(errText)) {
       return callOpenAICompat(messages, config, model, false);
     }
@@ -294,9 +294,7 @@ async function callOpenAICompat(messages, config, model, useTools) {
 
 async function callLLMOnce(messages, config, model, useTools) {
   const provider = inferProvider(config);
-  if (provider === 'anthropic') {
-    return callAnthropic(messages, config, model);
-  }
+  if (provider === 'anthropic') return callAnthropic(messages, config, model);
   return callOpenAICompat(messages, config, model, !!useTools);
 }
 
@@ -443,9 +441,24 @@ function normalizeUserIntent(raw) {
   return t;
 }
 
+const PYTHON_TOOLS = new Set([
+  'scan_folder',
+  'analyze_excel',
+  'summarize_pdf',
+  'read_docx',
+  'write_docx',
+  'write_pptx',
+  'html_dashboard',
+]);
+
 async function executeTool(tool, helpers) {
   const { name, params } = tool;
   const pc = helpers.pc;
+
+  if (PYTHON_TOOLS.has(name) || name === 'remember' || name === 'recall') {
+    return hooks.extendExecute(name, params || {}, helpers, null);
+  }
+
   try {
     switch (name) {
       case 'web_search': {
@@ -469,7 +482,7 @@ async function executeTool(tool, helpers) {
         try {
           const wr = await fetch(
             'https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
-            { headers: { 'User-Agent': 'ELYRA/7.0' } },
+            { headers: { 'User-Agent': 'ELYRA/8.0' } },
           );
           if (wr.ok) {
             const data = await wr.json();
@@ -545,10 +558,6 @@ async function executeTool(tool, helpers) {
         return pc ? await pc.searchFiles(params.query, params.root) : { ok: false, result: 'N/A' };
       case 'run_command':
         return await helpers.runCommand(params.command || '');
-      case 'remember':
-        return await helpers.remember(params.text || '');
-      case 'recall':
-        return helpers.recall ? await helpers.recall() : { ok: true, result: 'Sin notas' };
       case 'get_system_info':
         if (helpers.getSystemStats) {
           const s = await helpers.getSystemStats();
@@ -620,19 +629,12 @@ async function runAgent(userMessage, history, helpers) {
   const cleanedUser = normalizeUserIntent(userMessage);
   const preferred = pickModel(cleanedUser, config);
   const native = supportsNativeTools(config);
+  const usedTools = [];
 
-  let memoryHint = '';
-  try {
-    if (helpers.recall) {
-      const mem = await helpers.recall();
-      if (mem?.result && !/sin notas/i.test(mem.result)) {
-        memoryHint = '\n\nMemoria del usuario (contexto): ' + mem.result.slice(0, 500);
-      }
-    }
-  } catch {}
+  const systemContent = hooks.enrichSystemPrompt(SYSTEM_PROMPT, cleanedUser);
 
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT + memoryHint },
+    { role: 'system', content: systemContent },
     ...history.slice(-12).map((h) => ({
       role: h.role === 'user' ? 'user' : 'assistant',
       content: h.text,
@@ -642,13 +644,13 @@ async function runAgent(userMessage, history, helpers) {
 
   let finalText = '';
   let iterations = 0;
-  const maxIter = 6;
+  const maxIter = 8;
 
   while (iterations < maxIter) {
     iterations++;
     let out;
     try {
-      out = await callLLM(messages, config, preferred, native && iterations <= 4);
+      out = await callLLM(messages, config, preferred, native && iterations <= 6);
     } catch (e) {
       if (/429|rate limit/i.test(String(e.message))) {
         return { response: 'El servicio está saturado un momento.', iterations };
@@ -673,8 +675,14 @@ async function runAgent(userMessage, history, helpers) {
 
     const results = [];
     for (const t of tools) {
+      usedTools.push(t.name);
       results.push({ tool: t.name, id: t.id, ...(await executeTool(t, helpers)) });
     }
+
+    const obs =
+      'OBSERVATION (resultados internos — evalúa si basta o necesitas otra ACTION antes de responder al usuario):\n' +
+      results.map((r) => '• ' + r.tool + ': ' + (r.ok ? 'OK' : 'ERROR') + ' — ' + r.result).join('\n') +
+      '\n\nSi el objetivo no está completo, llama más herramientas. Si ya está listo, respuesta FINAL breve para voz (1-3 frases), sin bloques TOOL.';
 
     if (nativeTools.length && out.rawMessage) {
       messages.push({
@@ -690,15 +698,10 @@ async function runAgent(userMessage, history, helpers) {
           content: (r.ok ? 'OK: ' : 'ERROR: ') + r.result,
         });
       }
+      messages.push({ role: 'user', content: obs });
     } else {
       messages.push({ role: 'assistant', content: out.content || '' });
-      messages.push({
-        role: 'user',
-        content:
-          'Resultados de herramientas:\n' +
-          results.map((r) => '• ' + r.tool + ': ' + (r.ok ? 'OK' : 'ERROR') + ' — ' + r.result).join('\n') +
-          '\n\nDa la respuesta FINAL breve y natural para voz. Si hubo ERROR, dilo. Sin bloques TOOL.',
-      });
+      messages.push({ role: 'user', content: obs });
     }
   }
 
@@ -706,7 +709,9 @@ async function runAgent(userMessage, history, helpers) {
     const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.content);
     finalText = last ? polishForSpeech(String(last.content)) : 'Listo.';
   }
-  return { response: finalText, iterations };
+
+  hooks.recordEpisode(cleanedUser, finalText, usedTools);
+  return { response: finalText, iterations, tools: usedTools };
 }
 
 function fallbackResponse() {
