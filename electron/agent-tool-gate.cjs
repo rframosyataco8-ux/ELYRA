@@ -1,4 +1,4 @@
-/** Tools que van a agent-hooks (Python + FS skills nativos) */
+/** Tools que van a agent-hooks (Python + FS skills + memoria) */
 module.exports = new Set([
   'scan_folder',
   'analyze_excel',
