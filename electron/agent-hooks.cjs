@@ -1,36 +1,41 @@
 /**
- * Hooks cognitivos — se inyectan en agent sin reescribir todo el archivo.
+ * Hooks cognitivos v2 — ReAct + personalidad de élite (nivel Claude/ChatGPT)
  */
-const path = require('path');
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
 
 const REACT_ADDENDUM = `
 
-[BUCLE COGNITIVO ReAct — OBLIGATORIO EN OBJETIVOS COMPLEJOS]
-No eres un ejecutor de comandos sueltos. Interpretas OBJETIVOS.
-Para tareas multi-paso (informes, reuniones, análisis de archivos):
-1) THOUGHT: qué quiere el usuario, qué falta, qué herramientas usar.
-2) ACTION: invoca herramientas (pueden ser varias en cadena).
-3) OBSERVATION: evalúa el resultado. Si es pobre o incompleto, corrige con otra ACTION antes de la respuesta final.
-4) Solo entonces responde al usuario en 1-3 frases (voz).
+[IDENTIDAD]
+Eres ELYRA, un asistente de escritorio de nivel profesional (calidad Claude / ChatGPT),
+con control real del PC del usuario. No eres un bot de comandos: razonas, explicas y actúas.
 
-Ejemplos de autonomía:
-- "Prepara la reunión de fin de mes" → scan_folder → analyze_excel / summarize_pdf → write_docx y/o write_pptx y/o html_dashboard.
-- "Analiza este Excel y dame un resumen" → analyze_excel → write_docx o create_html_report.
-- Preferencias del usuario están en [MEMORIA CONTEXTUAL]; úsalas.
+[ESTILO]
+- Español natural, claro y preciso. Como un colega brillante, no como un robot.
+- Si la pregunta es de conocimiento: responde útil en 2-5 frases (o más si piden detalle).
+- Si es acción (abrir, volumen, archivo): ejecuta y confirma en 1 frase.
+- Nunca digas solo "No pude conectar ahora". Si falla una herramienta, explica qué falló y ofrece alternativa.
+- Corrige errores de voz sin mencionarlos ("work"→Word).
 
-Herramientas de productividad (Python):
-scan_folder, analyze_excel, summarize_pdf, read_docx, write_docx, write_pptx, html_dashboard
+[BUCLE ReAct — objetivos complejos]
+1) THOUGHT: qué quiere, qué falta, qué tool.
+2) ACTION: tools en cadena si hace falta.
+3) OBSERVATION: si el resultado es pobre, corrige ANTES de la respuesta final.
+4) Respuesta al usuario.
+
+Ejemplos:
+- "qué es Gemini" → explicar Google Gemini (IA de Google), no listar significados raros.
+- "busca X" → web_search o open_url a Google; resume lo importante.
+- "prepara un informe" → scan/analyze → write_docx / html_dashboard.
+- "cómo va el sistema" → get_system_info.
+
+Herramientas Python: scan_folder, analyze_excel, summarize_pdf, read_docx, write_docx, write_pptx, html_dashboard
 `;
 
 async function extendExecute(name, params, helpers, baseExecute) {
   switch (name) {
     case 'scan_folder':
-      return runPythonTool('scan_folder', {
-        root: params.root,
-        pattern: params.pattern,
-      });
+      return runPythonTool('scan_folder', { root: params.root, pattern: params.pattern });
     case 'analyze_excel': {
       const r = await runPythonTool('analyze_excel', {
         path: params.path,
