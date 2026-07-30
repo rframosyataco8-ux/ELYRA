@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v4 — personalidad JARVIS, memoria de contexto, herramientas PC
+ * ELYRA Agent v4.1 — personalidad JARVIS, test de API, auto-detect proveedor
  */
 const fs = require('fs');
 const path = require('path');
@@ -62,6 +62,24 @@ function ensureDefaultConfig() {
   }
 }
 
+/** Detecta proveedor por el prefijo de la key */
+function detectProviderFromKey(apiKey) {
+  const k = (apiKey || '').trim();
+  if (k.startsWith('gsk_')) {
+    return { baseUrl: 'https://api.groq.com/openai/v1', model: MODEL_FAST, provider: 'groq' };
+  }
+  if (k.startsWith('sk-or-') || k.startsWith('sk-or-v1-')) {
+    return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', provider: 'openrouter' };
+  }
+  if (k.startsWith('sk-') && k.length > 20) {
+    return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', provider: 'openai' };
+  }
+  if (k.startsWith('xai-')) {
+    return { baseUrl: 'https://api.x.ai/v1', model: 'grok-2-latest', provider: 'xai' };
+  }
+  return null;
+}
+
 function getConfig() {
   ensureDefaultConfig();
   try {
@@ -82,12 +100,22 @@ function getConfig() {
 
 function saveConfig(partial) {
   ensureDefaultConfig();
-  const next = { ...getConfig(), ...partial };
-  // No sobrescribir apiKey con vacío si ya hay una
+  const prev = getConfig();
+  const next = { ...prev, ...partial };
+
+  // No borrar apiKey si llega vacía
   if (partial.apiKey === undefined || partial.apiKey === '') {
-    const prev = getConfig();
-    if (prev.apiKey) next.apiKey = prev.apiKey;
+    next.apiKey = prev.apiKey;
+  } else {
+    next.apiKey = String(partial.apiKey).trim();
+    // Auto-ajustar proveedor si la key lo indica y no forzaron otra URL
+    const detected = detectProviderFromKey(next.apiKey);
+    if (detected) {
+      if (!partial.baseUrl) next.baseUrl = detected.baseUrl;
+      if (!partial.model) next.model = detected.model;
+    }
   }
+
   fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2), 'utf-8');
   return next;
 }
@@ -142,10 +170,62 @@ async function callLLM(messages, config, preferredModel) {
     } catch (e) {
       lastErr = e;
       if (e.status === 429 || /rate limit|429/i.test(String(e.message))) continue;
+      // Si el modelo no existe en el proveedor, probar siguiente
+      if (e.status === 400 || e.status === 404) continue;
       throw e;
     }
   }
   throw lastErr || new Error('Límite de uso');
+}
+
+/** Prueba real de la API (1 token) */
+async function testApiConnection(override = {}) {
+  const config = { ...getConfig(), ...override };
+  if (override.apiKey === '') config.apiKey = getConfig().apiKey;
+  if (!config.apiKey) {
+    return { ok: false, error: 'NO_API_KEY', message: 'No hay API key configurada.' };
+  }
+  try {
+    const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model || MODEL_FAST,
+        messages: [{ role: 'user', content: 'Di solo: ok' }],
+        max_tokens: 8,
+        temperature: 0,
+      }),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      let hint = `Error ${res.status}`;
+      if (res.status === 401) hint = 'API key inválida o revocada.';
+      else if (res.status === 403) hint = 'Acceso denegado. Revisa la key o el plan.';
+      else if (res.status === 429) hint = 'Límite de uso alcanzado. Espera un momento.';
+      else if (res.status === 404) hint = 'Modelo no encontrado. Cambia el modelo en Configuración.';
+      return { ok: false, error: String(res.status), message: hint, detail: errText.slice(0, 200) };
+    }
+    const data = await res.json();
+    const text = data.choices?.[0]?.message?.content || '';
+    return {
+      ok: true,
+      message: 'Conexión correcta. IA lista.',
+      model: config.model,
+      baseUrl: config.baseUrl,
+      sample: text.slice(0, 40),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: 'NETWORK',
+      message: 'No se pudo conectar al proveedor. Revisa internet o la Base URL.',
+      detail: String(e.message || e).slice(0, 200),
+    };
+  }
 }
 
 function parseTools(text) {
@@ -189,7 +269,6 @@ function polishForSpeech(text) {
   return t.replace(/\s+/g, ' ').trim();
 }
 
-/** Corrección ligera de errores típicos de STT en español */
 function normalizeUserIntent(raw) {
   let t = (raw || '').trim();
   const fixes = [
@@ -206,7 +285,6 @@ function normalizeUserIntent(raw) {
     [/\bvs code\b/gi, 'code'],
     [/\bhaze?\s+una\s+captura\b/gi, 'haz una captura'],
     [/\bsube el vol\b/gi, 'sube el volumen'],
-    [/\belira\b/gi, 'elyra'],
     [/\belira\b/gi, 'elyra'],
   ];
   for (const [re, rep] of fixes) t = t.replace(re, rep);
@@ -238,7 +316,7 @@ async function executeTool(tool, helpers) {
         try {
           const wr = await fetch(
             `https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`,
-            { headers: { 'User-Agent': 'ELYRA/4.0' } },
+            { headers: { 'User-Agent': 'ELYRA/4.1' } },
           );
           if (wr.ok) {
             const data = await wr.json();
@@ -355,7 +433,7 @@ async function runAgent(userMessage, history, helpers) {
   if (!config.apiKey) {
     return {
       response:
-        'No hay API key configurada. Ve a Configuración en ELYRA o pon tu clave de Groq en el archivo local.',
+        'No hay API key configurada. Ve a Configuración, pega tu clave de Groq y pulsa Guardar.',
       iterations: 0,
     };
   }
@@ -398,6 +476,9 @@ async function runAgent(userMessage, history, helpers) {
       if (String(e.message) === 'NO_API_KEY') {
         return { response: 'Falta la API key. Configúrala en la pestaña Configuración.', iterations };
       }
+      if (/401|invalid|unauthorized/i.test(String(e.message))) {
+        return { response: 'La API key no es válida. Revísala en Configuración.', iterations };
+      }
       return { response: 'No pude conectar ahora.', iterations };
     }
 
@@ -431,7 +512,7 @@ async function runAgent(userMessage, history, helpers) {
 
 function fallbackResponse() {
   return {
-    response: 'Configura tu API key en la pestaña Configuración de ELYRA, o en el archivo local.',
+    response: 'Configura tu API key en la pestaña Configuración de ELYRA.',
     intelligent: false,
   };
 }
@@ -444,6 +525,8 @@ module.exports = {
   callLLM,
   getConfigPath,
   ensureDefaultConfig,
+  testApiConnection,
+  detectProviderFromKey,
   MODEL_CHAIN,
   MODEL_FAST,
   MODEL_SMART,

@@ -22,3 +22,8 @@ release
 *.sln
 *.sw?
 .env
+.env.*
+!.env.example
+*.pem
+secrets/
+config.local.json
