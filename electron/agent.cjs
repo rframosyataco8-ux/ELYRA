@@ -1,9 +1,10 @@
 /**
- * ELYRA Agent v6 — multi-IA: Groq, OpenAI, xAI, OpenRouter, Gemini, Claude
+ * ELYRA Agent v7 — multi-IA + Function Calling nativo + fallback [TOOL]
  */
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { TOOL_DEFINITIONS, toolsPromptSummary } = require('./tools-schema.cjs');
 
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
 const MODEL_FAST = 'llama-3.1-8b-instant';
@@ -11,47 +12,31 @@ const MODEL_SMART = 'llama-3.3-70b-versatile';
 const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 
 const COMPLEX_RE =
-  /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta)\b/i;
+  /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta|guarda|archivo|documento)\b/i;
 
-const SYSTEM_PROMPT = `Eres ELYRA, asistente de escritorio del usuario en Windows. Español natural, preciso, estilo sistema de élite (tipo JARVIS): útil, breve y honesto.
+const SYSTEM_PROMPT =
+  `Eres ELYRA, asistente de escritorio del usuario en Windows. Español natural, preciso, estilo sistema de élite (tipo JARVIS): útil, breve y honesto.
 
 PERSONALIDAD:
 - Entiendes errores de voz ("abre work" → Word).
 - Si es ambiguo, eliges la acción más útil y actúas.
 - Respuesta FINAL para voz: 1 a 3 frases. Sin markdown, sin JSON, sin rutas largas.
 - Si una herramienta falla, dilo. Nunca inventes éxitos.
+- Si piden información + guardar/resumir en archivo: busca y luego create_file o create_html_report en Informes/.
 
-HERRAMIENTAS — formato exacto:
+Puedes usar function calling nativo cuando esté disponible.
+También puedes usar el formato texto:
 [TOOL: nombre]
 parametro: valor
 [/TOOL]
 
-Lista:
-web_search (query)
-create_file (path, content)
-create_html_report (path, title, body)
-open_app (name) · open_folder (name) · open_url (url)
-read_file (path) · list_dir (path) · search_files (query, root opcional)
-run_command (command)
-remember (text) · recall
-get_system_info · battery · network_info · disk_space · uptime
-volume (action: up|down|mute|set, value)
-media (action: play|pause|next|prev|stop)
-brightness (action: up|down|set, value)
-clipboard (action: read|write|clear, text)
-screenshot · list_processes · kill_process (name)
-windows (action: minimize_all|lock|screen_off)
-input (action: type|click|enter|escape, text)
-notify (title, message)
-open_settings (page: system|display|sound|wifi|bluetooth|privacy|apps|update|power)
-empty_recycle
-power (action: shutdown|restart|sleep|cancel, minutes opcional)
+Herramientas:\n` + toolsPromptSummary() + `
 
 Reglas:
 - Conocimiento → web_search.
-- Documentos → create_file / create_html_report en Informes/.
-- Abrir → open_app / open_folder de inmediato.
-- Apagar/reiniciar: usa power con minutes.`;
+- Documentos/resúmenes → create_file o create_html_report en Informes/.
+- Abrir → open_app / open_folder / open_url de inmediato.
+- Apagar/reiniciar → power.`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
@@ -82,15 +67,12 @@ function detectProviderFromKey(apiKey) {
       provider: 'anthropic',
     };
   }
-  if (k.startsWith('AIza') || k.startsWith('AI')) {
-    // Google AI Studio / Gemini
-    if (k.startsWith('AIza')) {
-      return {
-        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-        model: 'gemini-2.0-flash',
-        provider: 'gemini',
-      };
-    }
+  if (k.startsWith('AIza')) {
+    return {
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      model: 'gemini-2.0-flash',
+      provider: 'gemini',
+    };
   }
   if (k.startsWith('sk-or-') || k.startsWith('sk-or-v1-')) {
     return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', provider: 'openrouter' };
@@ -115,6 +97,12 @@ function inferProvider(config) {
   if (u.includes('openai.com')) return 'openai';
   if (u.includes('localhost') || u.includes('11434')) return 'ollama';
   return 'openai-compatible';
+}
+
+function supportsNativeTools(config) {
+  const p = inferProvider(config);
+  // Groq, OpenAI, OpenRouter, xAI suelen soportar tools; Gemini compat variable; Anthropic distinto
+  return p === 'groq' || p === 'openai' || p === 'openrouter' || p === 'xai' || p === 'openai-compatible';
 }
 
 function getConfig() {
@@ -164,7 +152,6 @@ function saveConfig(partial) {
 
 function pickModel(userMessage, config) {
   const provider = inferProvider(config);
-  // Solo cadena Groq usa modelos alternativos
   if (provider === 'groq') {
     if (COMPLEX_RE.test(userMessage || '')) return MODEL_SMART;
     if ((userMessage || '').length > 180) return MODEL_SMART;
@@ -185,15 +172,23 @@ function resolveUserPath(filePath) {
   return path.join(docs, filePath);
 }
 
-/** Claude Messages API (Anthropic) */
 async function callAnthropic(messages, config, model) {
   const systemParts = [];
   const chat = [];
   for (const m of messages) {
     if (m.role === 'system') systemParts.push(m.content);
-    else chat.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
+    else if (m.role === 'tool') {
+      chat.push({
+        role: 'user',
+        content: 'Resultado herramienta ' + (m.name || '') + ': ' + m.content,
+      });
+    } else {
+      chat.push({
+        role: m.role === 'assistant' ? 'assistant' : 'user',
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+      });
+    }
   }
-  // Anthropic exige alternar user/assistant; fusionar consecutivos del mismo rol
   const merged = [];
   for (const m of chat) {
     if (merged.length && merged[merged.length - 1].role === m.role) {
@@ -224,19 +219,18 @@ async function callAnthropic(messages, config, model) {
   });
   if (!res.ok) {
     const errText = await res.text();
-    const err = new Error(`LLM ${res.status}: ${errText.slice(0, 280)}`);
+    const err = new Error('LLM ' + res.status + ': ' + errText.slice(0, 280));
     err.status = res.status;
     throw err;
   }
   const data = await res.json();
   const blocks = data.content || [];
-  return blocks.map((b) => (b.type === 'text' ? b.text : '')).join('') || '';
+  const text = blocks.map((b) => (b.type === 'text' ? b.text : '')).join('') || '';
+  return { content: text, tool_calls: null, rawMessage: { role: 'assistant', content: text } };
 }
 
-/** OpenAI-compatible (Groq, OpenAI, Gemini compat, xAI, OpenRouter, Ollama) */
-async function callOpenAICompat(messages, config, model) {
+async function callOpenAICompat(messages, config, model, useTools) {
   let base = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
-  // Gemini OpenAI compat path
   if (inferProvider(config) === 'gemini' && !base.includes('/openai')) {
     base = 'https://generativelanguage.googleapis.com/v1beta/openai';
   }
@@ -245,40 +239,68 @@ async function callOpenAICompat(messages, config, model) {
     'Content-Type': 'application/json',
     Authorization: 'Bearer ' + config.apiKey,
   };
-  // OpenRouter recomienda estos headers
   if (inferProvider(config) === 'openrouter') {
     headers['HTTP-Referer'] = 'https://elyra.local';
     headers['X-Title'] = 'ELYRA';
   }
+
+  const body = {
+    model: model || config.model,
+    messages: messages.map((m) => {
+      if (m.role === 'tool') {
+        return {
+          role: 'tool',
+          tool_call_id: m.tool_call_id || m.id || 'call_0',
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        };
+      }
+      if (m.tool_calls) {
+        return { role: 'assistant', content: m.content || null, tool_calls: m.tool_calls };
+      }
+      return { role: m.role, content: m.content };
+    }),
+    temperature: 0.35,
+    max_tokens: 2800,
+  };
+
+  if (useTools && supportsNativeTools(config)) {
+    body.tools = TOOL_DEFINITIONS;
+    body.tool_choice = 'auto';
+  }
+
   const res = await fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model: model || config.model,
-      messages,
-      temperature: 0.35,
-      max_tokens: 2800,
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const errText = await res.text();
-    const err = new Error(`LLM ${res.status}: ${errText.slice(0, 280)}`);
+    // Si el proveedor rechaza tools, reintentar sin tools una vez
+    if (useTools && (res.status === 400 || res.status === 422) && /tool/i.test(errText)) {
+      return callOpenAICompat(messages, config, model, false);
+    }
+    const err = new Error('LLM ' + res.status + ': ' + errText.slice(0, 280));
     err.status = res.status;
     throw err;
   }
   const data = await res.json();
-  return data.choices?.[0]?.message?.content || '';
+  const msg = data.choices?.[0]?.message || {};
+  return {
+    content: msg.content || '',
+    tool_calls: msg.tool_calls || null,
+    rawMessage: msg,
+  };
 }
 
-async function callLLMOnce(messages, config, model) {
+async function callLLMOnce(messages, config, model, useTools) {
   const provider = inferProvider(config);
   if (provider === 'anthropic') {
     return callAnthropic(messages, config, model);
   }
-  return callOpenAICompat(messages, config, model);
+  return callOpenAICompat(messages, config, model, !!useTools);
 }
 
-async function callLLM(messages, config, preferredModel) {
+async function callLLM(messages, config, preferredModel, useTools) {
   if (!config.apiKey) throw new Error('NO_API_KEY');
   const preferred = preferredModel || config.model || MODEL_FAST;
   const provider = inferProvider(config);
@@ -289,7 +311,7 @@ async function callLLM(messages, config, preferredModel) {
   let lastErr;
   for (const model of chain) {
     try {
-      return await callLLMOnce(messages, config, model);
+      return await callLLMOnce(messages, config, model, useTools);
     } catch (e) {
       lastErr = e;
       if (e.status === 429 || /rate limit|429/i.test(String(e.message))) continue;
@@ -307,17 +329,18 @@ async function testApiConnection(override = {}) {
     return { ok: false, error: 'NO_API_KEY', message: 'No hay API key configurada.' };
   }
   try {
-    const text = await callLLMOnce(
+    const out = await callLLMOnce(
       [{ role: 'user', content: 'Di solo: ok' }],
       config,
       config.model,
+      false,
     );
     return {
       ok: true,
       message: 'Conexión correcta. IA lista (' + inferProvider(config) + ').',
       model: config.model,
       baseUrl: config.baseUrl,
-      sample: String(text || '').slice(0, 40),
+      sample: String(out.content || '').slice(0, 40),
     };
   } catch (e) {
     const msg = String(e.message || e);
@@ -340,7 +363,7 @@ function parseTools(text) {
   const tools = [];
   const re = /\[TOOL:\s*([\w_]+)\]([\s\S]*?)\[\/TOOL\]/gi;
   let m;
-  while ((m = re.exec(text)) !== null) {
+  while ((m = re.exec(text || '')) !== null) {
     const name = m[1].trim().toLowerCase();
     const body = m[2].trim();
     const params = {};
@@ -360,8 +383,28 @@ function parseTools(text) {
   return tools;
 }
 
+function parseNativeToolCalls(toolCalls) {
+  if (!Array.isArray(toolCalls) || !toolCalls.length) return [];
+  return toolCalls.map((tc) => {
+    let params = {};
+    try {
+      params = JSON.parse(tc.function?.arguments || '{}');
+    } catch {
+      params = {};
+    }
+    return {
+      name: (tc.function?.name || '').toLowerCase(),
+      params,
+      id: tc.id,
+    };
+  });
+}
+
 function stripTools(text) {
-  return text.replace(/\[TOOL:\s*[\w_]+\][\s\S]*?\[\/TOOL\]/gi, '').replace(/\n{3,}/g, '\n\n').trim();
+  return (text || '')
+    .replace(/\[TOOL:\s*[\w_]+\][\s\S]*?\[\/TOOL\]/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function polishForSpeech(text) {
@@ -426,7 +469,7 @@ async function executeTool(tool, helpers) {
         try {
           const wr = await fetch(
             'https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
-            { headers: { 'User-Agent': 'ELYRA/6.0' } },
+            { headers: { 'User-Agent': 'ELYRA/7.0' } },
           );
           if (wr.ok) {
             const data = await wr.json();
@@ -444,7 +487,7 @@ async function executeTool(tool, helpers) {
         const filePath = resolveUserPath(params.path || 'elyra-output.txt');
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, params.content || '', 'utf-8');
-        return { ok: true, result: 'Creado ' + path.basename(filePath) };
+        return { ok: true, result: 'Creado ' + path.basename(filePath) + ' en Documentos' };
       }
       case 'create_html_report': {
         const filePath = resolveUserPath(params.path || 'Informes/reporte.html');
@@ -463,7 +506,7 @@ async function executeTool(tool, helpers) {
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         const finalPath = filePath.toLowerCase().endsWith('.html') ? filePath : filePath + '.html';
         fs.writeFileSync(finalPath, html, 'utf-8');
-        return { ok: true, result: 'Reporte ' + path.basename(finalPath) + ' listo' };
+        return { ok: true, result: 'Reporte ' + path.basename(finalPath) + ' listo en Informes' };
       }
       case 'open_app':
         return await helpers.openApp(params.name || '');
@@ -576,6 +619,7 @@ async function runAgent(userMessage, history, helpers) {
 
   const cleanedUser = normalizeUserIntent(userMessage);
   const preferred = pickModel(cleanedUser, config);
+  const native = supportsNativeTools(config);
 
   let memoryHint = '';
   try {
@@ -602,9 +646,9 @@ async function runAgent(userMessage, history, helpers) {
 
   while (iterations < maxIter) {
     iterations++;
-    let reply;
+    let out;
     try {
-      reply = await callLLM(messages, config, preferred);
+      out = await callLLM(messages, config, preferred, native && iterations <= 4);
     } catch (e) {
       if (/429|rate limit/i.test(String(e.message))) {
         return { response: 'El servicio está saturado un momento.', iterations };
@@ -618,30 +662,49 @@ async function runAgent(userMessage, history, helpers) {
       return { response: 'No pude conectar ahora.', iterations };
     }
 
-    const tools = parseTools(reply);
+    const nativeTools = parseNativeToolCalls(out.tool_calls);
+    const textTools = parseTools(out.content || '');
+    const tools = nativeTools.length ? nativeTools : textTools;
+
     if (tools.length === 0) {
-      finalText = polishForSpeech(reply);
+      finalText = polishForSpeech(out.content || '');
       break;
     }
 
     const results = [];
     for (const t of tools) {
-      results.push({ tool: t.name, ...(await executeTool(t, helpers)) });
+      results.push({ tool: t.name, id: t.id, ...(await executeTool(t, helpers)) });
     }
 
-    messages.push({ role: 'assistant', content: reply });
-    messages.push({
-      role: 'user',
-      content:
-        'Resultados de herramientas:\n' +
-        results.map((r) => '• ' + r.tool + ': ' + (r.ok ? 'OK' : 'ERROR') + ' — ' + r.result).join('\n') +
-        '\n\nDa la respuesta FINAL breve y natural para voz. Si hubo ERROR, dilo. Sin bloques TOOL.',
-    });
+    if (nativeTools.length && out.rawMessage) {
+      messages.push({
+        role: 'assistant',
+        content: out.content || null,
+        tool_calls: out.tool_calls,
+      });
+      for (const r of results) {
+        messages.push({
+          role: 'tool',
+          tool_call_id: r.id || 'call_0',
+          name: r.tool,
+          content: (r.ok ? 'OK: ' : 'ERROR: ') + r.result,
+        });
+      }
+    } else {
+      messages.push({ role: 'assistant', content: out.content || '' });
+      messages.push({
+        role: 'user',
+        content:
+          'Resultados de herramientas:\n' +
+          results.map((r) => '• ' + r.tool + ': ' + (r.ok ? 'OK' : 'ERROR') + ' — ' + r.result).join('\n') +
+          '\n\nDa la respuesta FINAL breve y natural para voz. Si hubo ERROR, dilo. Sin bloques TOOL.',
+      });
+    }
   }
 
   if (!finalText) {
-    const last = messages.filter((m) => m.role === 'assistant').pop();
-    finalText = last ? polishForSpeech(last.content) : 'Listo.';
+    const last = [...messages].reverse().find((m) => m.role === 'assistant' && m.content);
+    finalText = last ? polishForSpeech(String(last.content)) : 'Listo.';
   }
   return { response: finalText, iterations };
 }
@@ -667,4 +730,5 @@ module.exports = {
   MODEL_FAST,
   MODEL_SMART,
   normalizeUserIntent,
+  TOOL_DEFINITIONS,
 };
