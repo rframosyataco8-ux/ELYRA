@@ -1,11 +1,19 @@
 /**
- * Router ELYRA v7 — skills + apertura inteligente + excel en contexto
+ * Router ELYRA v8 — búsquedas YouTube/Google/Wiki + skills + PC
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
-const { applyTypos, parseCompound, cleanOpenName } = require('./intent-compound.cjs');
+const {
+  applyTypos,
+  parseCompound,
+  cleanOpenName,
+  youtubeSearchUrl,
+  googleSearchUrl,
+  wikiSearchUrl,
+} = require('./intent-compound.cjs');
 const { trySkillIntent } = require('./skills-router.cjs');
 const { resolveOpenExcelPath } = require('./open-excel-context.cjs');
+const { deepWebSearch } = require('./web-search-boost.cjs');
 
 const PRESENCE_REPLIES = [
   'Sí, señor. Estoy aquí.',
@@ -75,7 +83,7 @@ async function routeChat({
     return (
       fallbackResponse?.(message) || {
         response:
-          'No hay API key. En Configuración puede añadirla para razonamiento avanzado. El control del PC y archivos ya funcionan.',
+          'No hay API key. En Configuración puede añadirla para razonamiento avanzado. El control del PC y búsquedas web ya funcionan.',
         intelligent: false,
       }
     );
@@ -98,7 +106,7 @@ async function routeChat({
         response:
           resp.includes('API') || resp.includes('key')
             ? resp
-            : 'El modelo no respondió. Revisa la API key. Sigo con el PC y archivos.',
+            : 'El modelo no respondió. Revisa la API key. Sigo con el PC y búsquedas.',
         intelligent: false,
         via: 'error',
       };
@@ -118,7 +126,7 @@ async function routeChat({
     const sk = await trySmartTopic(fixed, text);
     if (sk) return { ...sk, via: 'smart-error' };
     return {
-      response: 'Problema con el modelo. Sigo operativa para el sistema y archivos.',
+      response: 'Problema con el modelo. Sigo operativa para el sistema y búsquedas.',
       intelligent: false,
     };
   }
@@ -136,14 +144,18 @@ async function trySmartTopic(fixed, text) {
   for (const re of patterns) {
     const m = String(fixed).match(re) || text.match(re);
     if (m && m[1]) {
+      // no tratar "hh en youtube" como tema de conocimiento
+      if (/\byoutube\b|\ben\s+yt\b/i.test(m[1])) continue;
       topic = m[1].replace(/[?.!]+$/, '').trim();
       break;
     }
   }
-  if (!topic && text.split(/\s+/).length <= 4 && !/\b(abre|abrir|volumen|brillo)\b/.test(text)) {
+  if (!topic && text.split(/\s+/).length <= 4 && !/\b(abre|abrir|volumen|brillo|youtube)\b/.test(text)) {
     if (/gemini|chatgpt|claude|python|openai|groq|llama/.test(text)) topic = text;
   }
   if (!topic || topic.length < 2) return null;
+  const deep = await deepWebSearch(topic);
+  if (deep.ok) return { response: deep.response, intelligent: true, via: deep.source || 'deep' };
   const sk = await smartKnowledge(topic);
   if (sk.ok) return { response: sk.response, intelligent: true, via: sk.source || 'smart' };
   return null;
@@ -156,12 +168,11 @@ async function tryAnalyzeOpenExcel(helpers) {
       return {
         response:
           found.result ||
-          'No localicé un Excel reciente. Abre el archivo o dime la ruta (por ejemplo en Documentos).',
+          'No localicé un Excel reciente. Abre el archivo o dime la ruta.',
         intelligent: true,
         via: 'excel-miss',
       };
     }
-    // Usa tool Python si está disponible vía agent hooks helpers
     if (helpers.runPythonTool) {
       const r = await helpers.runPythonTool('analyze_excel', { path: found.path });
       if (r.ok) {
@@ -172,16 +183,9 @@ async function tryAnalyzeOpenExcel(helpers) {
         };
       }
     }
-    // Fallback: pedir al agente con path inyectado no siempre disponible — mensaje útil
     return {
       response:
-        'Encontré el archivo «' +
-        found.name +
-        '» en ' +
-        found.path +
-        '. Dime «analiza este excel: ' +
-        found.path +
-        '» o ábrelo desde Documentos si quieres más detalle.',
+        'Encontré «' + found.name + '». Puedes pedir «analiza este excel: ' + found.path + '».',
       intelligent: true,
       via: 'excel-path',
     };
@@ -204,7 +208,6 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     return { response: 'Anotado, señor.', intelligent: false };
   }
 
-  // Excel abierto / reciente
   if (
     /\b(analiza|analizar|resume|resumen|dime qué|dime que)\b/.test(text) &&
     /\b(excel|xlsx|hoja|archivo)\b/.test(text)
@@ -248,17 +251,13 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     };
   }
 
-  if (/\b(administrador de tareas|task ?manager|gestor de tareas)\b/.test(text)) {
-    if (pc.openTaskManager) {
-      const r = await pc.openTaskManager();
-      return { response: r.result || 'Administrador de tareas abierto.', intelligent: false };
-    }
+  if (/\b(administrador de tareas|task ?manager|gestor de tareas)\b/.test(text) && pc.openTaskManager) {
+    const r = await pc.openTaskManager();
+    return { response: r.result || 'Administrador de tareas abierto.', intelligent: false };
   }
-  if (/\b(limpia|limpiar)\s+(los\s+)?temporales\b/.test(text) || /\bvacia temporales\b/.test(text)) {
-    if (pc.emptyTemp) {
-      const r = await pc.emptyTemp();
-      return { response: r.result, intelligent: false };
-    }
+  if ((/\b(limpia|limpiar)\s+(los\s+)?temporales\b/.test(text) || /\bvacia temporales\b/.test(text)) && pc.emptyTemp) {
+    const r = await pc.emptyTemp();
+    return { response: r.result, intelligent: false };
   }
   if (/\b(estado (del )?wifi|wifi status)\b/.test(text) && pc.wifiStatus) {
     const r = await pc.wifiStatus();
@@ -281,31 +280,80 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     return { response: (r.result || 'Sin datos').slice(0, 500), intelligent: false };
   }
 
+  // —— Búsquedas (YouTube primero) ——
   const compound = parseCompound(text);
-  if (compound?.type === 'compound_search') {
-    await helpers.openApp(compound.browser || 'chrome');
-    await helpers.openUrl('https://www.google.com/search?q=' + encodeURIComponent(compound.query));
+
+  if (compound?.type === 'youtube_search') {
+    await helpers.openUrl(youtubeSearchUrl(compound.query));
+    return {
+      response: 'Abrí YouTube con la búsqueda «' + compound.query + '».',
+      intelligent: true,
+      via: 'youtube-search',
+    };
+  }
+
+  if (compound?.type === 'wiki_search') {
+    await helpers.openUrl(wikiSearchUrl(compound.query));
     const sk = await smartKnowledge(compound.query);
     if (sk.ok) {
       return {
-        response: 'Hecho. ' + sk.response.slice(0, 400),
+        response: 'Abrí Wikipedia. ' + sk.response.slice(0, 500),
         intelligent: true,
-        via: 'compound+smart',
+        via: 'wiki',
       };
     }
     return {
-      response: 'Abrí el navegador con la búsqueda de "' + compound.query + '".',
+      response: 'Abrí Wikipedia con «' + compound.query + '».',
+      intelligent: true,
+      via: 'wiki',
+    };
+  }
+
+  if (compound?.type === 'compound_search') {
+    // Solo chrome/edge + google, NUNCA youtube disfrazado
+    if (/youtube|\byt\b/i.test(compound.browser || '')) {
+      await helpers.openUrl(youtubeSearchUrl(compound.query));
+      return {
+        response: 'Abrí YouTube con «' + compound.query + '».',
+        intelligent: true,
+        via: 'youtube-search',
+      };
+    }
+    await helpers.openApp(compound.browser || 'chrome');
+    await helpers.openUrl(googleSearchUrl(compound.query));
+    const deep = await deepWebSearch(compound.query);
+    if (deep.ok) {
+      return {
+        response: 'Listo. ' + deep.response.slice(0, 450),
+        intelligent: true,
+        via: 'compound+deep',
+      };
+    }
+    return {
+      response: 'Abrí el navegador con la búsqueda de «' + compound.query + '».',
       intelligent: false,
     };
   }
 
   if (compound?.type === 'google_search') {
-    const sk = await smartKnowledge(compound.query);
-    if (sk.ok) return { response: sk.response, intelligent: true, via: sk.source };
-    await helpers.openUrl('https://www.google.com/search?q=' + encodeURIComponent(compound.query));
+    // Si la query pide video implícito
+    if (/\b(video|vídeo|cancion|canción|trailer|clip)\b/i.test(text)) {
+      await helpers.openUrl(youtubeSearchUrl(compound.query));
+      return {
+        response: 'Parece un video: abrí YouTube con «' + compound.query + '».',
+        intelligent: true,
+        via: 'youtube-from-google-intent',
+      };
+    }
+    const deep = await deepWebSearch(compound.query);
+    if (deep.ok) {
+      return { response: deep.response, intelligent: true, via: 'deep-web' };
+    }
+    await helpers.openUrl(googleSearchUrl(compound.query));
     return {
-      response: 'Abrí Google con "' + compound.query + '".',
+      response: 'Abrí Google con «' + compound.query + '».',
       intelligent: false,
+      via: 'google-open',
     };
   }
 
@@ -371,52 +419,39 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     /\b(?:abre|abrir|lanza|ejecuta|abreme|abrime)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
   if (openMatch || /\b(abre|abrir)\b/.test(text)) {
-    const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos'];
-    for (const f of folderKeys) {
-      if (text.includes(f)) {
-        const r = await helpers.openFolder(f);
-        return { response: r.message || r.result, intelligent: false };
-      }
-    }
-    // Pasar la frase completa al motor de apps (papelera, lenovo vantage, bluestacks en la web…)
-    let name = openMatch ? openMatch[1].trim() : '';
-    name = cleanOpenName(name) || name;
-    if (!name) {
-      const candidates = [
-        'youtube',
-        'google',
-        'gmail',
-        'word',
-        'excel',
-        'chrome',
-        'edge',
-        'notepad',
-        'calculadora',
-        'spotify',
-        'discord',
-        'code',
-        'firefox',
-        'powerpoint',
-        'chatgpt',
-        'gemini',
-        'claude',
-        'papelera',
-        'bluestacks',
-      ];
-      for (const app of candidates) {
-        if (new RegExp('\\b' + app + '\\b', 'i').test(text)) {
-          name = app;
-          break;
+    // No tratar "abre youtube y busca X" aquí (ya lo cubre parseCompound)
+    if (/\by\s+(?:me\s+)?busca/i.test(text) && /youtube/i.test(text)) {
+      /* leave to compound — already handled above */
+    } else {
+      const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos'];
+      for (const f of folderKeys) {
+        if (text.includes(f)) {
+          const r = await helpers.openFolder(f);
+          return { response: r.message || r.result, intelligent: false };
         }
       }
-    }
-    // Si el usuario escribió «en la web», conservar esa intención
-    if (/\ben\s+(la\s+)?web\b/i.test(text) && name && !/\ben\s+(la\s+)?web\b/i.test(name)) {
-      name = name + ' en la web';
-    }
-    if (name) {
-      const r = await helpers.openApp(name);
-      return { response: r.message || r.result, intelligent: false, via: 'open-app' };
+      let name = openMatch ? openMatch[1].trim() : '';
+      name = cleanOpenName(name) || name;
+      if (!name) {
+        const candidates = [
+          'youtube', 'google', 'gmail', 'word', 'excel', 'chrome', 'edge', 'notepad',
+          'calculadora', 'spotify', 'discord', 'code', 'firefox', 'powerpoint',
+          'chatgpt', 'gemini', 'claude', 'papelera', 'bluestacks',
+        ];
+        for (const app of candidates) {
+          if (new RegExp('\\b' + app + '\\b', 'i').test(text)) {
+            name = app;
+            break;
+          }
+        }
+      }
+      if (/\ben\s+(la\s+)?web\b/i.test(text) && name && !/\ben\s+(la\s+)?web\b/i.test(name)) {
+        name = name + ' en la web';
+      }
+      if (name) {
+        const r = await helpers.openApp(name);
+        return { response: r.message || r.result, intelligent: false, via: 'open-app' };
+      }
     }
   }
 
