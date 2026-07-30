@@ -1,4 +1,4 @@
-import { Home, MessageSquare, Settings, Zap, Activity, Cpu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Home, MessageSquare, Settings, Zap, Activity, Cpu, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
 
 interface SidebarProps {
   active: 'inicio' | 'asistente' | 'config';
@@ -6,9 +6,19 @@ interface SidebarProps {
   hasApiKey?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  operator?: string;
+  onLogout?: () => void;
 }
 
-export function Sidebar({ active, onNavigate, hasApiKey, collapsed = false, onToggleCollapse }: SidebarProps) {
+export function Sidebar({
+  active,
+  onNavigate,
+  hasApiKey,
+  collapsed = false,
+  onToggleCollapse,
+  operator,
+  onLogout,
+}: SidebarProps) {
   const items = [
     { id: 'inicio' as const, label: 'Inicio', icon: Home },
     { id: 'asistente' as const, label: 'Conversación', icon: MessageSquare },
@@ -89,10 +99,12 @@ export function Sidebar({ active, onNavigate, hasApiKey, collapsed = false, onTo
               <div className="relative w-8 h-8 rounded-full border border-sky-500/30 flex items-center justify-center bg-sky-500/8">
                 <Activity className="w-3.5 h-3.5 text-sky-400" />
               </div>
-              <div>
-                <p className="text-xs text-white/90 font-medium tracking-wide">ELYRA Online</p>
+              <div className="min-w-0">
+                <p className="text-xs text-white/90 font-medium tracking-wide truncate">
+                  {operator || 'ELYRA Online'}
+                </p>
                 <p className="text-[10px] text-sky-400/55 flex items-center gap-1">
-                  <Zap className="w-2.5 h-2.5" /> Modo autónomo
+                  <Zap className="w-2.5 h-2.5" /> Operador activo
                 </p>
               </div>
             </div>
@@ -113,9 +125,18 @@ export function Sidebar({ active, onNavigate, hasApiKey, collapsed = false, onTo
               </div>
               <div className="flex items-center gap-1.5">
                 <Cpu className="w-3 h-3 text-sky-500/50" />
-                <span className="text-[10px] text-sky-500/50">v3.0 · Holographic</span>
+                <span className="text-[10px] text-sky-500/50">v4.2 · Elite</span>
               </div>
             </div>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="w-full flex items-center gap-2 px-2 py-2 rounded-xl text-[12px] text-sky-400/60 hover:text-red-300/90 hover:bg-red-500/10 border border-transparent hover:border-red-400/20 transition-all mt-1"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Cerrar sesión
+              </button>
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center gap-2">
@@ -124,6 +145,15 @@ export function Sidebar({ active, onNavigate, hasApiKey, collapsed = false, onTo
               className={`w-2 h-2 rounded-full ${hasApiKey ? 'bg-violet-400 shadow-[0_0_8px_#a78bfa]' : 'bg-amber-400/70'}`}
               title={hasApiKey ? 'IA conectada' : 'Sin API key'}
             />
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-sky-500/50 hover:text-red-300 hover:bg-red-500/10 transition-all"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
       </div>

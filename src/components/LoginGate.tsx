@@ -68,6 +68,7 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [bootLine, setBootLine] = useState(0);
+  const [now, setNow] = useState(new Date());
 
   useEffect(() => {
     if (hasValidSession()) {
@@ -77,26 +78,29 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
   }, []);
 
   useEffect(() => {
-    const lines = 4;
-    const id = setInterval(() => setBootLine((n) => (n + 1) % lines), 900);
-    return () => clearInterval(id);
+    const id = setInterval(() => setBootLine((n) => (n + 1) % 4), 1100);
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => {
+      clearInterval(id);
+      clearInterval(t);
+    };
   }, []);
 
   const statusLines = [
-    'Inicializando núcleo holográfico…',
-    'Verificando módulos de control…',
-    'Canal de voz listo…',
-    'Esperando autenticación del operador…',
+    'Núcleo cognitivo en línea',
+    'Módulos de control verificados',
+    'Canal de voz listo',
+    'Autenticación requerida',
   ];
 
   const submit = async () => {
     setError('');
     if (pin.length < 4) {
-      setError('El código de acceso debe tener al menos 4 dígitos.');
+      setError('Mínimo 4 dígitos.');
       return;
     }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 450));
+    await new Promise((r) => setTimeout(r, 520));
 
     if (mode === 'setup') {
       if (pin !== pin2) {
@@ -113,8 +117,9 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
 
     const auth = loadAuth();
     if (!auth || auth.pinHash !== simpleHash(pin)) {
-      setError('Código de acceso incorrecto.');
+      setError('Código incorrecto.');
       setLoading(false);
+      setPin('');
       return;
     }
     openSession(auth.operator);
@@ -127,50 +132,62 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute top-[-25%] left-[-15%] w-[55%] h-[55%] rounded-full bg-sky-600/10 blur-[140px]" />
         <div className="absolute bottom-[-20%] right-[-10%] w-[45%] h-[45%] rounded-full bg-violet-600/10 blur-[120px]" />
-        <div className="absolute inset-0 opacity-[0.07]" style={{
-          backgroundImage: 'linear-gradient(rgba(56,189,248,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(56,189,248,0.15) 1px, transparent 1px)',
-          backgroundSize: '48px 48px',
-        }} />
+        <div
+          className="absolute inset-0 opacity-[0.06]"
+          style={{
+            backgroundImage:
+              'linear-gradient(rgba(56,189,248,0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(56,189,248,0.2) 1px, transparent 1px)',
+            backgroundSize: '56px 56px',
+          }}
+        />
       </div>
 
-      <div className="relative z-10 w-full max-w-md mx-4">
+      <div className="absolute top-5 left-6 right-6 flex justify-between text-[11px] text-sky-500/45 font-mono tracking-wide">
+        <span>ELYRA · SECURE ACCESS</span>
+        <span>
+          {now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        </span>
+      </div>
+
+      <div className="relative z-10 w-full max-w-[420px] mx-4">
         <div className="text-center mb-8 space-y-3">
-          <div className="mx-auto w-16 h-16 rounded-full border border-sky-400/30 bg-sky-500/10 flex items-center justify-center shadow-[0_0_40px_rgba(56,189,248,0.25)]">
-            <Sparkles className="w-7 h-7 text-sky-300" />
+          <div className="mx-auto w-[72px] h-[72px] rounded-full border border-sky-400/35 bg-sky-500/10 flex items-center justify-center shadow-[0_0_50px_rgba(56,189,248,0.3)] relative">
+            <div className="absolute inset-0 rounded-full border border-sky-400/20 animate-pulse" />
+            <Sparkles className="w-8 h-8 text-sky-300" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-[0.25em] text-white text-glow-soft">ELYRA</h1>
-          <p className="text-[12px] text-sky-400/55 tracking-wide uppercase">Sistema de asistencia de élite</p>
-          <p className="text-[11px] text-sky-500/50 font-mono">{statusLines[bootLine]}</p>
+          <h1 className="text-[26px] font-semibold tracking-[0.28em] text-white text-glow-soft">ELYRA</h1>
+          <p className="text-[11px] text-sky-400/50 tracking-[0.22em] uppercase">Asistente de élite</p>
+          <p className="text-[11px] text-sky-500/45 font-mono h-4">{statusLines[bootLine]}</p>
         </div>
 
-        <div className="hud-glass-strong rounded-2xl border border-sky-500/20 p-6 space-y-4 shadow-[0_0_60px_rgba(14,165,233,0.12)]">
-          <div className="flex items-center gap-2 text-sky-300/80 text-sm">
+        <div className="hud-glass-strong rounded-2xl border border-sky-500/25 p-7 space-y-5 shadow-[0_0_80px_rgba(14,165,233,0.15)]">
+          <div className="flex items-center gap-2 text-sky-300/85 text-sm">
             <Shield className="w-4 h-4" />
-            <span>{mode === 'setup' ? 'Registro de operador' : 'Autenticación'}</span>
+            <span className="tracking-wide">{mode === 'setup' ? 'Primer acceso' : 'Identificación'}</span>
           </div>
 
           {mode === 'setup' && (
             <div className="space-y-1.5">
-              <label className="text-[11px] text-sky-400/60 uppercase tracking-wide flex items-center gap-1.5">
-                <User className="w-3 h-3" /> Nombre del operador
+              <label className="text-[10px] text-sky-400/55 uppercase tracking-[0.15em] flex items-center gap-1.5">
+                <User className="w-3 h-3" /> Operador
               </label>
               <input
                 value={operator}
                 onChange={(e) => setOperator(e.target.value)}
-                className="w-full bg-sky-950/50 border border-sky-500/25 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/50"
-                placeholder="Tu nombre"
+                className="w-full bg-sky-950/60 border border-sky-500/25 rounded-xl px-4 py-3 text-sm text-sky-100 outline-none focus:border-sky-400/55 focus:shadow-[0_0_20px_rgba(56,189,248,0.15)] transition-all"
+                placeholder="Nombre"
               />
             </div>
           )}
 
           {mode === 'login' && existing && (
-            <p className="text-sm text-sky-200/80">
-              Bienvenido, <span className="text-sky-300 font-medium">{existing.operator}</span>
+            <p className="text-sm text-sky-200/90">
+              Operador <span className="text-sky-100 font-medium">{existing.operator}</span>
             </p>
           )}
 
           <div className="space-y-1.5">
-            <label className="text-[11px] text-sky-400/60 uppercase tracking-wide flex items-center gap-1.5">
+            <label className="text-[10px] text-sky-400/55 uppercase tracking-[0.15em] flex items-center gap-1.5">
               <Lock className="w-3 h-3" /> Código de acceso
             </label>
             <input
@@ -179,37 +196,55 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
               value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
               onKeyDown={(e) => e.key === 'Enter' && submit()}
-              className="w-full bg-sky-950/50 border border-sky-500/25 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/50 tracking-[0.3em]"
-              placeholder="••••"
+              className="w-full bg-sky-950/60 border border-sky-500/25 rounded-xl px-4 py-3 text-center text-lg text-sky-100 outline-none focus:border-sky-400/55 tracking-[0.45em] focus:shadow-[0_0_20px_rgba(56,189,248,0.15)] transition-all"
+              placeholder="····"
               autoFocus
             />
+            <div className="flex justify-center gap-1.5 pt-1">
+              {Array.from({ length: Math.max(4, pin.length || 4) }).map((_, i) => (
+                <span
+                  key={i}
+                  className={`w-2 h-2 rounded-full transition-all ${
+                    i < pin.length ? 'bg-sky-400 shadow-[0_0_8px_#38bdf8]' : 'bg-sky-800 border border-sky-600/40'
+                  }`}
+                />
+              ))}
+            </div>
           </div>
 
           {mode === 'setup' && (
             <div className="space-y-1.5">
-              <label className="text-[11px] text-sky-400/60 uppercase tracking-wide">Confirmar código</label>
+              <label className="text-[10px] text-sky-400/55 uppercase tracking-[0.15em]">Confirmar código</label>
               <input
                 type="password"
                 inputMode="numeric"
                 value={pin2}
                 onChange={(e) => setPin2(e.target.value.replace(/\D/g, '').slice(0, 12))}
                 onKeyDown={(e) => e.key === 'Enter' && submit()}
-                className="w-full bg-sky-950/50 border border-sky-500/25 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/50 tracking-[0.3em]"
-                placeholder="••••"
+                className="w-full bg-sky-950/60 border border-sky-500/25 rounded-xl px-4 py-3 text-center text-lg text-sky-100 outline-none focus:border-sky-400/55 tracking-[0.45em]"
+                placeholder="····"
               />
             </div>
           )}
 
           {error && (
-            <p className="text-[12px] text-red-300/90 bg-red-500/10 border border-red-400/20 rounded-xl px-3 py-2">{error}</p>
+            <p className="text-[12px] text-red-300/90 bg-red-500/10 border border-red-400/20 rounded-xl px-3 py-2 text-center">
+              {error}
+            </p>
           )}
 
           <button
             onClick={submit}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-sky-500/25 border border-sky-400/40 text-sky-50 text-sm font-medium hover:bg-sky-500/35 transition-all disabled:opacity-50 shadow-[0_0_24px_rgba(56,189,248,0.2)]"
+            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-sky-500/30 border border-sky-400/45 text-sky-50 text-sm font-medium hover:bg-sky-500/40 transition-all disabled:opacity-50 shadow-[0_0_28px_rgba(56,189,248,0.25)] tracking-wide"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : mode === 'setup' ? 'Activar sistema' : 'Acceder al sistema'}
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : mode === 'setup' ? (
+              'Activar sistema'
+            ) : (
+              'Entrar'
+            )}
           </button>
 
           {mode === 'login' && (
@@ -221,15 +256,15 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                 setPin2('');
                 setError('');
               }}
-              className="w-full text-[11px] text-sky-500/60 hover:text-sky-400/80 transition-colors"
+              className="w-full text-[11px] text-sky-500/55 hover:text-sky-400/80 transition-colors"
             >
               Reconfigurar operador
             </button>
           )}
         </div>
 
-        <p className="text-center text-[10px] text-sky-600/50 mt-6 tracking-wide">
-          Acceso local · El código no se envía a ningún servidor
+        <p className="text-center text-[10px] text-sky-600/45 mt-7 tracking-[0.12em]">
+          ACCESO LOCAL · CREDENCIALES SOLO EN ESTE EQUIPO
         </p>
       </div>
     </div>
