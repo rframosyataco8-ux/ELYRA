@@ -18,10 +18,10 @@ const {
 } = require('./agent.cjs');
 const { runPythonStt } = require('./stt-python-ipc.cjs');
 const { openApp: openAppReliable, openUrl: openUrlReliable } = require('./apps.cjs');
-const { applyTypos, parseCompound, cleanOpenName } = require('./intent-compound.cjs');
 const pc = require('./pc-control.cjs');
 const { transcribeBuffer } = require('./stt.cjs');
 const { chatOpenClaw, pingOpenClaw, getOpenClawConfig } = require('./openclaw-bridge.cjs');
+const { routeChat } = require('./chat-router.cjs');
 
 let mainWindow = null;
 let tray = null;
@@ -173,76 +173,7 @@ async function recallHelper() {
   return { ok: true, result: parts.join(' ') };
 }
 
-async function knowledgeLookup(query) {
-  const q = (query || '').trim().slice(0, 120);
-  if (!q) return null;
-  const bits = [];
-  try {
-    const wr = await fetch(
-      'https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
-      { headers: { 'User-Agent': 'ELYRA/3.2' } },
-    );
-    if (wr.ok) {
-      const data = await wr.json();
-      if (data.extract) bits.push(data.extract);
-    }
-  } catch {}
-  if (!bits.length) {
-    try {
-      const wr2 = await fetch(
-        'https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
-        { headers: { 'User-Agent': 'ELYRA/3.2' } },
-      );
-      if (wr2.ok) {
-        const data = await wr2.json();
-        if (data.extract) bits.push(data.extract);
-      }
-    } catch {}
-  }
-  if (!bits.length) {
-    try {
-      const res = await fetch(
-        'https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1',
-        { headers: { 'User-Agent': 'ELYRA/3.2' } },
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.AbstractText) bits.push(data.AbstractText);
-        else if (data.RelatedTopics?.[0]?.Text) bits.push(data.RelatedTopics[0].Text);
-      }
-    } catch {}
-  }
-  if (!bits.length) return null;
-  return bits.join(' ').replace(/\s+/g, ' ').trim().slice(0, 900);
-}
-
-function extractKnowledgeTopic(text) {
-  const t = (text || '').trim();
-  if (/\b(abre|abrir)\b/.test(t) && /\b(busca|buscar|buscame)\b/.test(t)) return null;
-  const patterns = [
-    /(?:dime|cuéntame|cuentame|explícame|explicame|qué sabes|que sabes|habla|información|informacion)\s+(?:sobre|de|acerca de)\s+(.+)/i,
-    /(?:qué es|que es|quién es|quien es|quién fue|quien fue)\s+(.+)/i,
-    /(?:busca información|busca info|investiga|investigar)\s+(?:sobre\s+)?(.+)/i,
-    /(?:resume|resumen de|haz un resumen de)\s+(.+)/i,
-  ];
-  for (const re of patterns) {
-    const m = t.match(re);
-    if (m && m[1]) return m[1].replace(/[?.!]+$/, '').trim();
-  }
-  return null;
-}
-
-const agentHelpers = {
-  openApp: openAppHelper,
-  openFolder: openFolderHelper,
-  openUrl: openUrlHelper,
-  runCommand: runCommandHelper,
-  remember: rememberHelper,
-  recall: recallHelper,
-  pc,
-};
-
-ipcMain.handle('get-system-stats', async () => {
+async function getSystemStats() {
   try {
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
@@ -277,10 +208,21 @@ ipcMain.handle('get-system-stats', async () => {
       freeMemGB: +(freeMem / 1e9).toFixed(1),
     };
   } catch {
-    return { cpu: 15, ram: 45, disk: 50, net: 10 };
+    return { cpu: 15, ram: 45, disk: 50, net: 10, hostname: os.hostname() };
   }
-});
+}
 
+const agentHelpers = {
+  openApp: openAppHelper,
+  openFolder: openFolderHelper,
+  openUrl: openUrlHelper,
+  runCommand: runCommandHelper,
+  remember: rememberHelper,
+  recall: recallHelper,
+  pc,
+};
+
+ipcMain.handle('get-system-stats', async () => getSystemStats());
 ipcMain.handle('open-app', async (_e, name) => openAppHelper(name));
 ipcMain.handle('open-path', async (_e, p) => {
   const result = await shell.openPath(p);
@@ -353,61 +295,19 @@ ipcMain.handle('openclaw-status', async () => {
 
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   ensureDefaultConfig();
-  const fixed = typeof normalizeUserIntent === 'function' ? normalizeUserIntent(message) : message;
-
-  const quick = await trySimpleIntent(fixed);
-  if (quick) return quick;
-
-  const oc = getOpenClawConfig();
-  if (oc.enabled) {
-    const ocRes = await chatOpenClaw(fixed, history || []);
-    if (ocRes.ok && ocRes.response) {
-      return { response: ocRes.response, intelligent: true, via: 'openclaw' };
-    }
-  }
-
-  const config = getConfig();
-  if (!config.apiKey) {
-    const topic = extractKnowledgeTopic(fixed);
-    if (topic) {
-      const info = await knowledgeLookup(topic);
-      if (info) return { response: info, intelligent: true, via: 'wiki' };
-    }
-    return fallbackResponse(message);
-  }
-
-  try {
-    const result = await runAgent(fixed, history || [], agentHelpers);
-    if (/api key no es válida|no hay api key|falta la api|no pude conectar/i.test(result.response || '')) {
-      const topic = extractKnowledgeTopic(fixed);
-      if (topic) {
-        const info = await knowledgeLookup(topic);
-        if (info) {
-          return {
-            response:
-              info +
-              ' (Respuesta desde Wikipedia porque la API key no respondió. Revísala en Configuración.)',
-            intelligent: true,
-            via: 'wiki-fallback',
-          };
-        }
-      }
-    }
-    return { response: result.response, intelligent: true, via: 'llm' };
-  } catch (err) {
-    if (/429|rate limit/i.test(String(err.message))) {
-      return { response: 'El servicio está saturado un momento.', intelligent: false };
-    }
-    const topic = extractKnowledgeTopic(fixed);
-    if (topic) {
-      const info = await knowledgeLookup(topic);
-      if (info) return { response: info, intelligent: true, via: 'wiki-fallback' };
-    }
-    return {
-      response: 'No pude completar eso ahora. Revisa la API key en Configuración si el problema continúa.',
-      intelligent: false,
-    };
-  }
+  return routeChat({
+    message,
+    history,
+    helpers: agentHelpers,
+    runAgent,
+    getConfig,
+    fallbackResponse,
+    normalizeUserIntent,
+    chatOpenClaw,
+    getOpenClawConfig,
+    pc,
+    getSystemStats,
+  });
 });
 
 ipcMain.handle('agent-config-get', () => {
@@ -421,209 +321,6 @@ ipcMain.handle('agent-config-set', (_e, partial) => {
 ipcMain.handle('agent-config-test', async (_e, partial) => {
   return testApiConnection(partial || {});
 });
-
-async function trySimpleIntent(input) {
-  let text = applyTypos((input || '').toLowerCase().trim());
-
-  if (
-    /\b(qué recuerdas|que recuerdas|dime (todo )?lo que recuerdas|qué sabes de mí|que sabes de mi|tu memoria|muestra (tu )?memoria)\b/.test(
-      text,
-    )
-  ) {
-    const r = await recallHelper();
-    return { response: r.result, intelligent: false };
-  }
-  const rememberMatch = text.match(/\b(?:recuerda|anota|guarda|no olvides)\s+(?:que\s+)?(.+)/i);
-  if (rememberMatch) {
-    await rememberHelper(rememberMatch[1].trim());
-    return { response: 'Listo, lo guardé en mi memoria.', intelligent: false };
-  }
-
-  const compound = parseCompound(text);
-  if (compound && compound.type === 'compound_search') {
-    await openAppHelper(compound.browser || 'chrome');
-    await openUrlHelper('https://www.google.com/search?q=' + encodeURIComponent(compound.query));
-    return {
-      response: 'Abrí ' + (compound.browser || 'Chrome') + ' y busqué "' + compound.query + '".',
-      intelligent: false,
-    };
-  }
-  if (compound && compound.type === 'google_search') {
-    await openUrlHelper('https://www.google.com/search?q=' + encodeURIComponent(compound.query));
-    return { response: 'Busqué "' + compound.query + '" en Google.', intelligent: false };
-  }
-
-  if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
-    const r = await pc.volume('up');
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(baja|bajar)\s+(el\s+)?volumen\b/.test(text)) {
-    const r = await pc.volume('down');
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(silencia|mute|silencio)\b/.test(text)) {
-    const r = await pc.volume('mute');
-    return { response: r.result, intelligent: false };
-  }
-
-  if (/\b(sube|subir)\s+(el\s+)?brillo\b/.test(text)) {
-    const r = await pc.brightness('up');
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(baja|bajar)\s+(el\s+)?brillo\b/.test(text)) {
-    const r = await pc.brightness('down');
-    return { response: r.result, intelligent: false };
-  }
-
-  if (
-    (/\b(pausa|pausar|play|reproducir|reproduce)\b/.test(text) &&
-      /\b(música|musica|canción|cancion|spotify|video)\b/.test(text)) ||
-    /\b(pausa|reanuda|play pause)\b/.test(text)
-  ) {
-    const r = await pc.media('play');
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(siguiente|next)\s+(canción|cancion|pista)?\b/.test(text)) {
-    const r = await pc.media('next');
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(anterior|prev)\s+(canción|cancion|pista)?\b/.test(text)) {
-    const r = await pc.media('prev');
-    return { response: r.result, intelligent: false };
-  }
-
-  if (/\b(captura|screenshot|captura de pantalla)\b/.test(text)) {
-    const r = await pc.screenshot();
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(bloquea|bloquear)\s+(la\s+)?(sesión|pc|pantalla)\b/.test(text)) {
-    const r = await pc.windows('lock');
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(minimiza|minimizar)\s+(todas|ventanas|todo)\b/.test(text) || /\bmostrar escritorio\b/.test(text)) {
-    const r = await pc.windows('minimize_all');
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(apaga|apagar)\s+(la\s+)?pantalla\b/.test(text)) {
-    const r = await pc.windows('screen_off');
-    return { response: r.result, intelligent: false };
-  }
-
-  if (/\b(batería|bateria|cuánta batería|cuanta bateria)\b/.test(text)) {
-    const r = await pc.battery();
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(estado de (la )?red|mi ip|wifi|conexión|conexion)\b/.test(text)) {
-    const r = await pc.networkInfo();
-    return { response: (r.result || '').slice(0, 400), intelligent: false };
-  }
-  if (/\b(espacio en disco|disco libre|cuánto disco)\b/.test(text)) {
-    const r = await pc.systemExtras('disk_space');
-    return { response: (r.result || '').slice(0, 400), intelligent: false };
-  }
-
-  if (/\b(vacía|vacia|vaciar)\s+(la\s+)?papelera\b/.test(text)) {
-    const r = await pc.emptyRecycle();
-    return { response: r.result, intelligent: false };
-  }
-
-  if (/\b(abre|abrir)\s+(ajustes|configuración|configuracion|settings)\b/.test(text)) {
-    let page = 'system';
-    if (/wifi|red/.test(text)) page = 'wifi';
-    else if (/bluetooth/.test(text)) page = 'bluetooth';
-    else if (/pantalla|display/.test(text)) page = 'display';
-    else if (/sonido|audio/.test(text)) page = 'sound';
-    else if (/privacidad/.test(text)) page = 'privacy';
-    else if (/actualiz/.test(text)) page = 'update';
-    const r = await pc.openSettings(page);
-    return { response: r.result, intelligent: false };
-  }
-
-  if (/\b(cancela|cancelar)\s+(el\s+)?(apagado|reinicio)\b/.test(text) || /\bcancelar apagado\b/.test(text)) {
-    const r = await pc.power('cancel');
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(apaga|apagar)\s+(el\s+)?(pc|equipo|ordenador)\b/.test(text) && !/pantalla/.test(text)) {
-    const r = await pc.power('shutdown', 1);
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(reinicia|reiniciar)\s+(el\s+)?(pc|equipo)?\b/.test(text)) {
-    const r = await pc.power('restart', 1);
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(suspende|suspender|duerme|modo sueño)\b/.test(text)) {
-    const r = await pc.power('sleep');
-    return { response: r.result, intelligent: false };
-  }
-
-  if (/\b(notifica|notificación|notificacion)\b/.test(text)) {
-    const r = await pc.notify('ELYRA', 'Sistemas operativos. Notificación de prueba.');
-    return { response: r.result, intelligent: false };
-  }
-
-  const topic = extractKnowledgeTopic(text);
-  if (topic && topic.length > 2) {
-    const info = await knowledgeLookup(topic);
-    if (info) return { response: info, intelligent: true, via: 'wiki' };
-  }
-
-  const openMatch = text.match(
-    /\b(?:abre|abrir|abre\s+me|abrir\s+me|lanza|ejecuta|abre\s+el|abre\s+la)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
-  );
-  if (openMatch || /\b(abre|abrir)\b/.test(text)) {
-    const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos'];
-    for (const f of folderKeys) {
-      if (text.includes(f)) {
-        const r = await openFolderHelper(f);
-        return { response: r.message || r.result, intelligent: false };
-      }
-    }
-
-    let name = cleanOpenName(openMatch ? openMatch[1] : '');
-
-    if (!name) {
-      const candidates = [
-        'youtube', 'google', 'gmail', 'facebook', 'instagram', 'netflix', 'github',
-        'word', 'excel', 'chrome', 'edge', 'notepad', 'calculadora', 'spotify',
-        'discord', 'code', 'firefox', 'paint', 'powerpoint', 'outlook', 'whatsapp',
-        'teams', 'steam', 'slack', 'chatgpt', 'gemini', 'claude',
-      ];
-      for (const app of candidates) {
-        if (new RegExp('\\b' + app + '\\b', 'i').test(text)) {
-          name = app;
-          break;
-        }
-      }
-    }
-
-    if (name) {
-      const r = await openAppHelper(name);
-      return { response: r.message || r.result, intelligent: false };
-    }
-  }
-
-  if (/\b(qué hora|que hora|hora es)\b/.test(text)) {
-    return {
-      response: `Son las ${new Date().toLocaleTimeString('es-ES', {
-        hour: '2-digit',
-        minute: '2-digit',
-      })}.`,
-      intelligent: false,
-    };
-  }
-  if (/\b(qué día|que dia|fecha de hoy|qué fecha)\b/.test(text)) {
-    return {
-      response: `Hoy es ${new Date().toLocaleDateString('es-ES', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })}.`,
-      intelligent: false,
-    };
-  }
-  return null;
-}
 
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
 ipcMain.on('window-maximize', () => {
