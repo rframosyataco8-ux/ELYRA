@@ -11,6 +11,13 @@ const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
 function detectFromKey(key: string) {
   const k = key.trim();
   if (k.startsWith('gsk_')) return { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' };
+  if (k.startsWith('sk-ant-')) return { baseUrl: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022' };
+  if (k.startsWith('AIza')) {
+    return {
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      model: 'gemini-2.0-flash',
+    };
+  }
   if (k.startsWith('sk-or-')) return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' };
   if (k.startsWith('xai-')) return { baseUrl: 'https://api.x.ai/v1', model: 'grok-2-latest' };
   if (k.startsWith('sk-') && k.length > 20) return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
@@ -27,6 +34,7 @@ export default function App() {
   const [thinking, setThinking] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
   const [continuous, setContinuous] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [cfgApiKey, setCfgApiKey] = useState('');
   const [cfgBaseUrl, setCfgBaseUrl] = useState('https://api.groq.com/openai/v1');
@@ -154,7 +162,7 @@ export default function App() {
           const c = await window.elyra?.agentConfigGet();
           if (c && !c.hasKey) {
             bootMsg =
-              'Sistemas online. Falta la API key: ve a Configuración, pega tu clave de Groq y guarda.';
+              'Sistemas online. Falta la API key: ve a Configuración, elige proveedor y guarda tu clave.';
           }
         } catch {}
       }
@@ -224,7 +232,6 @@ export default function App() {
     setCfgTesting(true);
     setCfgTestMsg(null);
     try {
-      // Si hay key nueva en el campo, guardar primero
       if (cfgApiKey.trim()) {
         await window.elyra.agentConfigSet({
           apiKey: cfgApiKey.trim(),
@@ -275,7 +282,9 @@ export default function App() {
     : 'Lista';
 
   const providers = [
-    { label: 'Groq (rápido / gratis)', url: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
+    { label: 'Groq (rápido)', url: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
+    { label: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.0-flash' },
+    { label: 'Claude', url: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022' },
     { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     { label: 'xAI Grok', url: 'https://api.x.ai/v1', model: 'grok-2-latest' },
     { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
@@ -289,7 +298,13 @@ export default function App() {
         <div className="absolute bottom-[-15%] right-[-10%] w-[40%] h-[40%] rounded-full bg-violet-600/5 blur-[100px]" />
       </div>
 
-      <Sidebar active={page} onNavigate={setPage} hasApiKey={hasApiKey} />
+      <Sidebar
+        active={page}
+        onNavigate={setPage}
+        hasApiKey={hasApiKey}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+      />
 
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         <header className="h-10 flex items-center justify-between px-3 border-b border-sky-500/10 drag-region">
@@ -389,7 +404,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[11px] text-sky-400/60 tracking-wide uppercase">Proveedor rápido</label>
+                    <label className="text-[11px] text-sky-400/60 tracking-wide uppercase">Proveedor</label>
                     <div className="flex flex-wrap gap-1.5">
                       {providers.map((p) => (
                         <button
@@ -400,7 +415,7 @@ export default function App() {
                             setCfgTestMsg(null);
                           }}
                           className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all ${
-                            cfgBaseUrl === p.url
+                            cfgBaseUrl === p.url || cfgBaseUrl.startsWith(p.url)
                               ? 'bg-sky-500/20 border-sky-400/40 text-sky-200'
                               : 'border-sky-500/15 text-sky-400/60 hover:border-sky-500/30'
                           }`}
@@ -417,11 +432,11 @@ export default function App() {
                       type="password"
                       value={cfgApiKey}
                       onChange={(e) => onApiKeyChange(e.target.value)}
-                      placeholder={hasApiKey ? '••••••••  (deja vacío para no cambiar)' : 'pega tu API key aquí (gsk_…)'}
+                      placeholder={hasApiKey ? '••••••••  (deja vacío para no cambiar)' : 'pega tu API key aquí'}
                       className="w-full bg-sky-950/50 border border-sky-500/20 rounded-xl px-3.5 py-2.5 text-sm text-sky-100 outline-none focus:border-sky-400/40 placeholder:text-sky-600/50"
                     />
-                    <p className="text-[10px] text-sky-500/50">
-                      Keys gsk_ → Groq automático. La clave se guarda solo en tu PC (~/.elyra/config.json).
+                    <p className="text-[10px] text-sky-500/50 leading-relaxed">
+                      Auto-detecta: gsk_ (Groq), AIza… (Gemini), sk-ant- (Claude), sk- (OpenAI), xai- (Grok). Se guarda solo en tu PC.
                     </p>
                   </div>
 
@@ -491,8 +506,7 @@ export default function App() {
                   )}
 
                   <p className="text-[11px] text-sky-500/50 leading-relaxed">
-                    Archivo local:{' '}
-                    <code className="text-sky-400/70">%USERPROFILE%\.elyra\config.json</code>
+                    Archivo local: <code className="text-sky-400/70">%USERPROFILE%\.elyra\config.json</code>
                   </p>
                 </div>
 
