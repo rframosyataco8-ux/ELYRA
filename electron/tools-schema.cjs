@@ -1,6 +1,7 @@
 /**
  * ELYRA Tool Schemas — Function Calling (OpenAI-compatible)
  */
+const FS_EXTRA = require('./tools-fs-extra.cjs');
 
 const TOOL_DEFINITIONS = [
   {
@@ -29,6 +30,7 @@ const TOOL_DEFINITIONS = [
       },
     },
   },
+  ...FS_EXTRA,
   {
     type: 'function',
     function: {
