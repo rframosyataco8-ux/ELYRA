@@ -22,6 +22,7 @@ const pc = require('./pc-bridge.cjs');
 const { transcribeBuffer } = require('./stt.cjs');
 const { chatOpenClaw, pingOpenClaw, getOpenClawConfig } = require('./openclaw-bridge.cjs');
 const { routeChat } = require('./chat-router.cjs');
+const { runPythonTool } = require('./python-bridge.cjs');
 
 let mainWindow = null;
 let tray = null;
@@ -221,6 +222,7 @@ const agentHelpers = {
   recall: recallHelper,
   pc,
   getSystemStats,
+  runPythonTool,
 };
 
 ipcMain.handle('get-system-stats', async () => getSystemStats());
