@@ -42,7 +42,7 @@ export function NetworkGlobe({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const points: Point3D[] = [];
-    const count = 160;
+    const count = 200;
     const golden = Math.PI * (3 - Math.sqrt(5));
     for (let i = 0; i < count; i++) {
       const y = 1 - (i / (count - 1)) * 2;
@@ -79,19 +79,20 @@ export function NetworkGlobe({
       const { speaking: sp, listening: li, amplitude: amp } = stateRef.current;
       const active = sp || li;
 
-      rotRef.current.y += active ? 0.009 : 0.0035;
-      rotRef.current.x = 0.2 + Math.sin(t * 0.45) * 0.025;
+      rotRef.current.y += active ? 0.012 : 0.004;
+      rotRef.current.x = 0.2 + Math.sin(t * 0.4) * 0.03;
 
       ctx.clearRect(0, 0, size, size);
 
-      // Outer atmospheric glow
+      // Deep atmospheric glow
       const outer = ctx.createRadialGradient(
-        size / 2, size / 2, size * 0.08,
-        size / 2, size / 2, size * 0.48,
+        size / 2, size / 2, size * 0.06,
+        size / 2, size / 2, size * 0.5,
       );
-      const a = 0.06 + (active ? 0.12 : 0) + amp * 0.18;
+      const a = 0.08 + (active ? 0.16 : 0) + amp * 0.22;
       outer.addColorStop(0, `rgba(56, 189, 248, ${a})`);
-      outer.addColorStop(0.45, `rgba(14, 165, 233, ${a * 0.35})`);
+      outer.addColorStop(0.35, `rgba(14, 165, 233, ${a * 0.4})`);
+      outer.addColorStop(0.7, `rgba(6, 100, 180, ${a * 0.12})`);
       outer.addColorStop(1, 'transparent');
       ctx.fillStyle = outer;
       ctx.fillRect(0, 0, size, size);
@@ -101,46 +102,60 @@ export function NetworkGlobe({
       );
       projected.sort((a, b) => a.depth - b.depth);
 
-      // Orbital rings
-      for (let r = 0; r < 3; r++) {
-        const ringR = size * (0.28 + r * 0.06) + Math.sin(t * 1.2 + r) * (active ? 4 : 1.5);
+      // Orbital rings — more dynamic
+      for (let r = 0; r < 4; r++) {
+        const ringR = size * (0.26 + r * 0.055) + Math.sin(t * 1.4 + r * 0.8) * (active ? 5 : 2);
         ctx.beginPath();
         ctx.ellipse(
           size / 2,
           size / 2,
           ringR,
-          ringR * 0.22,
-          Math.sin(t * 0.3 + r) * 0.4,
+          ringR * (0.18 + r * 0.02),
+          Math.sin(t * 0.35 + r * 0.7) * 0.5,
           0,
           Math.PI * 2,
         );
-        ctx.strokeStyle = `rgba(56, 189, 248, ${0.12 - r * 0.03 + (active ? 0.08 : 0)})`;
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(56, 189, 248, ${0.14 - r * 0.025 + (active ? 0.1 : 0)})`;
+        ctx.lineWidth = 1 + (active ? 0.3 : 0);
         ctx.stroke();
       }
 
-      // Connections
-      const maxDist = 0.42;
+      // Hex grid arcs
+      if (active) {
+        for (let i = 0; i < 6; i++) {
+          const ang = (i / 6) * Math.PI * 2 + t * 0.15;
+          const r1 = size * 0.32;
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, r1, ang, ang + 0.35);
+          ctx.strokeStyle = `rgba(125, 211, 252, ${0.15 + amp * 0.2})`;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+      }
+
+      // Connections denser when active
+      const maxDist = active ? 0.48 : 0.4;
       const n = pointsRef.current.length;
       for (let i = 0; i < n; i++) {
         let links = 0;
-        for (let j = i + 1; j < n && links < 3; j++) {
+        const maxLinks = active ? 4 : 3;
+        for (let j = i + 1; j < n && links < maxLinks; j++) {
           const a = pointsRef.current[i];
           const b = pointsRef.current[j];
           const dx = a.ox - b.ox;
           const dy = a.oy - b.oy;
           const dz = a.oz - b.oz;
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (dist < maxDist && dist > 0.1) {
+          if (dist < maxDist && dist > 0.08) {
             const pa = projected[i];
             const pb = projected[j];
             if (pa.depth > -0.55 && pb.depth > -0.55) {
-              const alpha = (active ? 0.28 : 0.12) * (1 - dist / maxDist);
+              const alpha = (active ? 0.32 : 0.11) * (1 - dist / maxDist);
               ctx.beginPath();
               ctx.moveTo(pa.sx, pa.sy);
               ctx.lineTo(pb.sx, pb.sy);
               ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
-              ctx.lineWidth = 0.85;
+              ctx.lineWidth = active ? 1 : 0.8;
               ctx.stroke();
               links++;
             }
@@ -152,46 +167,57 @@ export function NetworkGlobe({
       for (let i = 0; i < projected.length; i++) {
         const p = projected[i];
         const base = pointsRef.current[i];
-        const pulse = 0.7 + 0.3 * Math.sin(t * 2.2 + base.pulse) + amp * 0.25;
-        const depthFactor = Math.max(0.2, (p.depth + 1) / 2);
-        const r = (active ? 2.1 : 1.5) * p.scale * pulse * (1 + amp * 0.35);
+        const pulse = 0.7 + 0.3 * Math.sin(t * 2.4 + base.pulse) + amp * 0.3;
+        const depthFactor = Math.max(0.15, (p.depth + 1) / 2);
+        const r = (active ? 2.3 : 1.45) * p.scale * pulse * (1 + amp * 0.4);
 
         ctx.beginPath();
         ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(125, 211, 252, ${0.3 + depthFactor * 0.6})`;
+        ctx.fillStyle = `rgba(125, 211, 252, ${0.28 + depthFactor * 0.65})`;
         ctx.fill();
 
-        if (active && Math.random() > 0.97) {
+        if (active && Math.random() > 0.96) {
           ctx.beginPath();
-          ctx.arc(p.sx, p.sy, r * 2.5, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(56, 189, 248, 0.15)`;
+          ctx.arc(p.sx, p.sy, r * 3, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(56, 189, 248, 0.18)`;
           ctx.fill();
         }
       }
 
-      // Core
-      const coreR = 16 + amp * 14 + (active ? 5 : 0);
+      // Energy core
+      const coreR = 18 + amp * 16 + (active ? 7 : 0);
       const core = ctx.createRadialGradient(
         size / 2, size / 2, 0,
-        size / 2, size / 2, coreR * 2.8,
+        size / 2, size / 2, coreR * 3,
       );
-      core.addColorStop(0, `rgba(240, 249, 255, ${0.9 + amp * 0.1})`);
-      core.addColorStop(0.25, `rgba(56, 189, 248, ${0.45 + amp * 0.3})`);
-      core.addColorStop(0.55, `rgba(14, 165, 233, ${0.15 + amp * 0.15})`);
+      core.addColorStop(0, `rgba(255, 255, 255, ${0.95 + amp * 0.05})`);
+      core.addColorStop(0.15, `rgba(186, 230, 253, ${0.7 + amp * 0.2})`);
+      core.addColorStop(0.35, `rgba(56, 189, 248, ${0.5 + amp * 0.3})`);
+      core.addColorStop(0.6, `rgba(14, 165, 233, ${0.18 + amp * 0.15})`);
       core.addColorStop(1, 'transparent');
       ctx.fillStyle = core;
       ctx.beginPath();
-      ctx.arc(size / 2, size / 2, coreR * 2.8, 0, Math.PI * 2);
+      ctx.arc(size / 2, size / 2, coreR * 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Bottom platform rings
-      const ringY = size * 0.8;
-      for (let i = 0; i < 3; i++) {
-        const rr = 36 + i * 26 + Math.sin(t * 2 + i) * (active ? 4 : 1.2);
+      // Pulsing ring around core
+      if (active) {
+        const pulseR = coreR * 1.8 + Math.sin(t * 4) * 6;
         ctx.beginPath();
-        ctx.ellipse(size / 2, ringY, rr, rr * 0.13, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(56, 189, 248, ${0.2 - i * 0.05})`;
-        ctx.lineWidth = 1.1;
+        ctx.arc(size / 2, size / 2, pulseR, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(125, 211, 252, ${0.25 + amp * 0.3})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Bottom holographic platform
+      const ringY = size * 0.82;
+      for (let i = 0; i < 4; i++) {
+        const rr = 32 + i * 24 + Math.sin(t * 2.2 + i) * (active ? 5 : 1.5);
+        ctx.beginPath();
+        ctx.ellipse(size / 2, ringY, rr, rr * 0.12, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(56, 189, 248, ${0.22 - i * 0.04 + (active ? 0.08 : 0)})`;
+        ctx.lineWidth = 1.2;
         ctx.stroke();
       }
 
@@ -205,10 +231,10 @@ export function NetworkGlobe({
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
       <div
-        className="absolute inset-0 rounded-full"
+        className="absolute inset-0 rounded-full animate-breathe"
         style={{
-          background: 'radial-gradient(circle, rgba(14,165,233,0.08) 0%, transparent 70%)',
-          filter: 'blur(20px)',
+          background: 'radial-gradient(circle, rgba(14,165,233,0.12) 0%, rgba(14,165,233,0.03) 40%, transparent 70%)',
+          filter: 'blur(24px)',
         }}
       />
       <canvas ref={canvasRef} className="block relative z-10" />
