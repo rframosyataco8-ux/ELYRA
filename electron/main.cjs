@@ -159,11 +159,76 @@ async function recallHelper() {
   const mem = readMemory();
   const notes = (mem.notes || []).slice(-20).map((n) => n.text);
   const facts = (mem.facts || []).slice(-20).map((f) => f.text);
-  if (!notes.length && !facts.length) return { ok: true, result: 'Sin notas en memoria.' };
-  return {
-    ok: true,
-    result: `Notas: ${notes.join(' | ') || 'ninguna'}. Hechos: ${facts.join(' | ') || 'ninguno'}.`,
-  };
+  if (!notes.length && !facts.length) {
+    return {
+      ok: true,
+      result:
+        'Aún no tengo notas guardadas. Puedes decirme "recuerda que..." y lo guardaré para la próxima vez.',
+    };
+  }
+  const parts = [];
+  if (notes.length) parts.push('Notas: ' + notes.join('. '));
+  if (facts.length) parts.push('Hechos: ' + facts.join('. '));
+  return { ok: true, result: parts.join(' ') };
+}
+
+/** Búsqueda rápida Wikipedia / DuckDuckGo sin LLM (modo autónomo) */
+async function knowledgeLookup(query) {
+  const q = (query || '').trim().slice(0, 120);
+  if (!q) return null;
+  const bits = [];
+  try {
+    const wr = await fetch(
+      'https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
+      { headers: { 'User-Agent': 'ELYRA/3.1' } },
+    );
+    if (wr.ok) {
+      const data = await wr.json();
+      if (data.extract) bits.push(data.extract);
+      else if (data.type === 'disambiguation' && data.extract) bits.push(data.extract);
+    }
+  } catch {}
+  if (!bits.length) {
+    try {
+      const wr2 = await fetch(
+        'https://en.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
+        { headers: { 'User-Agent': 'ELYRA/3.1' } },
+      );
+      if (wr2.ok) {
+        const data = await wr2.json();
+        if (data.extract) bits.push(data.extract);
+      }
+    } catch {}
+  }
+  if (!bits.length) {
+    try {
+      const res = await fetch('https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1',
+        { headers: { 'User-Agent': 'ELYRA/3.1' } },
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.AbstractText) bits.push(data.AbstractText);
+        else if (data.RelatedTopics?.[0]?.Text) bits.push(data.RelatedTopics[0].Text);
+      }
+    } catch {}
+  }
+  if (!bits.length) return null;
+  return bits.join(' ').replace(/\s+/g, ' ').trim().slice(0, 900);
+}
+
+function extractKnowledgeTopic(text) {
+  const t = (text || '').trim();
+  const patterns = [
+    /(?:dime|cuéntame|cuentame|explícame|explicame|qué sabes|que sabes|habla|información|informacion|busca|busca info)\s+(?:sobre|de|acerca de)\s+(.+)/i,
+    /(?:qué es|que es|quién es|quien es|quién fue|quien fue)\s+(.+)/i,
+    /(?:busca|buscar|investiga|investigar)\s+(.+)/i,
+    /(?:resume|resumen de|haz un resumen de)\s+(.+)/i,
+  ];
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (m && m[1]) return m[1].replace(/[?.!]+$/, '').trim();
+  }
+  return null;
 }
 
 const agentHelpers = {
@@ -301,25 +366,55 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   }
 
   const config = getConfig();
-  if (!config.apiKey) return fallbackResponse(message);
+  if (!config.apiKey) {
+    // Autonomía sin key: conocimiento web + memoria
+    const topic = extractKnowledgeTopic(fixed);
+    if (topic) {
+      const info = await knowledgeLookup(topic);
+      if (info) return { response: info, intelligent: true, via: 'wiki' };
+    }
+    return fallbackResponse(message);
+  }
+
   try {
     const result = await runAgent(fixed, history || [], agentHelpers);
-    return { response: result.response, intelligent: true, via: 'groq' };
+    // Si el agente solo devolvió error de API, intenta conocimiento local
+    if (/api key no es válida|no hay api key|falta la api|no pude conectar/i.test(result.response || '')) {
+      const topic = extractKnowledgeTopic(fixed);
+      if (topic) {
+        const info = await knowledgeLookup(topic);
+        if (info) {
+          return {
+            response:
+              info +
+              ' (Respuesta desde Wikipedia porque la API key no respondió. Revísala en Configuración.)',
+            intelligent: true,
+            via: 'wiki-fallback',
+          };
+        }
+      }
+    }
+    return { response: result.response, intelligent: true, via: 'llm' };
   } catch (err) {
     if (/429|rate limit/i.test(String(err.message))) {
       return { response: 'El servicio está saturado un momento.', intelligent: false };
     }
-    return { response: 'No pude completar eso ahora.', intelligent: false };
+    const topic = extractKnowledgeTopic(fixed);
+    if (topic) {
+      const info = await knowledgeLookup(topic);
+      if (info) return { response: info, intelligent: true, via: 'wiki-fallback' };
+    }
+    return { response: 'No pude completar eso ahora. Revisa la API key en Configuración si el problema continúa.', intelligent: false };
   }
 });
 
 ipcMain.handle('agent-config-get', () => {
   const c = getConfig();
-  return { hasKey: !!c.apiKey, baseUrl: c.baseUrl, model: c.model };
+  return { hasKey: !!c.apiKey, baseUrl: c.baseUrl, model: c.model, provider: c.provider };
 });
 ipcMain.handle('agent-config-set', (_e, partial) => {
   const next = saveConfig(partial || {});
-  return { hasKey: !!next.apiKey, baseUrl: next.baseUrl, model: next.model };
+  return { hasKey: !!next.apiKey, baseUrl: next.baseUrl, model: next.model, provider: next.provider };
 });
 ipcMain.handle('agent-config-test', async (_e, partial) => {
   return testApiConnection(partial || {});
@@ -327,6 +422,23 @@ ipcMain.handle('agent-config-test', async (_e, partial) => {
 
 async function trySimpleIntent(input) {
   const text = (input || '').toLowerCase().trim();
+
+  // Memoria
+  if (
+    /\b(qué recuerdas|que recuerdas|dime (todo )?lo que recuerdas|qué sabes de mí|que sabes de mi|tu memoria|muestra (tu )?memoria)\b/.test(
+      text,
+    )
+  ) {
+    const r = await recallHelper();
+    return { response: r.result, intelligent: false };
+  }
+  const rememberMatch = text.match(
+    /\b(?:recuerda|anota|guarda|no olvides)\s+(?:que\s+)?(.+)/i,
+  );
+  if (rememberMatch) {
+    await rememberHelper(rememberMatch[1].trim());
+    return { response: 'Listo, lo guardé en mi memoria.', intelligent: false };
+  }
 
   // Volumen
   if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
@@ -353,7 +465,11 @@ async function trySimpleIntent(input) {
   }
 
   // Media
-  if (/\b(pausa|pausar|play|reproducir|reproduce)\b/.test(text) && /\b(música|musica|canción|cancion|spotify|video)\b/.test(text) || /\b(pausa|reanuda|play pause)\b/.test(text)) {
+  if (
+    (/\b(pausa|pausar|play|reproducir|reproduce)\b/.test(text) &&
+      /\b(música|musica|canción|cancion|spotify|video)\b/.test(text)) ||
+    /\b(pausa|reanuda|play pause)\b/.test(text)
+  ) {
     const r = await pc.media('play');
     return { response: r.result, intelligent: false };
   }
@@ -417,7 +533,7 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Power (con cancelación)
+  // Power
   if (/\b(cancela|cancelar)\s+(el\s+)?(apagado|reinicio)\b/.test(text) || /\bcancelar apagado\b/.test(text)) {
     const r = await pc.power('cancel');
     return { response: r.result, intelligent: false };
@@ -435,10 +551,16 @@ async function trySimpleIntent(input) {
     return { response: r.result, intelligent: false };
   }
 
-  // Notificación de prueba
   if (/\b(notifica|notificación|notificacion)\b/.test(text)) {
     const r = await pc.notify('ELYRA', 'Sistemas operativos. Notificación de prueba.');
     return { response: r.result, intelligent: false };
+  }
+
+  // Conocimiento rápido (sin esperar LLM)
+  const topic = extractKnowledgeTopic(text);
+  if (topic && topic.length > 2) {
+    const info = await knowledgeLookup(topic);
+    if (info) return { response: info, intelligent: true, via: 'wiki' };
   }
 
   // Abrir apps / webs / carpetas
@@ -462,7 +584,7 @@ async function trySimpleIntent(input) {
         'youtube', 'google', 'gmail', 'facebook', 'instagram', 'netflix', 'github',
         'word', 'excel', 'chrome', 'edge', 'notepad', 'calculadora', 'spotify',
         'discord', 'code', 'firefox', 'paint', 'powerpoint', 'outlook', 'whatsapp',
-        'teams', 'steam', 'slack',
+        'teams', 'steam', 'slack', 'chatgpt', 'gemini', 'claude',
       ];
       for (const app of candidates) {
         if (text.includes(app)) {
@@ -473,11 +595,6 @@ async function trySimpleIntent(input) {
     }
 
     if (name) {
-      const web = resolveWebUrl(name);
-      if (web) {
-        const r = await openUrlHelper(web);
-        return { response: r.message || r.result, intelligent: false };
-      }
       const r = await openAppHelper(name);
       return { response: r.message || r.result, intelligent: false };
     }
