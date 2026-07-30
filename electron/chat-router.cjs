@@ -1,11 +1,11 @@
 /**
- * Router ELYRA v6 — skills nativos (tipo OpenClaw) + presencia + PC
- * Sin depender de demonio externo.
+ * Router ELYRA v7 — skills + apertura inteligente + excel en contexto
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
 const { applyTypos, parseCompound, cleanOpenName } = require('./intent-compound.cjs');
 const { trySkillIntent } = require('./skills-router.cjs');
+const { resolveOpenExcelPath } = require('./open-excel-context.cjs');
 
 const PRESENCE_REPLIES = [
   'Sí, señor. Estoy aquí.',
@@ -50,7 +50,6 @@ async function routeChat({
     return { response: pickPresence(), intelligent: true, via: 'presence' };
   }
 
-  // Skills multi-paso nativos (rápido, sin LLM ni OpenClaw)
   try {
     const skill = await trySkillIntent(text);
     if (skill) return skill;
@@ -59,7 +58,6 @@ async function routeChat({
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
   if (quick) return quick;
 
-  // OpenClaw solo si el usuario lo activó explícitamente
   try {
     const oc = getOpenClawConfig && getOpenClawConfig();
     if (oc?.enabled && chatOpenClaw) {
@@ -77,7 +75,7 @@ async function routeChat({
     return (
       fallbackResponse?.(message) || {
         response:
-          'No hay API key. En Configuración puede añadirla para razonamiento avanzado. El control del PC y las skills de archivos ya funcionan.',
+          'No hay API key. En Configuración puede añadirla para razonamiento avanzado. El control del PC y archivos ya funcionan.',
         intelligent: false,
       }
     );
@@ -151,6 +149,50 @@ async function trySmartTopic(fixed, text) {
   return null;
 }
 
+async function tryAnalyzeOpenExcel(helpers) {
+  try {
+    const found = await resolveOpenExcelPath();
+    if (!found.ok || !found.path) {
+      return {
+        response:
+          found.result ||
+          'No localicé un Excel reciente. Abre el archivo o dime la ruta (por ejemplo en Documentos).',
+        intelligent: true,
+        via: 'excel-miss',
+      };
+    }
+    // Usa tool Python si está disponible vía agent hooks helpers
+    if (helpers.runPythonTool) {
+      const r = await helpers.runPythonTool('analyze_excel', { path: found.path });
+      if (r.ok) {
+        return {
+          response: 'Analicé «' + found.name + '»:\n' + String(r.result || '').slice(0, 1200),
+          intelligent: true,
+          via: 'excel-open',
+        };
+      }
+    }
+    // Fallback: pedir al agente con path inyectado no siempre disponible — mensaje útil
+    return {
+      response:
+        'Encontré el archivo «' +
+        found.name +
+        '» en ' +
+        found.path +
+        '. Dime «analiza este excel: ' +
+        found.path +
+        '» o ábrelo desde Documentos si quieres más detalle.',
+      intelligent: true,
+      via: 'excel-path',
+    };
+  } catch (e) {
+    return {
+      response: 'No pude inspeccionar Excel ahora (' + (e.message || 'error') + ').',
+      intelligent: false,
+    };
+  }
+}
+
 async function tryLocal(text, helpers, pc, getSystemStats) {
   if (/\b(qué recuerdas|que recuerdas|dime (todo )?lo que recuerdas|tu memoria)\b/.test(text)) {
     const r = await helpers.recall();
@@ -162,8 +204,18 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     return { response: 'Anotado, señor.', intelligent: false };
   }
 
+  // Excel abierto / reciente
   if (
-    /\b(cómo va|como va|estado del|estado de)\s+(el\s+)?(sistema|pc|equipo)\b/.test(text) ||
+    /\b(analiza|analizar|resume|resumen|dime qué|dime que)\b/.test(text) &&
+    /\b(excel|xlsx|hoja|archivo)\b/.test(text)
+  ) {
+    return tryAnalyzeOpenExcel(helpers);
+  }
+
+  if (
+    /\b(cómo va|como va|como esta|cómo está|estado del|estado de)\s+(el\s+)?(sistema|pc|equipo)\b/.test(
+      text,
+    ) ||
     /\b(estado del sistema|cómo está el pc|como esta el pc|diagnóstico|diagnostico)\b/.test(text)
   ) {
     try {
@@ -179,7 +231,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
             s.disk +
             '%. Equipo ' +
             (s.hostname || os.hostname()) +
-            '. Sistemas estables.',
+            '.',
           intelligent: false,
           via: 'local-stats',
         };
@@ -316,7 +368,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   }
 
   const openMatch = text.match(
-    /\b(?:abre|abrir|lanza|ejecuta)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
+    /\b(?:abre|abrir|lanza|ejecuta|abreme|abrime)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
   if (openMatch || /\b(abre|abrir)\b/.test(text)) {
     const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos'];
@@ -326,11 +378,30 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
         return { response: r.message || r.result, intelligent: false };
       }
     }
-    let name = cleanOpenName(openMatch ? openMatch[1] : '');
+    // Pasar la frase completa al motor de apps (papelera, lenovo vantage, bluestacks en la web…)
+    let name = openMatch ? openMatch[1].trim() : '';
+    name = cleanOpenName(name) || name;
     if (!name) {
       const candidates = [
-        'youtube', 'google', 'gmail', 'word', 'excel', 'chrome', 'edge', 'notepad',
-        'calculadora', 'spotify', 'discord', 'code', 'firefox', 'powerpoint', 'chatgpt', 'gemini', 'claude',
+        'youtube',
+        'google',
+        'gmail',
+        'word',
+        'excel',
+        'chrome',
+        'edge',
+        'notepad',
+        'calculadora',
+        'spotify',
+        'discord',
+        'code',
+        'firefox',
+        'powerpoint',
+        'chatgpt',
+        'gemini',
+        'claude',
+        'papelera',
+        'bluestacks',
       ];
       for (const app of candidates) {
         if (new RegExp('\\b' + app + '\\b', 'i').test(text)) {
@@ -339,9 +410,13 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
         }
       }
     }
+    // Si el usuario escribió «en la web», conservar esa intención
+    if (/\ben\s+(la\s+)?web\b/i.test(text) && name && !/\ben\s+(la\s+)?web\b/i.test(name)) {
+      name = name + ' en la web';
+    }
     if (name) {
       const r = await helpers.openApp(name);
-      return { response: r.message || r.result, intelligent: false };
+      return { response: r.message || r.result, intelligent: false, via: 'open-app' };
     }
   }
 
