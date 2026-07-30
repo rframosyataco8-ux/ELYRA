@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v5 — más herramientas, más inteligencia operativa
+ * ELYRA Agent v6 — multi-IA: Groq, OpenAI, xAI, OpenRouter, Gemini, Claude
  */
 const fs = require('fs');
 const path = require('path');
@@ -8,7 +8,7 @@ const os = require('os');
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
 const MODEL_FAST = 'llama-3.1-8b-instant';
 const MODEL_SMART = 'llama-3.3-70b-versatile';
-const MODEL_CHAIN = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
+const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 
 const COMPLEX_RE =
   /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta)\b/i;
@@ -51,7 +51,7 @@ Reglas:
 - Conocimiento → web_search.
 - Documentos → create_file / create_html_report en Informes/.
 - Abrir → open_app / open_folder de inmediato.
-- Apagar/reiniciar: usa power con minutes (por defecto pocos segundos de gracia).`;
+- Apagar/reiniciar: usa power con minutes.`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
@@ -64,7 +64,7 @@ function ensureDefaultConfig() {
   if (!fs.existsSync(p)) {
     fs.writeFileSync(
       p,
-      JSON.stringify({ apiKey: '', baseUrl: DEFAULT_BASE_URL, model: MODEL_FAST }, null, 2),
+      JSON.stringify({ apiKey: '', baseUrl: DEFAULT_BASE_URL, model: MODEL_FAST, provider: 'groq' }, null, 2),
       'utf-8',
     );
   }
@@ -75,32 +75,67 @@ function detectProviderFromKey(apiKey) {
   if (k.startsWith('gsk_')) {
     return { baseUrl: 'https://api.groq.com/openai/v1', model: MODEL_FAST, provider: 'groq' };
   }
+  if (k.startsWith('sk-ant-')) {
+    return {
+      baseUrl: 'https://api.anthropic.com',
+      model: 'claude-3-5-sonnet-20241022',
+      provider: 'anthropic',
+    };
+  }
+  if (k.startsWith('AIza') || k.startsWith('AI')) {
+    // Google AI Studio / Gemini
+    if (k.startsWith('AIza')) {
+      return {
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        model: 'gemini-2.0-flash',
+        provider: 'gemini',
+      };
+    }
+  }
   if (k.startsWith('sk-or-') || k.startsWith('sk-or-v1-')) {
     return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', provider: 'openrouter' };
-  }
-  if (k.startsWith('sk-') && k.length > 20) {
-    return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', provider: 'openai' };
   }
   if (k.startsWith('xai-')) {
     return { baseUrl: 'https://api.x.ai/v1', model: 'grok-2-latest', provider: 'xai' };
   }
+  if (k.startsWith('sk-') && k.length > 20) {
+    return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', provider: 'openai' };
+  }
   return null;
+}
+
+function inferProvider(config) {
+  if (config.provider) return config.provider;
+  const u = (config.baseUrl || '').toLowerCase();
+  if (u.includes('anthropic')) return 'anthropic';
+  if (u.includes('generativelanguage') || u.includes('googleapis')) return 'gemini';
+  if (u.includes('groq')) return 'groq';
+  if (u.includes('openrouter')) return 'openrouter';
+  if (u.includes('x.ai')) return 'xai';
+  if (u.includes('openai.com')) return 'openai';
+  if (u.includes('localhost') || u.includes('11434')) return 'ollama';
+  return 'openai-compatible';
 }
 
 function getConfig() {
   ensureDefaultConfig();
   try {
     const c = JSON.parse(fs.readFileSync(getConfigPath(), 'utf-8'));
-    return {
-      apiKey: (c.apiKey || process.env.GROQ_API_KEY || process.env.ELYRA_API_KEY || '').trim(),
-      baseUrl: c.baseUrl || process.env.ELYRA_BASE_URL || DEFAULT_BASE_URL,
-      model: c.model || process.env.ELYRA_MODEL || MODEL_FAST,
-    };
+    const apiKey = (c.apiKey || process.env.GROQ_API_KEY || process.env.ELYRA_API_KEY || '').trim();
+    const baseUrl = c.baseUrl || process.env.ELYRA_BASE_URL || DEFAULT_BASE_URL;
+    const model = c.model || process.env.ELYRA_MODEL || MODEL_FAST;
+    let provider = c.provider || null;
+    if (!provider) {
+      const d = detectProviderFromKey(apiKey);
+      provider = d?.provider || inferProvider({ baseUrl });
+    }
+    return { apiKey, baseUrl, model, provider };
   } catch {
     return {
       apiKey: (process.env.GROQ_API_KEY || process.env.ELYRA_API_KEY || '').trim(),
       baseUrl: DEFAULT_BASE_URL,
       model: MODEL_FAST,
+      provider: 'groq',
     };
   }
 }
@@ -117,15 +152,23 @@ function saveConfig(partial) {
     if (detected) {
       if (!partial.baseUrl) next.baseUrl = detected.baseUrl;
       if (!partial.model) next.model = detected.model;
+      if (!partial.provider) next.provider = detected.provider;
     }
+  }
+  if (partial.baseUrl && !partial.provider) {
+    next.provider = inferProvider(next);
   }
   fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2), 'utf-8');
   return next;
 }
 
 function pickModel(userMessage, config) {
-  if (COMPLEX_RE.test(userMessage || '')) return MODEL_SMART;
-  if ((userMessage || '').length > 180) return MODEL_SMART;
+  const provider = inferProvider(config);
+  // Solo cadena Groq usa modelos alternativos
+  if (provider === 'groq') {
+    if (COMPLEX_RE.test(userMessage || '')) return MODEL_SMART;
+    if ((userMessage || '').length > 180) return MODEL_SMART;
+  }
   return config.model || MODEL_FAST;
 }
 
@@ -142,15 +185,80 @@ function resolveUserPath(filePath) {
   return path.join(docs, filePath);
 }
 
-async function callLLMOnce(messages, config, model) {
-  const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
+/** Claude Messages API (Anthropic) */
+async function callAnthropic(messages, config, model) {
+  const systemParts = [];
+  const chat = [];
+  for (const m of messages) {
+    if (m.role === 'system') systemParts.push(m.content);
+    else chat.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content });
+  }
+  // Anthropic exige alternar user/assistant; fusionar consecutivos del mismo rol
+  const merged = [];
+  for (const m of chat) {
+    if (merged.length && merged[merged.length - 1].role === m.role) {
+      merged[merged.length - 1].content += '\n\n' + m.content;
+    } else {
+      merged.push({ ...m });
+    }
+  }
+  if (merged.length && merged[0].role !== 'user') {
+    merged.unshift({ role: 'user', content: '(continúa)' });
+  }
+
+  const url = (config.baseUrl || 'https://api.anthropic.com').replace(/\/$/, '') + '/v1/messages';
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
+      'x-api-key': config.apiKey,
+      'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({ model, messages, temperature: 0.35, max_tokens: 2800 }),
+    body: JSON.stringify({
+      model: model || config.model || 'claude-3-5-sonnet-20241022',
+      max_tokens: 2800,
+      temperature: 0.35,
+      system: systemParts.join('\n\n') || undefined,
+      messages: merged,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    const err = new Error(`LLM ${res.status}: ${errText.slice(0, 280)}`);
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json();
+  const blocks = data.content || [];
+  return blocks.map((b) => (b.type === 'text' ? b.text : '')).join('') || '';
+}
+
+/** OpenAI-compatible (Groq, OpenAI, Gemini compat, xAI, OpenRouter, Ollama) */
+async function callOpenAICompat(messages, config, model) {
+  let base = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
+  // Gemini OpenAI compat path
+  if (inferProvider(config) === 'gemini' && !base.includes('/openai')) {
+    base = 'https://generativelanguage.googleapis.com/v1beta/openai';
+  }
+  const url = base + '/chat/completions';
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer ' + config.apiKey,
+  };
+  // OpenRouter recomienda estos headers
+  if (inferProvider(config) === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://elyra.local';
+    headers['X-Title'] = 'ELYRA';
+  }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model: model || config.model,
+      messages,
+      temperature: 0.35,
+      max_tokens: 2800,
+    }),
   });
   if (!res.ok) {
     const errText = await res.text();
@@ -162,10 +270,22 @@ async function callLLMOnce(messages, config, model) {
   return data.choices?.[0]?.message?.content || '';
 }
 
+async function callLLMOnce(messages, config, model) {
+  const provider = inferProvider(config);
+  if (provider === 'anthropic') {
+    return callAnthropic(messages, config, model);
+  }
+  return callOpenAICompat(messages, config, model);
+}
+
 async function callLLM(messages, config, preferredModel) {
   if (!config.apiKey) throw new Error('NO_API_KEY');
   const preferred = preferredModel || config.model || MODEL_FAST;
-  const chain = [preferred, ...MODEL_CHAIN.filter((m) => m !== preferred)];
+  const provider = inferProvider(config);
+  const chain =
+    provider === 'groq'
+      ? [preferred, ...MODEL_CHAIN_GROQ.filter((m) => m !== preferred)]
+      : [preferred];
   let lastErr;
   for (const model of chain) {
     try {
@@ -187,44 +307,31 @@ async function testApiConnection(override = {}) {
     return { ok: false, error: 'NO_API_KEY', message: 'No hay API key configurada.' };
   }
   try {
-    const url = `${config.baseUrl.replace(/\/$/, '')}/chat/completions`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model || MODEL_FAST,
-        messages: [{ role: 'user', content: 'Di solo: ok' }],
-        max_tokens: 8,
-        temperature: 0,
-      }),
-    });
-    if (!res.ok) {
-      const errText = await res.text();
-      let hint = `Error ${res.status}`;
-      if (res.status === 401) hint = 'API key inválida o revocada.';
-      else if (res.status === 403) hint = 'Acceso denegado. Revisa la key o el plan.';
-      else if (res.status === 429) hint = 'Límite de uso alcanzado. Espera un momento.';
-      else if (res.status === 404) hint = 'Modelo no encontrado. Cambia el modelo en Configuración.';
-      return { ok: false, error: String(res.status), message: hint, detail: errText.slice(0, 200) };
-    }
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content || '';
+    const text = await callLLMOnce(
+      [{ role: 'user', content: 'Di solo: ok' }],
+      config,
+      config.model,
+    );
     return {
       ok: true,
-      message: 'Conexión correcta. IA lista.',
+      message: 'Conexión correcta. IA lista (' + inferProvider(config) + ').',
       model: config.model,
       baseUrl: config.baseUrl,
-      sample: text.slice(0, 40),
+      sample: String(text || '').slice(0, 40),
     };
   } catch (e) {
+    const msg = String(e.message || e);
+    let hint = msg.slice(0, 160);
+    if (/401|invalid|unauthorized|authentication/i.test(msg)) hint = 'API key inválida o revocada.';
+    else if (/403/i.test(msg)) hint = 'Acceso denegado. Revisa la key o el plan.';
+    else if (/429/i.test(msg)) hint = 'Límite de uso alcanzado. Espera un momento.';
+    else if (/404|model/i.test(msg)) hint = 'Modelo no encontrado. Cambia el modelo en Configuración.';
+    else if (/fetch|network|ENOTFOUND/i.test(msg)) hint = 'No se pudo conectar. Revisa internet o la Base URL.';
     return {
       ok: false,
-      error: 'NETWORK',
-      message: 'No se pudo conectar al proveedor. Revisa internet o la Base URL.',
-      detail: String(e.message || e).slice(0, 200),
+      error: e.status ? String(e.status) : 'ERROR',
+      message: hint,
+      detail: msg.slice(0, 200),
     };
   }
 }
@@ -303,7 +410,7 @@ async function executeTool(tool, helpers) {
         if (!q) return { ok: false, result: 'Falta query' };
         const results = [];
         try {
-          const res = await fetch(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`, {
+          const res = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), {
             headers: { 'User-Agent': 'Mozilla/5.0' },
           });
           const html = await res.text();
@@ -314,42 +421,49 @@ async function executeTool(tool, helpers) {
             if (t.length > 25) results.push(t);
           }
         } catch (e) {
-          results.push(`(Búsqueda: ${e.message})`);
+          results.push('(Busqueda: ' + e.message + ')');
         }
         try {
           const wr = await fetch(
-            `https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(q)}`,
-            { headers: { 'User-Agent': 'ELYRA/5.0' } },
+            'https://es.wikipedia.org/api/rest_v1/page/summary/' + encodeURIComponent(q),
+            { headers: { 'User-Agent': 'ELYRA/6.0' } },
           );
           if (wr.ok) {
             const data = await wr.json();
-            if (data.extract) results.unshift(`Wikipedia: ${data.extract}`);
+            if (data.extract) results.unshift('Wikipedia: ' + data.extract);
           }
         } catch {}
         return {
           ok: true,
           result: results.length
-            ? results.map((r, i) => `${i + 1}. ${r}`).join('\n')
-            : `Sin resultados: ${q}`,
+            ? results.map((r, i) => i + 1 + '. ' + r).join('\n')
+            : 'Sin resultados: ' + q,
         };
       }
       case 'create_file': {
         const filePath = resolveUserPath(params.path || 'elyra-output.txt');
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, params.content || '', 'utf-8');
-        return { ok: true, result: `Creado ${path.basename(filePath)}` };
+        return { ok: true, result: 'Creado ' + path.basename(filePath) };
       }
       case 'create_html_report': {
         const filePath = resolveUserPath(params.path || 'Informes/reporte.html');
         const title = params.title || 'Reporte ELYRA';
         const body = params.body || '<p>Sin contenido</p>';
-        const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width"/><title>${title.replace(/</g, '')}</title>
-<style>body{font-family:Segoe UI,system-ui,sans-serif;max-width:880px;margin:40px auto;padding:0 20px;line-height:1.65;color:#0f172a;background:#f8fafc}h1{color:#0369a1;border-bottom:2px solid #bae6fd;padding-bottom:8px}h2{color:#0c4a6e}.meta{color:#64748b;font-size:14px}</style></head>
-<body><h1>${title.replace(/</g, '')}</h1><p class="meta">Generado por ELYRA · ${new Date().toLocaleString('es-ES')}</p>${body}</body></html>`;
+        const html =
+          '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>' +
+          title.replace(/</g, '') +
+          '</title><style>body{font-family:Segoe UI,system-ui,sans-serif;max-width:880px;margin:40px auto;padding:0 20px;line-height:1.65;color:#0f172a;background:#f8fafc}h1{color:#0369a1}</style></head><body><h1>' +
+          title.replace(/</g, '') +
+          '</h1><p>Generado por ELYRA · ' +
+          new Date().toLocaleString('es-ES') +
+          '</p>' +
+          body +
+          '</body></html>';
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         const finalPath = filePath.toLowerCase().endsWith('.html') ? filePath : filePath + '.html';
         fs.writeFileSync(finalPath, html, 'utf-8');
-        return { ok: true, result: `Reporte ${path.basename(finalPath)} listo` };
+        return { ok: true, result: 'Reporte ' + path.basename(finalPath) + ' listo' };
       }
       case 'open_app':
         return await helpers.openApp(params.name || '');
@@ -368,10 +482,10 @@ async function executeTool(tool, helpers) {
           path.join(os.homedir(), 'Downloads', params.path),
         ];
         const found = candidates.find((c) => c && fs.existsSync(c) && fs.statSync(c).isFile());
-        if (!found) return { ok: false, result: `No existe ${params.path}` };
+        if (!found) return { ok: false, result: 'No existe ' + params.path };
         return {
           ok: true,
-          result: `${path.basename(found)}:\n${fs.readFileSync(found, 'utf-8').slice(0, 14000)}`,
+          result: path.basename(found) + ':\n' + fs.readFileSync(found, 'utf-8').slice(0, 14000),
         };
       }
       case 'list_dir': {
@@ -381,7 +495,7 @@ async function executeTool(tool, helpers) {
         const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 80);
         return {
           ok: true,
-          result: items.map((d) => `${d.isDirectory() ? '[DIR]' : '[FILE]'} ${d.name}`).join('\n'),
+          result: items.map((d) => (d.isDirectory() ? '[DIR] ' : '[FILE] ') + d.name).join('\n'),
         };
       }
       case 'search_files':
@@ -395,11 +509,18 @@ async function executeTool(tool, helpers) {
       case 'get_system_info':
         if (helpers.getSystemStats) {
           const s = await helpers.getSystemStats();
-          return { ok: true, result: `CPU ${s.cpu}%, RAM ${s.ram}%, disco ${s.disk}%.` };
+          return { ok: true, result: 'CPU ' + s.cpu + '%, RAM ' + s.ram + '%, disco ' + s.disk + '%.' };
         }
         return {
           ok: true,
-          result: `Equipo ${os.hostname()}, ${os.platform()}, ${Math.round(os.totalmem() / 1e9)} GB RAM.`,
+          result:
+            'Equipo ' +
+            os.hostname() +
+            ', ' +
+            os.platform() +
+            ', ' +
+            Math.round(os.totalmem() / 1e9) +
+            ' GB RAM.',
         };
       case 'battery':
         return pc ? await pc.battery() : { ok: false, result: 'N/A' };
@@ -436,7 +557,7 @@ async function executeTool(tool, helpers) {
       case 'power':
         return pc ? await pc.power(params.action, params.minutes) : { ok: false, result: 'N/A' };
       default:
-        return { ok: false, result: `Desconocida: ${name}` };
+        return { ok: false, result: 'Desconocida: ' + name };
     }
   } catch (e) {
     return { ok: false, result: e.message };
@@ -448,7 +569,7 @@ async function runAgent(userMessage, history, helpers) {
   if (!config.apiKey) {
     return {
       response:
-        'No hay API key configurada. Ve a Configuración, pega tu clave de Groq y pulsa Guardar.',
+        'No hay API key configurada. Ve a Configuración, elige proveedor, pega tu clave y pulsa Guardar.',
       iterations: 0,
     };
   }
@@ -461,7 +582,7 @@ async function runAgent(userMessage, history, helpers) {
     if (helpers.recall) {
       const mem = await helpers.recall();
       if (mem?.result && !/sin notas/i.test(mem.result)) {
-        memoryHint = `\n\nMemoria del usuario (contexto): ${mem.result.slice(0, 500)}`;
+        memoryHint = '\n\nMemoria del usuario (contexto): ' + mem.result.slice(0, 500);
       }
     }
   } catch {}
@@ -491,7 +612,7 @@ async function runAgent(userMessage, history, helpers) {
       if (String(e.message) === 'NO_API_KEY') {
         return { response: 'Falta la API key. Configúrala en la pestaña Configuración.', iterations };
       }
-      if (/401|invalid|unauthorized/i.test(String(e.message))) {
+      if (/401|invalid|unauthorized|authentication/i.test(String(e.message))) {
         return { response: 'La API key no es válida. Revísala en Configuración.', iterations };
       }
       return { response: 'No pude conectar ahora.', iterations };
@@ -513,7 +634,7 @@ async function runAgent(userMessage, history, helpers) {
       role: 'user',
       content:
         'Resultados de herramientas:\n' +
-        results.map((r) => `• ${r.tool}: ${r.ok ? 'OK' : 'ERROR'} — ${r.result}`).join('\n') +
+        results.map((r) => '• ' + r.tool + ': ' + (r.ok ? 'OK' : 'ERROR') + ' — ' + r.result).join('\n') +
         '\n\nDa la respuesta FINAL breve y natural para voz. Si hubo ERROR, dilo. Sin bloques TOOL.',
     });
   }
@@ -542,7 +663,7 @@ module.exports = {
   ensureDefaultConfig,
   testApiConnection,
   detectProviderFromKey,
-  MODEL_CHAIN,
+  MODEL_CHAIN: MODEL_CHAIN_GROQ,
   MODEL_FAST,
   MODEL_SMART,
   normalizeUserIntent,
