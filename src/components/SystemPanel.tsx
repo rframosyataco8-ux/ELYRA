@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { CircularGauge } from './CircularGauge';
-import { Shield, ShieldCheck } from 'lucide-react';
+import { Shield, ShieldCheck, Cpu, HardDrive } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
 
 export function SystemPanel() {
   const [stats, setStats] = useState({ cpu: 18, ram: 42, disk: 55, net: 12 });
+  const [hostname, setHostname] = useState('');
 
   useEffect(() => {
     const update = async () => {
@@ -18,8 +19,9 @@ export function SystemPanel() {
             disk: Math.round(s.disk),
             net: Math.round(s.net),
           });
+          if (s.hostname) setHostname(s.hostname);
         } catch {
-          // fallback
+          /* silent */
         }
       } else {
         setStats((prev) => ({
@@ -39,31 +41,32 @@ export function SystemPanel() {
   const protections = [
     { label: 'Antivirus', active: true },
     { label: 'Firewall', active: true },
-    { label: 'Protección en tiempo real', active: true },
+    { label: 'Protección RT', active: true },
   ];
 
   return (
-    <div className="w-[260px] flex-shrink-0 flex flex-col gap-4">
-      <div className="rounded-xl bg-[#0a1525]/80 border border-sky-500/15 p-4 backdrop-blur-sm">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-5 h-5 rounded-md bg-sky-500/20 flex items-center justify-center">
-            <svg className="w-3 h-3 text-sky-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
+    <div className="w-[268px] flex-shrink-0 flex flex-col gap-3.5">
+      <div className="hud-glass rounded-2xl p-4 animate-slide-up">
+        <div className="flex items-center gap-2 mb-3.5">
+          <div className="w-6 h-6 rounded-lg bg-sky-500/15 flex items-center justify-center">
+            <Cpu className="w-3.5 h-3.5 text-sky-400" />
           </div>
-          <h3 className="text-sm text-sky-100/90 font-medium">Estado del sistema</h3>
+          <div>
+            <h3 className="text-sm text-sky-100/90 font-medium tracking-wide">Sistema</h3>
+            {hostname && (
+              <p className="text-[10px] text-sky-500/50 truncate max-w-[160px]">{hostname}</p>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-1.5 mb-4">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="text-[11px] text-emerald-400">
-            {isDesktop ? 'Datos reales del PC' : 'Todo funciona correctamente'}
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
+          <span className="text-[11px] text-emerald-400/90">
+            {isDesktop ? 'Telemetría en vivo' : 'Simulación activa'}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3.5">
           <CircularGauge label="CPU" value={stats.cpu} color="#38bdf8" />
           <CircularGauge label="RAM" value={stats.ram} color="#a78bfa" />
           <CircularGauge label="Disco" value={stats.disk} color="#34d399" />
@@ -71,30 +74,44 @@ export function SystemPanel() {
         </div>
       </div>
 
-      <div className="rounded-xl bg-[#0a1525]/80 border border-sky-500/15 p-4 backdrop-blur-sm">
+      <div className="hud-glass rounded-2xl p-4 animate-slide-up" style={{ animationDelay: '80ms' }}>
         <div className="flex items-center gap-2 mb-3">
           <Shield className="w-4 h-4 text-sky-400" />
-          <h3 className="text-sm text-sky-100/90 font-medium">Protección</h3>
+          <h3 className="text-sm text-sky-100/90 font-medium tracking-wide">Protección</h3>
         </div>
 
-        <div className="flex items-center gap-1.5 mb-4">
+        <div className="flex items-center gap-1.5 mb-3.5">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="text-[11px] text-emerald-400">Activo y protegido</span>
+          <span className="text-[11px] text-emerald-400/90">Perímetro seguro</span>
         </div>
 
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {protections.map((p) => (
-            <div key={p.label} className="flex items-center justify-between py-1.5 px-2 rounded-lg bg-sky-500/5">
+            <div
+              key={p.label}
+              className="flex items-center justify-between py-2 px-2.5 rounded-xl bg-sky-500/5 border border-sky-500/8"
+            >
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-sky-400/70" />
-                <span className="text-[12px] text-sky-200/70">{p.label}</span>
+                <span className="text-[12px] text-sky-200/75">{p.label}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-[11px] text-emerald-400">Activo</span>
+                <span className="text-[10px] text-emerald-400/80">ON</span>
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="hud-glass rounded-2xl p-3.5 animate-slide-up" style={{ animationDelay: '140ms' }}>
+        <div className="flex items-center gap-2 text-[11px] text-sky-400/60">
+          <HardDrive className="w-3.5 h-3.5" />
+          <span>Ctrl+Shift+E · Mostrar/Ocultar</span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-sky-400/60 mt-1.5">
+          <span className="w-3.5 text-center">⌘</span>
+          <span>Ctrl+Espacio · Interrumpir voz</span>
         </div>
       </div>
     </div>
