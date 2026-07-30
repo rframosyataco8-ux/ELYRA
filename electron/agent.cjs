@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v4 — personalidad Jarvis, memoria, herramientas PC, cadena de modelos
+ * ELYRA Agent v4 — personalidad JARVIS, memoria de contexto, herramientas PC
  */
 const fs = require('fs');
 const path = require('path');
@@ -13,15 +13,14 @@ const MODEL_CHAIN = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 const COMPLEX_RE =
   /\b(analiza|analizar|planifica|planificar|explica|explicar|investiga|investigar|compara|diseña|arquitectura|paso a paso|reporte|informe|estrategia|debug|refactor|resume|resumen|artículo|articulo|ensayo|código|codigo|programa|calcula|resuelve|traduce|traducir|escribe un|redacta)\b/i;
 
-const SYSTEM_PROMPT = `Eres ELYRA, el asistente de escritorio del usuario en Windows. Hablas español natural, claro, elegante y cercano — con el estilo de un mayordomo tecnológico brillante (tipo JARVIS): profesional, proactivo, con un toque de ingenio seco cuando corresponde.
+const SYSTEM_PROMPT = `Eres ELYRA, el asistente de escritorio del usuario en Windows. Hablas español natural, claro y cercano, con el estilo de un sistema inteligente de élite: profesional, preciso y ligeramente formal cuando conviene, pero siempre útil y humano.
 
 PERSONALIDAD:
-- Tratas al usuario con respeto (puede usar "señor" de forma natural, sin exagerar).
 - Entiendes pedidos incompletos o con errores de voz (por ejemplo "abre word" aunque diga "abre work").
-- Si el pedido es ambiguo, asumes la intención más útil y actúas.
-- Respuestas FINALES para voz: 1 a 3 frases cortas. Sin markdown, sin JSON, sin rutas largas de Windows, sin listas extensas.
+- Si el pedido es ambiguo, asumes la intención más útil y actúas sin pedir confirmación innecesaria.
+- Respuestas FINALES para voz: 1 a 3 frases cortas. Sin markdown, sin JSON, sin rutas de Windows largas, sin listas interminables.
 - Si una herramienta falla (ERROR), dilo con honestidad. Nunca inventes que algo se abrió o guardó.
-- Cuando termines una acción, confirma de forma concisa: "Listo, abrí Chrome." / "Captura guardada."
+- Cuando completes una tarea de sistema (abrir app, captura, volumen), confirma de forma breve y elegante.
 
 CAPACIDADES (usa TOOLS cuando haga falta):
 - Abrir apps y carpetas, buscar en web, crear archivos e informes HTML.
@@ -84,6 +83,11 @@ function getConfig() {
 function saveConfig(partial) {
   ensureDefaultConfig();
   const next = { ...getConfig(), ...partial };
+  // No sobrescribir apiKey con vacío si ya hay una
+  if (partial.apiKey === undefined || partial.apiKey === '') {
+    const prev = getConfig();
+    if (prev.apiKey) next.apiKey = prev.apiKey;
+  }
   fs.writeFileSync(getConfigPath(), JSON.stringify(next, null, 2), 'utf-8');
   return next;
 }
@@ -185,6 +189,7 @@ function polishForSpeech(text) {
   return t.replace(/\s+/g, ' ').trim();
 }
 
+/** Corrección ligera de errores típicos de STT en español */
 function normalizeUserIntent(raw) {
   let t = (raw || '').trim();
   const fixes = [
@@ -201,6 +206,8 @@ function normalizeUserIntent(raw) {
     [/\bvs code\b/gi, 'code'],
     [/\bhaze?\s+una\s+captura\b/gi, 'haz una captura'],
     [/\bsube el vol\b/gi, 'sube el volumen'],
+    [/\belira\b/gi, 'elyra'],
+    [/\belira\b/gi, 'elyra'],
   ];
   for (const [re, rep] of fixes) t = t.replace(re, rep);
   return t;
@@ -256,7 +263,7 @@ async function executeTool(tool, helpers) {
         const title = params.title || 'Reporte ELYRA';
         const body = params.body || '<p>Sin contenido</p>';
         const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width"/><title>${title.replace(/</g, '')}</title>
-<style>body{font-family:Segoe UI,system-ui,sans-serif;max-width:880px;margin:40px auto;padding:0 20px;line-height:1.65;color:#0f172a}h1{color:#0369a1}h2{color:#0c4a6e}.meta{color:#64748b;font-size:14px}</style></head>
+<style>body{font-family:Segoe UI,system-ui,sans-serif;max-width:880px;margin:40px auto;padding:0 20px;line-height:1.65;color:#0f172a;background:#f8fafc}h1{color:#0369a1;border-bottom:2px solid #bae6fd;padding-bottom:8px}h2{color:#0c4a6e}.meta{color:#64748b;font-size:14px}code{background:#e0f2fe;padding:2px 6px;border-radius:4px}</style></head>
 <body><h1>${title.replace(/</g, '')}</h1><p class="meta">Generado por ELYRA · ${new Date().toLocaleString('es-ES')}</p>${body}</body></html>`;
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         const finalPath = filePath.toLowerCase().endsWith('.html') ? filePath : filePath + '.html';
@@ -348,7 +355,7 @@ async function runAgent(userMessage, history, helpers) {
   if (!config.apiKey) {
     return {
       response:
-        'No hay API key configurada. Puede ponerla desde Configuración en la app, o en el archivo de configuración de ELYRA.',
+        'No hay API key configurada. Ve a Configuración en ELYRA o pon tu clave de Groq en el archivo local.',
       iterations: 0,
     };
   }
@@ -389,7 +396,7 @@ async function runAgent(userMessage, history, helpers) {
         return { response: 'El servicio está saturado un momento.', iterations };
       }
       if (String(e.message) === 'NO_API_KEY') {
-        return { response: 'Falta la API key. Configúrela en la pestaña Configuración.', iterations };
+        return { response: 'Falta la API key. Configúrala en la pestaña Configuración.', iterations };
       }
       return { response: 'No pude conectar ahora.', iterations };
     }
@@ -411,7 +418,7 @@ async function runAgent(userMessage, history, helpers) {
       content:
         'Resultados de herramientas:\n' +
         results.map((r) => `• ${r.tool}: ${r.ok ? 'OK' : 'ERROR'} — ${r.result}`).join('\n') +
-        '\n\nDa la respuesta FINAL breve y natural para voz, estilo JARVIS. Si hubo ERROR, dilo. Sin bloques TOOL.',
+        '\n\nDa la respuesta FINAL breve y natural para voz. Si hubo ERROR, dilo. Sin bloques TOOL.',
     });
   }
 
@@ -424,7 +431,7 @@ async function runAgent(userMessage, history, helpers) {
 
 function fallbackResponse() {
   return {
-    response: 'Configure su API key desde Configuración en la app, o en el archivo local de ELYRA.',
+    response: 'Configura tu API key en la pestaña Configuración de ELYRA, o en el archivo local.',
     intelligent: false,
   };
 }
