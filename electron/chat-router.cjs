@@ -1,9 +1,21 @@
 /**
- * Router de conversación ELYRA v4 — decide local / knowledge / LLM
+ * Router de conversación ELYRA v5 — JARVIS-like + presencia + PC máximo
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
 const { applyTypos, parseCompound, cleanOpenName } = require('./intent-compound.cjs');
+
+const PRESENCE_REPLIES = [
+  'Sí, señor. Estoy aquí.',
+  'Online. ¿En qué le ayudo?',
+  'Presente. Diga.',
+  'Sistemas operativos. Le escucho.',
+  'Aquí estoy. ¿Qué necesita?',
+];
+
+function pickPresence() {
+  return PRESENCE_REPLIES[Math.floor(Math.random() * PRESENCE_REPLIES.length)];
+}
 
 async function routeChat({
   message,
@@ -20,13 +32,27 @@ async function routeChat({
 }) {
   const fixed =
     typeof normalizeUserIntent === 'function' ? normalizeUserIntent(message) : message;
-  const text = applyTypos((fixed || '').toLowerCase().trim());
+  let text = applyTypos((fixed || '').toLowerCase().trim());
 
-  // —— 1. Intents locales de alta prioridad ——
+  // Quitar wake word residual
+  text = text
+    .replace(/\b(hey\s+)?(elyra|elira|eliara)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Presencia: "estás ahí", solo "elyra", "hola"
+  if (
+    !text ||
+    /^(estas ahi|estás ahí|estas alli|me escuchas|hola|oye|hey|buenos dias|buenas tardes|buenas noches)$/i.test(
+      text,
+    )
+  ) {
+    return { response: pickPresence(), intelligent: true, via: 'presence' };
+  }
+
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
   if (quick) return quick;
 
-  // —— 2. OpenClaw opcional ——
   try {
     const oc = getOpenClawConfig && getOpenClawConfig();
     if (oc?.enabled && chatOpenClaw) {
@@ -37,7 +63,6 @@ async function routeChat({
     }
   } catch {}
 
-  // —— 3. LLM con fallback inteligente ——
   const config = getConfig();
   if (!config.apiKey) {
     const sk = await trySmartTopic(fixed, text);
@@ -45,7 +70,7 @@ async function routeChat({
     return (
       fallbackResponse?.(message) || {
         response:
-          'No hay API key. Ve a Configuración, pega tu clave Groq (gsk_…) y pulsa Probar conexión.',
+          'No hay API key. Ve a Configuración, pega tu clave y pulsa Probar conexión. Mientras tanto controlo el PC.',
         intelligent: false,
       }
     );
@@ -55,11 +80,11 @@ async function routeChat({
     const result = await runAgent(fixed, history || [], helpers);
     const resp = result?.response || '';
 
-    if (/api key no es válida|no hay api key|falta la api|no pude conectar|límite de uso|401|unauthorized/i.test(resp)) {
+    if (/api key no es válida|no hay api key|falta la api|no pude conectar|401|unauthorized/i.test(resp)) {
       const sk = await trySmartTopic(fixed, text);
       if (sk) {
         return {
-          response: sk.response + ' (Respondí con conocimiento local porque la API falló. Revisa la key en Configuración.)',
+          response: sk.response + ' (Modo local: la API no respondió.)',
           intelligent: true,
           via: 'smart-fallback',
         };
@@ -68,7 +93,7 @@ async function routeChat({
         response:
           resp.includes('API') || resp.includes('key')
             ? resp
-            : 'No pude usar el modelo de IA. Revisa tu API key en Configuración y pulsa Probar conexión. Mientras tanto puedo abrir apps y buscar en la web.',
+            : 'El modelo no respondió. Revisa la API key. Sigo disponible para controlar el PC.',
         intelligent: false,
         via: 'error',
       };
@@ -80,22 +105,22 @@ async function routeChat({
     if (/429|rate limit/i.test(msg)) {
       const sk = await trySmartTopic(fixed, text);
       if (sk) return { ...sk, via: 'smart-ratelimit' };
-      return { response: 'El servicio de IA está saturado un momento. Intenta de nuevo en unos segundos.', intelligent: false };
+      return {
+        response: 'El servicio de IA está saturado un momento. Intente de nuevo en unos segundos.',
+        intelligent: false,
+      };
     }
     const sk = await trySmartTopic(fixed, text);
     if (sk) return { ...sk, via: 'smart-error' };
     return {
       response:
-        'Hubo un problema al contactar el modelo (' +
-        msg.slice(0, 80) +
-        '). Revisa internet y la API key. Puedo seguir abriendo apps y controlando el PC.',
+        'Problema con el modelo. Sigo operativa para apps, volumen, capturas y el resto del sistema.',
       intelligent: false,
     };
   }
 }
 
 async function trySmartTopic(fixed, text) {
-  // Extraer tema de conocimiento
   let topic = null;
   const patterns = [
     /(?:dime|cuéntame|cuentame|explícame|explicame|qué sabes|que sabes)\s+(?:sobre|de|acerca de)\s+(.+)/i,
@@ -111,7 +136,6 @@ async function trySmartTopic(fixed, text) {
       break;
     }
   }
-  // Frases cortas tipo "gemini google"
   if (!topic && text.split(/\s+/).length <= 4 && !/\b(abre|abrir|volumen|brillo)\b/.test(text)) {
     if (/gemini|chatgpt|claude|python|openai|groq|llama/.test(text)) topic = text;
   }
@@ -122,7 +146,6 @@ async function trySmartTopic(fixed, text) {
 }
 
 async function tryLocal(text, helpers, pc, getSystemStats) {
-  // Memoria
   if (/\b(qué recuerdas|que recuerdas|dime (todo )?lo que recuerdas|tu memoria)\b/.test(text)) {
     const r = await helpers.recall();
     return { response: r.result, intelligent: false };
@@ -130,28 +153,27 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   const rememberMatch = text.match(/\b(?:recuerda|anota|guarda|no olvides)\s+(?:que\s+)?(.+)/i);
   if (rememberMatch) {
     await helpers.remember(rememberMatch[1].trim());
-    return { response: 'Listo, lo guardé en mi memoria.', intelligent: false };
+    return { response: 'Anotado, señor.', intelligent: false };
   }
 
-  // Estado del sistema (sin LLM)
   if (
     /\b(cómo va|como va|estado del|estado de)\s+(el\s+)?(sistema|pc|equipo)\b/.test(text) ||
-    /\b(estado del sistema|cómo está el pc|como esta el pc)\b/.test(text)
+    /\b(estado del sistema|cómo está el pc|como esta el pc|diagnóstico|diagnostico)\b/.test(text)
   ) {
     try {
       const s = getSystemStats ? await getSystemStats() : null;
       if (s) {
         return {
           response:
-            'Sistema operativo. CPU al ' +
+            'Diagnóstico: CPU ' +
             s.cpu +
-            '%, RAM al ' +
+            '%, memoria ' +
             s.ram +
-            '%, disco al ' +
+            '%, disco ' +
             s.disk +
             '%. Equipo ' +
             (s.hostname || os.hostname()) +
-            '.',
+            '. Sistemas estables.',
           intelligent: false,
           via: 'local-stats',
         };
@@ -159,49 +181,87 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     } catch {}
     return {
       response:
-        'Sistemas operativos. Equipo ' +
+        'Sistemas operativos. ' +
         os.hostname() +
         ', ' +
         Math.round(os.totalmem() / 1e9) +
-        ' GB de RAM total.',
+        ' GB de RAM.',
       intelligent: false,
     };
   }
 
-  // Compuesto abre + busca
+  // Task manager / extras
+  if (/\b(administrador de tareas|task ?manager|gestor de tareas)\b/.test(text)) {
+    if (pc.openTaskManager) {
+      const r = await pc.openTaskManager();
+      return { response: r.result || 'Administrador de tareas abierto.', intelligent: false };
+    }
+  }
+  if (/\b(limpia|limpiar)\s+(los\s+)?temporales\b/.test(text) || /\bvacia temporales\b/.test(text)) {
+    if (pc.emptyTemp) {
+      const r = await pc.emptyTemp();
+      return { response: r.result, intelligent: false };
+    }
+  }
+  if (/\b(estado (del )?wifi|wifi status)\b/.test(text)) {
+    if (pc.wifiStatus) {
+      const r = await pc.wifiStatus();
+      return { response: (r.result || '').slice(0, 400), intelligent: false };
+    }
+  }
+  if (/\b(activa|activar|enciende|encender)\s+(el\s+)?wifi\b/.test(text)) {
+    if (pc.setWifi) {
+      const r = await pc.setWifi(true);
+      return { response: r.result, intelligent: false };
+    }
+  }
+  if (/\b(desactiva|desactivar|apaga|apagar)\s+(el\s+)?wifi\b/.test(text)) {
+    if (pc.setWifi) {
+      const r = await pc.setWifi(false);
+      return { response: r.result, intelligent: false };
+    }
+  }
+  if (/\b(flush|vacía|vacia)\s+dns\b/.test(text) || /\blimpia (la )?dns\b/.test(text)) {
+    if (pc.flushDns) {
+      const r = await pc.flushDns();
+      return { response: r.result, intelligent: false };
+    }
+  }
+  if (/\b(qué ventanas|que ventanas|ventanas abiertas)\b/.test(text)) {
+    if (pc.listWindows) {
+      const r = await pc.listWindows();
+      return { response: (r.result || 'Sin datos').slice(0, 500), intelligent: false };
+    }
+  }
+
   const compound = parseCompound(text);
   if (compound?.type === 'compound_search') {
     await helpers.openApp(compound.browser || 'chrome');
     await helpers.openUrl('https://www.google.com/search?q=' + encodeURIComponent(compound.query));
-    // Además resumen inteligente si es tema conocido
     const sk = await smartKnowledge(compound.query);
     if (sk.ok) {
       return {
-        response: 'Abrí la búsqueda de "' + compound.query + '". ' + sk.response.slice(0, 400),
+        response: 'Hecho. ' + sk.response.slice(0, 400),
         intelligent: true,
         via: 'compound+smart',
       };
     }
     return {
-      response: 'Abrí Chrome y busqué "' + compound.query + '".',
+      response: 'Abrí el navegador con la búsqueda de "' + compound.query + '".',
       intelligent: false,
     };
   }
 
-  // "busca X" → conocimiento inteligente primero (no solo Google)
   if (compound?.type === 'google_search') {
     const sk = await smartKnowledge(compound.query);
-    if (sk.ok) {
-      return { response: sk.response, intelligent: true, via: sk.source };
-    }
+    if (sk.ok) return { response: sk.response, intelligent: true, via: sk.source };
     await helpers.openUrl('https://www.google.com/search?q=' + encodeURIComponent(compound.query));
     return {
-      response: 'No tuve un resumen listo; abrí Google con "' + compound.query + '".',
+      response: 'Abrí Google con "' + compound.query + '".',
       intelligent: false,
     };
   }
 
-  // Volumen / brillo / media / captura…
   if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
     const r = await pc.volume('up');
     return { response: r.result, intelligent: false };
@@ -251,13 +311,15 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     return { response: r.result, intelligent: false };
   }
 
-  // Conocimiento explícito (qué es / la ia de…)
   const skEarly = await trySmartTopic(text, text);
-  if (skEarly && (/\b(qué es|que es|quién|quien|ia de|inteligencia)\b/.test(text) || /^(gemini|chatgpt|claude)/.test(text))) {
+  if (
+    skEarly &&
+    (/\b(qué es|que es|quién|quien|ia de|inteligencia)\b/.test(text) ||
+      /^(gemini|chatgpt|claude)/.test(text))
+  ) {
     return skEarly;
   }
 
-  // Abrir apps
   const openMatch = text.match(
     /\b(?:abre|abrir|lanza|ejecuta)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
