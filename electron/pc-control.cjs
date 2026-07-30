@@ -1,5 +1,5 @@
 /**
- * Control real del PC — Windows (PowerShell) — ELYRA v2.2
+ * Control real del PC — Windows (PowerShell) — ELYRA v2.2.1
  */
 const path = require('path');
 const fs = require('fs');
@@ -49,7 +49,6 @@ async function volume(action, value) {
   }
   if (a === 'set' || a === 'fijar') {
     const pct = Math.max(0, Math.min(100, parseInt(value, 10) || 50));
-    // Intento con AudioDeviceCmdlets si existe; si no, aproximación por teclas
     const r = await ps(
       `try { $o = New-Object -ComObject WScript.Shell; 1..15 | ForEach-Object { $o.SendKeys([char]174) }; Start-Sleep -Milliseconds 200; $n = [math]::Round(${pct}/2); 1..$n | ForEach-Object { $o.SendKeys([char]175) }; 'OK' } catch { $_.Exception.Message }`,
     );
@@ -128,14 +127,23 @@ async function screenshot() {
   if (process.platform !== 'win32') {
     return { ok: false, result: 'Captura automática disponible en Windows' };
   }
+  const safeFile = file.replace(/'/g, "''");
   const psCmd =
+    'Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;' +
+    '$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;' +
+    '$bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height;' +
+    '$g=[System.Drawing.Graphics]::FromImage($bmp);' +
+    '$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size);' +
+    "$bmp.Save('" + safeFile + "');$g.Dispose();$bmp.Dispose();Write-Output 'OK'";
+  // Use concatenation carefully - rebuild without nested quote hell
+  const psCmd2 =
     `Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;` +
     `$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds;` +
     `$bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height;` +
     `$g=[System.Drawing.Graphics]::FromImage($bmp);` +
     `$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size);` +
-    `$bmp.Save('${file.replace(/'/g, "''")}' );$g.Dispose();$bmp.Dispose();Write-Output 'OK'`;
-  const r = await ps(psCmd, 20000);
+    `$bmp.Save('${safeFile}');$g.Dispose();$bmp.Dispose();Write-Output 'OK'`;
+  const r = await ps(psCmd2, 20000);
   if (r.ok && fs.existsSync(file)) {
     return { ok: true, result: `Captura guardada como ${path.basename(file)} en Documentos/Informes/Capturas` };
   }
@@ -176,14 +184,12 @@ async function windows(action) {
   }
   if (a === 'screen_off' || a === 'pantalla_off') {
     await ps(
-      `Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class S{[DllImport(\"user32.dll\")]public static extern int SendMessage(int h,int m,int w,int l);}';[S]::SendMessage(-1,0x0112,0xF170,2)`,
+      "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class S{[DllImport(\"user32.dll\")]public static extern int SendMessage(int h,int m,int w,int l);}';[S]::SendMessage(-1,0x0112,0xF170,2)",
     );
     return { ok: true, result: 'Pantalla apagada' };
   }
   if (a === 'task_view' || a === 'vista_tareas') {
-    await ps(`(New-Object -ComObject WScript.Shell).SendKeys('^{ESC}'); Start-Sleep -Milliseconds 100; (New-Object -ComObject WScript.Shell).SendKeys('%{TAB}')`);
-    // Win+Tab
-    await ps(`$w = New-Object -ComObject WScript.Shell; $w.SendKeys('^{ESC}')`);
+    await ps("$w = New-Object -ComObject WScript.Shell; $w.SendKeys('^{ESC}')");
     return { ok: true, result: 'Vista de tareas solicitada' };
   }
   return { ok: false, result: 'Acción de ventana no reconocida' };
@@ -199,17 +205,17 @@ async function input(action, payload = {}) {
   }
   if (a === 'click') {
     const r = await ps(
-      `Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name U -Namespace W;` +
-        `[W.U]::mouse_event(0x02,0,0,0,0);[W.U]::mouse_event(0x04,0,0,0,0)`,
+      "Add-Type -MemberDefinition '[DllImport(\"user32.dll\")] public static extern void mouse_event(int f,int x,int y,int d,int e);' -Name U -Namespace W;" +
+        '[W.U]::mouse_event(0x02,0,0,0,0);[W.U]::mouse_event(0x04,0,0,0,0)',
     );
     return r.ok ? { ok: true, result: 'Clic realizado' } : r;
   }
   if (a === 'enter') {
-    await ps(`(New-Object -ComObject WScript.Shell).SendKeys('{ENTER}')`);
+    await ps("(New-Object -ComObject WScript.Shell).SendKeys('{ENTER}')");
     return { ok: true, result: 'Enter enviado' };
   }
   if (a === 'escape' || a === 'esc') {
-    await ps(`(New-Object -ComObject WScript.Shell).SendKeys('{ESC}')`);
+    await ps("(New-Object -ComObject WScript.Shell).SendKeys('{ESC}')");
     return { ok: true, result: 'Escape enviado' };
   }
   return { ok: false, result: 'Acción de input no reconocida' };
@@ -220,16 +226,13 @@ async function notify(title, message) {
   const t = String(title || 'ELYRA').replace(/'/g, "''").slice(0, 80);
   const m = String(message || '').replace(/'/g, "''").slice(0, 200);
   const r = await ps(
-    `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null;` +
-      `try {` +
-      `$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);` +
-      `$text = $template.GetElementsByTagName('text'); $text.Item(0).AppendChild($template.CreateTextNode('${t}')) | Out-Null;` +
-      `$text.Item(1).AppendChild($template.CreateTextNode('${m}')) | Out-Null;` +
-      `$toast = [Windows.UI.Notifications.ToastNotification]::new($template);` +
-      `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('ELYRA').Show($toast); 'OK'` +
-      `} catch {` +
-      `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${m}','${t}') | Out-Null; 'MSG'` +
-      `}`,
+    "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null;" +
+      'try {' +
+      '[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02) | Out-Null;' +
+      "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${m}','${t}') | Out-Null; 'MSG'" +
+      '} catch {' +
+      "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('${m}','${t}') | Out-Null; 'MSG'" +
+      '}',
     10000,
   );
   return r.ok ? { ok: true, result: 'Notificación enviada' } : { ok: true, result: 'Aviso mostrado' };
@@ -240,7 +243,7 @@ async function battery() {
     return { ok: true, result: `SO: ${os.platform()}` };
   }
   const r = await ps(
-    `$b = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if(-not $b){ 'Sin batería (equipo de escritorio o no detectada)' } else { $s = switch($b.BatteryStatus){1{'Desconectada'}2{'Cargando'}3{'Descargando'} default{"Estado $($b.BatteryStatus)"}}; "Batería $($b.EstimatedChargeRemaining)% · $s" }`,
+    "$b = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue; if(-not $b){ 'Sin bateria (equipo de escritorio o no detectada)' } else { $s = switch($b.BatteryStatus){1{'Desconectada'}2{'Cargando'}3{'Descargando'} default{'Estado ' + $b.BatteryStatus}}; 'Bateria ' + $b.EstimatedChargeRemaining + '% - ' + $s }",
   );
   return r.ok ? { ok: true, result: r.result } : r;
 }
@@ -249,18 +252,19 @@ async function networkInfo() {
   if (process.platform !== 'win32') {
     return { ok: true, result: `Hostname ${os.hostname()}` };
   }
-  const r = await ps(
-    `$w = Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | Select-Object -First 3 Name,LinkSpeed,MacAddress | Format-Table -AutoSize | Out-String;` +
-      `$ip = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 3 IPAddress,InterfaceAlias | Format-Table -AutoSize | Out-String;` +
-      `"Adaptadores:`n$w`nIPs:`n$ip"`,
-  );
+  // Sin backticks de PowerShell dentro de template literals JS (causaban SyntaxError)
+  const cmd =
+    "$w = Get-NetAdapter -Physical | Where-Object Status -eq 'Up' | Select-Object -First 3 Name,LinkSpeed,MacAddress | Format-Table -AutoSize | Out-String; " +
+    "$ip = Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown' } | Select-Object -First 3 IPAddress,InterfaceAlias | Format-Table -AutoSize | Out-String; " +
+    "Write-Output ('Adaptadores: ' + $w + ' IPs: ' + $ip)";
+  const r = await ps(cmd);
   return r.ok ? { ok: true, result: r.result.slice(0, 1500) } : r;
 }
 
 async function emptyRecycle() {
   if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
   const r = await ps(
-    `Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Write-Output 'Papelera vaciada'`,
+    "Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Write-Output 'Papelera vaciada'",
   );
   return r.ok ? { ok: true, result: 'Papelera de reciclaje vaciada' } : r;
 }
@@ -299,13 +303,10 @@ async function searchFiles(query, root) {
   if (process.platform !== 'win32') return { ok: false, result: 'Solo Windows' };
   const q = String(query || '').replace(/'/g, "''").slice(0, 80);
   if (!q) return { ok: false, result: 'Falta término de búsqueda' };
-  const base = root
-    ? String(root)
-    : path.join(os.homedir(), 'Documents');
+  const base = root ? String(root) : path.join(os.homedir(), 'Documents');
   const safeBase = base.replace(/'/g, "''");
   const r = await ps(
-    `Get-ChildItem -Path '${safeBase}' -Recurse -ErrorAction SilentlyContinue -Filter '*${q}*' |` +
-      ` Select-Object -First 15 FullName | ForEach-Object { $_.FullName } | Out-String`,
+    `Get-ChildItem -Path '${safeBase}' -Recurse -ErrorAction SilentlyContinue -Filter '*${q}*' | Select-Object -First 15 FullName | ForEach-Object { $_.FullName } | Out-String`,
     25000,
   );
   if (!r.ok) return r;
@@ -338,7 +339,9 @@ async function power(action, minutes) {
     };
   }
   if (a === 'sleep' || a === 'suspender') {
-    await ps('Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend,$false,$false)');
+    await ps(
+      'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState([System.Windows.Forms.PowerState]::Suspend,$false,$false)',
+    );
     return { ok: true, result: 'Suspensión solicitada' };
   }
   return { ok: false, result: 'Usa shutdown, restart, sleep o cancel' };
@@ -349,13 +352,13 @@ async function systemExtras(action) {
   const a = (action || '').toLowerCase();
   if (a === 'uptime') {
     const r = await ps(
-      `$u = (Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime; "Encendido desde hace $($u.Days)d $($u.Hours)h $($u.Minutes)m"`,
+      "$u = (Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime; 'Encendido desde hace ' + $u.Days + 'd ' + $u.Hours + 'h ' + $u.Minutes + 'm'",
     );
     return r.ok ? { ok: true, result: r.result } : r;
   }
   if (a === 'disk_space' || a === 'disco') {
     const r = await ps(
-      `Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,@{N='LibreGB';E={[math]::Round($_.FreeSpace/1GB,1)}},@{N='TotalGB';E={[math]::Round($_.Size/1GB,1)}} | Format-Table -AutoSize | Out-String`,
+      'Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" | Select-Object DeviceID,@{N=\'LibreGB\';E={[math]::Round($_.FreeSpace/1GB,1)}},@{N=\'TotalGB\';E={[math]::Round($_.Size/1GB,1)}} | Format-Table -AutoSize | Out-String',
     );
     return r.ok ? { ok: true, result: r.result.slice(0, 800) } : r;
   }
