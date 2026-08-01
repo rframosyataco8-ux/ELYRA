@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* —— Tokens por tema —— */
+/* —— Tokens por tema (coherentes en toda la UI) —— */
 :root,
 [data-theme='dark'] {
   --ely-bg: #0b1220;
@@ -14,37 +14,50 @@
   --ely-border-strong: rgba(56, 189, 248, 0.28);
   --ely-text: #e2e8f0;
   --ely-text-muted: #94a3b8;
+  --ely-text-dim: rgba(148, 163, 184, 0.55);
   --ely-accent: #38bdf8;
   --ely-accent-soft: rgba(56, 189, 248, 0.12);
-  --ely-glow: rgba(14, 165, 233, 0.08);
+  --ely-accent-mid: rgba(56, 189, 248, 0.22);
+  --ely-glow: rgba(14, 165, 233, 0.1);
   --ely-scrollbar: rgba(56, 189, 248, 0.3);
   --ely-input-bg: rgba(15, 23, 42, 0.9);
   --ely-danger: #f87171;
+  --ely-success: #34d399;
+  --ely-warning: #fbbf24;
   --ely-blur: 18px;
   --ely-radius: 16px;
+  --ely-nav-hover: rgba(56, 189, 248, 0.1);
+  --ely-nav-active: rgba(56, 189, 248, 0.2);
+  --ely-header-border: rgba(56, 189, 248, 0.1);
 }
 
 [data-theme='light'] {
   --ely-bg: #f1f5f9;
   --ely-bg-elevated: #ffffff;
   --ely-bg-soft: #e8eef5;
-  --ely-surface: rgba(255, 255, 255, 0.86);
+  --ely-surface: rgba(255, 255, 255, 0.88);
   --ely-surface-strong: rgba(255, 255, 255, 0.96);
-  --ely-border: rgba(100, 116, 139, 0.18);
-  --ely-border-strong: rgba(14, 165, 233, 0.35);
+  --ely-border: rgba(100, 116, 139, 0.2);
+  --ely-border-strong: rgba(2, 132, 199, 0.35);
   --ely-text: #0f172a;
   --ely-text-muted: #64748b;
+  --ely-text-dim: rgba(100, 116, 139, 0.55);
   --ely-accent: #0284c7;
   --ely-accent-soft: rgba(2, 132, 199, 0.1);
-  --ely-glow: rgba(2, 132, 199, 0.06);
+  --ely-accent-mid: rgba(2, 132, 199, 0.18);
+  --ely-glow: rgba(2, 132, 199, 0.08);
   --ely-scrollbar: rgba(100, 116, 139, 0.35);
   --ely-input-bg: rgba(255, 255, 255, 0.95);
   --ely-danger: #dc2626;
+  --ely-success: #059669;
+  --ely-warning: #d97706;
   --ely-blur: 16px;
   --ely-radius: 16px;
+  --ely-nav-hover: rgba(2, 132, 199, 0.08);
+  --ely-nav-active: rgba(2, 132, 199, 0.14);
+  --ely-header-border: rgba(100, 116, 139, 0.15);
 }
 
-/* —— Cristal avanzado —— */
 [data-theme='transparent'] {
   --ely-bg: transparent;
   --ely-bg-elevated: rgba(10, 18, 36, 0.28);
@@ -55,23 +68,26 @@
   --ely-border-strong: rgba(125, 211, 252, 0.4);
   --ely-text: #f0f9ff;
   --ely-text-muted: rgba(186, 230, 253, 0.72);
+  --ely-text-dim: rgba(186, 230, 253, 0.45);
   --ely-accent: #7dd3fc;
   --ely-accent-soft: rgba(56, 189, 248, 0.18);
+  --ely-accent-mid: rgba(56, 189, 248, 0.28);
   --ely-glow: rgba(56, 189, 248, 0.16);
   --ely-scrollbar: rgba(125, 211, 252, 0.4);
   --ely-input-bg: rgba(8, 18, 36, 0.42);
   --ely-danger: #fca5a5;
+  --ely-success: #6ee7b7;
+  --ely-warning: #fcd34d;
   --ely-blur: 28px;
   --ely-radius: 18px;
+  --ely-nav-hover: rgba(125, 211, 252, 0.12);
+  --ely-nav-active: rgba(56, 189, 248, 0.22);
+  --ely-header-border: rgba(186, 230, 253, 0.15);
 }
 
 @layer base {
-  * {
-    box-sizing: border-box;
-  }
-  html {
-    background: transparent;
-  }
+  * { box-sizing: border-box; }
+  html { background: transparent; }
   body {
     margin: 0;
     background: var(--ely-bg);
@@ -81,24 +97,16 @@
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.3s ease, color 0.25s ease;
   }
-  ::-webkit-scrollbar {
-    width: 5px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
     background: var(--ely-scrollbar);
     border-radius: 4px;
   }
 }
 
-.drag-region {
-  -webkit-app-region: drag;
-}
-.no-drag {
-  -webkit-app-region: no-drag;
-}
+.drag-region { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
 
 .ely-app {
   background: var(--ely-bg);
@@ -107,15 +115,9 @@
   position: relative;
 }
 
-/* Fondo sólido en temas no cristal (la ventana Electron es transparente) */
-[data-theme='dark'] .ely-app {
-  background: #0b1220;
-}
-[data-theme='light'] .ely-app {
-  background: #f1f5f9;
-}
+[data-theme='dark'] .ely-app { background: #0b1220; }
+[data-theme='light'] .ely-app { background: #f1f5f9; }
 
-/* Cristal: capa de vidrio global */
 [data-theme='transparent'] .ely-app {
   background:
     radial-gradient(ellipse 90% 60% at 20% -10%, rgba(56, 189, 248, 0.12), transparent 55%),
@@ -125,13 +127,11 @@
   -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.35);
 }
 
-/* Brillo specular superior (efecto vidrio real) */
 [data-theme='transparent'] .ely-app::before {
   content: '';
   pointer-events: none;
   position: absolute;
   inset: 0;
-  border-radius: inherit;
   background: linear-gradient(
     180deg,
     rgba(255, 255, 255, 0.09) 0%,
@@ -154,12 +154,42 @@
   border-radius: var(--ely-radius);
 }
 
-.ely-text-muted {
+.ely-text-muted { color: var(--ely-text-muted); }
+.ely-accent { color: var(--ely-accent); }
+
+/* Navegación coherente con el tema */
+.ely-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  border: 1px solid transparent;
   color: var(--ely-text-muted);
+  transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.ely-nav-item:hover {
+  color: var(--ely-text);
+  background: var(--ely-nav-hover);
+}
+.ely-nav-item.active {
+  color: var(--ely-text);
+  background: var(--ely-nav-active);
+  border-color: var(--ely-border-strong);
+  box-shadow: 0 0 24px var(--ely-glow);
+}
+.ely-nav-item.active .ely-nav-dot {
+  background: var(--ely-accent);
+  box-shadow: 0 0 10px var(--ely-accent);
 }
 
-.ely-accent {
-  color: var(--ely-accent);
+.ely-header {
+  border-bottom: 1px solid var(--ely-header-border);
+  color: var(--ely-text-muted);
+}
+.ely-footer {
+  border-top: 1px solid var(--ely-header-border);
+  color: var(--ely-text-dim);
 }
 
 @layer components {
@@ -168,9 +198,7 @@
     border: 1px solid var(--ely-border);
     backdrop-filter: blur(var(--ely-blur)) saturate(1.2);
     -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.2);
-    box-shadow:
-      0 0 40px var(--ely-glow),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    box-shadow: 0 0 40px var(--ely-glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 
   .hud-glass-strong {
@@ -178,13 +206,9 @@
     border: 1px solid var(--ely-border-strong);
     backdrop-filter: blur(calc(var(--ely-blur) + 6px)) saturate(1.25);
     -webkit-backdrop-filter: blur(calc(var(--ely-blur) + 6px)) saturate(1.25);
-    box-shadow:
-      0 8px 32px rgba(0, 0, 0, 0.18),
-      0 0 50px var(--ely-glow),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 50px var(--ely-glow), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
-  /* Refuerzo cristal en paneles */
   [data-theme='transparent'] .hud-glass {
     background: linear-gradient(
       145deg,
@@ -195,9 +219,7 @@
     border-color: rgba(186, 230, 253, 0.28);
     box-shadow:
       0 12px 40px rgba(0, 0, 0, 0.22),
-      0 0 0 1px rgba(255, 255, 255, 0.04),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-      inset 0 -1px 0 rgba(56, 189, 248, 0.06);
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   [data-theme='transparent'] .hud-glass-strong {
@@ -208,20 +230,6 @@
       rgba(10, 20, 40, 0.55) 100%
     );
     border-color: rgba(125, 211, 252, 0.38);
-    box-shadow:
-      0 16px 48px rgba(0, 0, 0, 0.28),
-      0 0 60px rgba(56, 189, 248, 0.12),
-      inset 0 1px 0 rgba(255, 255, 255, 0.14);
-  }
-
-  [data-theme='transparent'] .input-hud {
-    background: rgba(8, 18, 36, 0.45);
-    border-color: rgba(125, 211, 252, 0.35);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    box-shadow:
-      0 0 24px rgba(56, 189, 248, 0.12),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .hud-glow {
@@ -231,12 +239,10 @@
   .text-glow {
     text-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
   }
-
   [data-theme='light'] .text-glow,
   [data-theme='light'] .text-glow-soft {
     text-shadow: none;
   }
-
   .text-glow-soft {
     text-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
   }
@@ -247,6 +253,12 @@
     box-shadow: 0 0 20px var(--ely-glow);
   }
 
+  [data-theme='transparent'] .input-hud {
+    background: rgba(8, 18, 36, 0.45);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
   .status-chip {
     display: inline-flex;
     align-items: center;
@@ -255,13 +267,6 @@
     border-radius: 9999px;
     background: var(--ely-accent-soft);
     border: 1px solid var(--ely-border);
-  }
-
-  [data-theme='transparent'] .status-chip {
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    background: rgba(56, 189, 248, 0.15);
-    border-color: rgba(125, 211, 252, 0.35);
   }
 
   .theme-card {
@@ -282,51 +287,32 @@
     background: var(--ely-accent-soft);
     box-shadow: 0 0 18px var(--ely-glow);
   }
-
-  [data-theme='transparent'] .theme-card {
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-  }
 }
 
 @layer utilities {
-  .animate-fade-in {
-    animation: fade-in 0.45s ease-out both;
-  }
-  .animate-slide-up {
-    animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-  .animate-pulse-glow {
-    animation: pulse-glow 2.5s ease-in-out infinite;
-  }
-  .animate-boot {
-    animation: boot-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
-  }
-  .animate-breathe {
-    animation: breathe 3.2s ease-in-out infinite;
-  }
+  .animate-fade-in { animation: fade-in 0.45s ease-out both; }
+  .animate-slide-up { animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-pulse-glow { animation: pulse-glow 2.5s ease-in-out infinite; }
+  .animate-boot { animation: boot-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  .animate-breathe { animation: breathe 3.2s ease-in-out infinite; }
 }
 
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 8px var(--ely-glow); }
   50% { box-shadow: 0 0 22px var(--ely-glow); }
 }
-
 @keyframes boot-in {
   0% { opacity: 0; transform: scale(0.92); filter: blur(8px); }
   100% { opacity: 1; transform: scale(1); filter: blur(0); }
 }
-
 @keyframes breathe {
   0%, 100% { opacity: 0.55; transform: scale(1); }
   50% { opacity: 1; transform: scale(1.03); }
