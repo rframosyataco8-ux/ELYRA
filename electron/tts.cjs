@@ -1,6 +1,7 @@
 /**
- * ELYRA TTS — voz femenina natural (casi humana).
- * Voz fija: es-MX-DaliaNeural (Microsoft neural, español México)
+ * ELYRA TTS — voz neural natural (estilo conversación humana).
+ * Primary: es-MX-DaliaNeural (Microsoft Edge neural, muy cercana a ChatGPT/Luna en español).
+ * Fallback chain si falla: es-ES-XimenaNeural, es-MX-RenataNeural
  */
 const path = require('path');
 const fs = require('fs');
@@ -9,10 +10,12 @@ const { promisify } = require('util');
 const { exec, execSync } = require('child_process');
 const execAsync = promisify(exec);
 
-// Voz femenina muy natural (México). Alternativa España: es-ES-ElviraNeural
+// Voz femenina neural de alta calidad (español México)
 const VOICE = 'es-MX-DaliaNeural';
-// Ritmo y tono cercanos a una persona real hablando con calma
-const DEFAULT_RATE = '+2%';
+const VOICE_FALLBACKS = ['es-ES-XimenaNeural', 'es-MX-RenataNeural', 'es-ES-ElviraNeural'];
+
+// Ritmo conversacional: un poco más lento = más natural al oído
+const DEFAULT_RATE = '-4%';
 const DEFAULT_PITCH = '+0Hz';
 
 let edgeTtsAvailable = null;
@@ -49,7 +52,6 @@ function cleanForSpeech(text) {
   t = t.replace(/^#+\s+/gm, '');
   t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
-  // Errores técnicos crudos → frase humana
   if (/rate limit|429|tokens per day|TPD/i.test(t)) {
     return 'He alcanzado el límite temporal del modelo. Espera un momento e inténtalo de nuevo, o prueba con una frase más corta.';
   }
@@ -64,8 +66,6 @@ function cleanForSpeech(text) {
   t = t.replace(/[_|<>{}\[\]#~^]/g, ' ');
   t = t.replace(/&/g, ' y ');
   t = t.replace(/\//g, ' ');
-
-  // Números de error / JSON feo
   t = t.replace(/\{[\s\S]*\}/g, ' ');
   t = t.replace(/org_[a-zA-Z0-9]+/g, ' ');
   t = t.replace(/gsk_[a-zA-Z0-9]+/g, ' ');
@@ -83,17 +83,25 @@ function cleanForSpeech(text) {
 }
 
 /**
- * Divide en frases para síntesis más natural (pausas humanas).
- * edge-tts no tiene SSML completo en CLI simple; usamos el texto limpio
- * con puntuación clara que la voz neural respeta bien.
+ * Puntuación y pausas más humanas para que la voz neural
+ * respire como en una conversación real (estilo ChatGPT).
  */
 function humanizePunctuation(text) {
   let t = text;
-  // Asegurar espacios tras puntuación
   t = t.replace(/([.,;:!?])([A-Za-zÁÉÍÓÚáéíóúñÑ])/g, '$1 $2');
-  // Evitar puntos repetidos
   t = t.replace(/\.{2,}/g, '.');
+  // Comas extra en listas largas ayudan a pausas naturales
+  t = t.replace(/\s+y\s+/gi, ', y ');
+  t = t.replace(/,\s*,/g, ',');
+  // Evitar frases interminables sin pausa
+  t = t.replace(/([^.!?]{120,}?)\s+(y|pero|aunque|además|también)\s+/gi, '$1. $2 ');
   return t.replace(/\s+/g, ' ').trim();
+}
+
+async function synthesizeOnce(bin, voice, rate, pitch, safeText, outFile) {
+  const cmd = `${bin} --voice "${voice}" --rate="${rate}" --pitch="${pitch}" --text ${JSON.stringify(safeText)} --write-media "${outFile}"`;
+  await execAsync(cmd, { timeout: 90000, maxBuffer: 20 * 1024 * 1024 });
+  if (!fs.existsSync(outFile)) throw new Error('No se generó el audio');
 }
 
 async function synthesizeToBase64(text, options = {}) {
@@ -105,7 +113,6 @@ async function synthesizeToBase64(text, options = {}) {
 
   const tmpDir = os.tmpdir();
   const outFile = path.join(tmpDir, `elyra-tts-${Date.now()}.mp3`);
-  const voice = options.voice || VOICE;
   const rate = options.rate || DEFAULT_RATE;
   const pitch = options.pitch || DEFAULT_PITCH;
 
@@ -113,11 +120,21 @@ async function synthesizeToBase64(text, options = {}) {
   if (mode === 'python') bin = 'python -m edge_tts';
   if (mode === 'py') bin = 'py -m edge_tts';
 
-  const cmd = `${bin} --voice "${voice}" --rate="${rate}" --pitch="${pitch}" --text ${JSON.stringify(safeText)} --write-media "${outFile}"`;
-
-  await execAsync(cmd, { timeout: 90000, maxBuffer: 20 * 1024 * 1024 });
-
-  if (!fs.existsSync(outFile)) throw new Error('No se generó el audio');
+  const voices = [options.voice || VOICE, ...VOICE_FALLBACKS];
+  let lastErr;
+  for (const voice of voices) {
+    try {
+      await synthesizeOnce(bin, voice, rate, pitch, safeText, outFile);
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      try {
+        if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
+      } catch {}
+    }
+  }
+  if (lastErr) throw lastErr;
 
   const buf = fs.readFileSync(outFile);
   const base64 = buf.toString('base64');
