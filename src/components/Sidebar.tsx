@@ -1,8 +1,8 @@
-import { Home, MessageSquare, Settings, Zap, Activity, Cpu, PanelLeftClose, PanelLeftOpen, LogOut } from 'lucide-react';
+import { Home, MessageSquare, Settings, Zap, Activity, Cpu, PanelLeftClose, PanelLeftOpen, LogOut, Package } from 'lucide-react';
 
 interface SidebarProps {
-  active: 'inicio' | 'asistente' | 'config';
-  onNavigate: (page: 'inicio' | 'asistente' | 'config') => void;
+  active: 'inicio' | 'asistente' | 'config' | 'productos';
+  onNavigate: (page: 'inicio' | 'asistente' | 'config' | 'productos') => void;
   hasApiKey?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -22,6 +22,7 @@ export function Sidebar({
   const items = [
     { id: 'inicio' as const, label: 'Inicio', icon: Home },
     { id: 'asistente' as const, label: 'Conversación', icon: MessageSquare },
+    { id: 'productos' as const, label: 'Cadmio y Plaguicidas', icon: Package },
     { id: 'config' as const, label: 'Configuración', icon: Settings },
   ];
 
@@ -81,9 +82,9 @@ export function Sidebar({
               <item.icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-sky-300' : ''}`} />
               {!collapsed && (
                 <>
-                  <span className="tracking-wide">{item.label}</span>
+                  <span className="tracking-wide truncate">{item.label}</span>
                   {isActive && (
-                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8]" />
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8] shrink-0" />
                   )}
                 </>
               )}
