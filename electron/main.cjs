@@ -108,10 +108,6 @@ function hideFloatingCore() {
   }
 }
 
-/**
- * opts: string | { name, category?, views?, view? }
- * views: 'dashboard,datos,analisis' o 'dashboard,datos'
- */
 function openProductWindow(opts) {
   const options =
     typeof opts === 'string'
@@ -437,6 +433,17 @@ ipcMain.handle('open-product-window', (_e, opts) => {
 });
 ipcMain.handle('close-product-window', () => {
   if (productWindow && !productWindow.isDestroyed()) productWindow.close();
+  return { ok: true };
+});
+ipcMain.handle('product-window-minimize', () => {
+  if (productWindow && !productWindow.isDestroyed()) productWindow.minimize();
+  return { ok: true };
+});
+ipcMain.handle('product-window-maximize', () => {
+  if (productWindow && !productWindow.isDestroyed()) {
+    if (productWindow.isMaximized()) productWindow.unmaximize();
+    else productWindow.maximize();
+  }
   return { ok: true };
 });
 ipcMain.handle('show-floating-core', () => {
