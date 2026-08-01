@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { Package, FileText } from 'lucide-react';
+import {
+  Package,
+  FileText,
+  LayoutDashboard,
+  Database,
+  LineChart,
+  ArrowLeft,
+} from 'lucide-react';
 
 export const CADMIO_PRODUCTS = [
   'Torta Trozada estandar',
@@ -17,8 +24,15 @@ interface ProductsPanelProps {
   onSelectReportes?: () => void;
 }
 
+const VIEWS: { id: ProductView; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'datos', label: 'Datos', icon: Database },
+  { id: 'analisis', label: 'Análisis', icon: LineChart },
+];
+
 export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPanelProps) {
   const [category, setCategory] = useState<'cadmio' | 'reportes'>('cadmio');
+  const [selected, setSelected] = useState<string | null>(null);
 
   return (
     <div className="flex-1 flex min-h-0 animate-fade-in">
@@ -29,7 +43,10 @@ export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPan
         </div>
         <div className="flex-1 p-3 space-y-2">
           <button
-            onClick={() => setCategory('cadmio')}
+            onClick={() => {
+              setCategory('cadmio');
+              setSelected(null);
+            }}
             className={`w-full rounded-xl px-3.5 py-3 text-sm tracking-wide text-left transition-all ${
               category === 'cadmio'
                 ? 'bg-sky-500/15 border border-sky-400/30 text-sky-100 shadow-[0_0_20px_rgba(14,165,233,0.12)]'
@@ -41,6 +58,7 @@ export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPan
           <button
             onClick={() => {
               setCategory('reportes');
+              setSelected(null);
               onSelectReportes?.();
             }}
             className={`w-full rounded-xl px-3.5 py-3 text-sm tracking-wide text-left transition-all flex items-center gap-2 ${
@@ -57,7 +75,7 @@ export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPan
 
       {/* Área principal */}
       <div className="flex-1 flex flex-col min-w-0 px-5 py-4 overflow-y-auto">
-        {category === 'cadmio' && (
+        {category === 'cadmio' && !selected && (
           <>
             <div className="flex items-center gap-2 mb-5">
               <Package className="w-4 h-4 text-sky-400" />
@@ -68,7 +86,7 @@ export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPan
               {CADMIO_PRODUCTS.map((name) => (
                 <button
                   key={name}
-                  onClick={() => onSelectProduct(name)}
+                  onClick={() => setSelected(name)}
                   className="aspect-[4/3] rounded-xl border border-sky-500/25 bg-sky-950/40 hover:bg-sky-500/15 hover:border-sky-400/45 transition-all flex flex-col items-center justify-center gap-2 p-3 group"
                 >
                   <div className="w-10 h-10 rounded-lg border border-sky-500/30 bg-sky-500/10 flex items-center justify-center group-hover:border-sky-400/50 transition-colors">
@@ -77,6 +95,38 @@ export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPan
                   <span className="text-[12px] text-sky-200/80 text-center leading-tight tracking-wide group-hover:text-sky-100">
                     {name}
                   </span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {category === 'cadmio' && selected && (
+          <>
+            <button
+              onClick={() => setSelected(null)}
+              className="flex items-center gap-2 text-sky-400/60 hover:text-sky-200 text-[12px] mb-4 transition-colors w-fit"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Volver a productos
+            </button>
+
+            <div className="flex items-center gap-2 mb-6">
+              <Package className="w-4 h-4 text-sky-400" />
+              <h2 className="text-lg font-medium text-white tracking-wide">{selected}</h2>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl">
+              {VIEWS.map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => onSelectProduct(selected, v.id)}
+                  className="rounded-xl border border-sky-500/25 bg-sky-950/40 hover:bg-sky-500/15 hover:border-sky-400/45 transition-all flex flex-col items-center justify-center gap-3 p-8 group min-h-[140px]"
+                >
+                  <div className="w-12 h-12 rounded-xl border border-sky-500/30 bg-sky-500/10 flex items-center justify-center group-hover:border-sky-400/50 transition-colors">
+                    <v.icon className="w-6 h-6 text-sky-400/80 group-hover:text-sky-300" />
+                  </div>
+                  <span className="text-sm text-sky-100/90 tracking-wide">{v.label}</span>
                 </button>
               ))}
             </div>
