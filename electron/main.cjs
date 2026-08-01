@@ -31,16 +31,45 @@ let tray = null;
 let isQuitting = false;
 const isDev = !app.isPackaged;
 
+function applyGlassToWindow(win, enabled) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    if (enabled) {
+      win.setBackgroundColor('#00000000');
+      if (typeof win.setBackgroundMaterial === 'function') {
+        try {
+          win.setBackgroundMaterial('acrylic');
+        } catch {
+          try {
+            win.setBackgroundMaterial('mica');
+          } catch {}
+        }
+      }
+    } else {
+      win.setBackgroundColor('#0b1220');
+      if (typeof win.setBackgroundMaterial === 'function') {
+        try {
+          win.setBackgroundMaterial('none');
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn('[ELYRA] glass mode:', e.message);
+  }
+}
+
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const winOpts = {
     width: 1280,
     height: 800,
     minWidth: 1000,
     minHeight: 650,
-    backgroundColor: '#030810',
+    backgroundColor: '#00000000',
+    transparent: true,
     title: 'ELYRA',
     frame: false,
     titleBarStyle: 'hidden',
+    hasShadow: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -48,7 +77,15 @@ function createWindow() {
       sandbox: false,
     },
     show: false,
-  });
+  };
+  if (process.platform === 'win32') {
+    winOpts.backgroundMaterial = 'none';
+  }
+  if (process.platform === 'darwin') {
+    winOpts.vibrancy = 'under-window';
+    winOpts.visualEffectState = 'active';
+  }
+  mainWindow = new BrowserWindow(winOpts);
   if (isDev) mainWindow.loadURL('http://localhost:5173');
   else mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   mainWindow.once('ready-to-show', () => mainWindow.show());
@@ -445,6 +482,10 @@ ipcMain.handle('product-window-maximize', () => {
     else productWindow.maximize();
   }
   return { ok: true };
+});
+ipcMain.handle('set-glass-mode', (_e, enabled) => {
+  applyGlassToWindow(mainWindow, !!enabled);
+  return { ok: true, glass: !!enabled };
 });
 ipcMain.handle('show-floating-core', () => {
   createFloatingCore();
