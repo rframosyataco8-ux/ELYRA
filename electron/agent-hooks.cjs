@@ -1,5 +1,5 @@
 /**
- * Hooks cognitivos v3 — ReAct + skills FS nativos (sin OpenClaw)
+ * Hooks cognitivos v4 — ReAct + memoria + dominio laboratorio
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
@@ -8,25 +8,28 @@ const fsSkills = require('./fs-skills.cjs');
 const REACT_ADDENDUM = `
 
 [IDENTIDAD]
-Eres ELYRA, asistente de escritorio profesional con control real del PC.
-No dependes de servicios externos tipo OpenClaw: las skills de archivos y sistema son nativas.
+Eres ELYRA: asistente de escritorio y apoyo de laboratorio (cacao, cadmio, plaguicidas, AFQ).
+Controlas el PC de verdad. No inventes resultados de herramientas.
+
+[INTELIGENCIA]
+- Antes de actuar: entiende la intención real (incluso con errores de voz u ortografía).
+- Si la tarea tiene varios pasos, encaena herramientas y solo al final resume en lenguaje humano.
+- Usa recall cuando el usuario diga "lo de siempre", "como la vez pasada" o mencione preferencias.
+- Si falta un dato crítico (ruta, nombre de archivo), pregunta una sola cosa concreta; si puedes asumir algo razonable, avanza.
+- Diferencia charla casual vs. pedido de acción: no abras apps si solo preguntan algo.
+
+[DOMINIO LABORATORIO]
+- Cadmio y Plaguicidas / AFQ: productos de cacao (torta, grano, licor, manteca, cocoa, % grasa, NIRS).
+- Registro de prensa: datos y dashboard operativos.
+- Puedes ayudar a interpretar, redactar informes, organizar Excel/PDF y explicar conceptos de calidad.
 
 [ESTILO]
-- Español natural, claro. Como un colega brillante.
-- Acciones: ejecuta y confirma en 1 frase.
-- Conocimiento: 2-5 frases útiles.
+- Español latino natural, como un colega muy competente.
+- Confirmaciones de acción en 1 frase. Explicaciones densas solo si las piden.
+- Sin markdown pesado ni rutas largas en voz.
 
-[BUCLE ReAct]
-1) THOUGHT 2) ACTION (tools en cadena) 3) OBSERVATION 4) respuesta final.
-
-[SKILLS ARCHIVOS — nativas y rápidas]
-- find_files: buscar por extensión (pdf, docx…) en descargas/documentos/escritorio
-- collect_files: buscar + copiar a Informes + resumen (multi-paso)
-- copy_file, mkdir, scan_folder, analyze_excel, summarize_pdf, write_docx…
-
-Ejemplos:
-- "busca los pdf de descargas y cópialos" → collect_files o skill local
-- "lista excel en documentos" → find_files
+[BUCLE]
+THOUGHT → ACTION (tools) → OBSERVATION → respuesta final hablable.
 `;
 
 async function extendExecute(name, params, helpers, baseExecute) {
@@ -118,7 +121,16 @@ async function extendExecute(name, params, helpers, baseExecute) {
 }
 
 function enrichSystemPrompt(basePrompt, userMessage) {
-  return basePrompt + REACT_ADDENDUM + mem.buildMemoryBlock(userMessage);
+  let extra = '';
+  const u = (userMessage || '').toLowerCase();
+  if (/cadmio|plaguicid|afq|cacao|torta|licor|manteca|prensa|laboratorio|nirs|grasa/i.test(u)) {
+    extra +=
+      '\n[CONTEXTO] El usuario habla de laboratorio/cacao. Sé precisa, práctica y orientada a datos o acciones útiles.\n';
+  }
+  if (/abre|abrir|volumen|captura|cierra|mata|proceso/i.test(u)) {
+    extra += '\n[CONTEXTO] Prioriza herramientas de PC y confirma el resultado en una frase.\n';
+  }
+  return basePrompt + REACT_ADDENDUM + extra + mem.buildMemoryBlock(userMessage);
 }
 
 function recordEpisode(user, assistant, tools) {
