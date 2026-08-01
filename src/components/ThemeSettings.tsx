@@ -37,13 +37,14 @@ export function ThemeSettings() {
   return (
     <div className="hud-glass rounded-2xl p-5 space-y-4">
       <div className="flex items-center gap-2">
-        <Palette className="w-4 h-4 text-sky-400" style={{ color: 'var(--ely-accent)' }} />
+        <Palette className="w-4 h-4" style={{ color: 'var(--ely-accent)' }} />
         <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
           Apariencia
         </h3>
       </div>
       <p className="text-[12px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
-        Elige un tema suave para la vista. Claro usa grises cálidos; oscuro evita negros puros.
+        Oscuro y claro cuidan la vista. <strong style={{ color: 'var(--ely-accent)' }}>Cristal</strong> activa
+        vidrio avanzado con desenfoque y efecto acrylic en Windows 11.
       </p>
       <div className="grid grid-cols-2 gap-2.5">
         {THEME_OPTIONS.map((opt) => {
