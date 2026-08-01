@@ -34,24 +34,21 @@ const isDev = !app.isPackaged;
 function applyGlassToWindow(win, enabled) {
   if (!win || win.isDestroyed()) return;
   try {
-    if (enabled) {
-      win.setBackgroundColor('#00000000');
-      if (typeof win.setBackgroundMaterial === 'function') {
+    // Always transparent so CSS themes (light/dark/crystal) control fill
+    win.setBackgroundColor('#00000000');
+    if (typeof win.setBackgroundMaterial === 'function') {
+      try {
+        win.setBackgroundMaterial(enabled ? 'acrylic' : 'none');
+      } catch {
         try {
-          win.setBackgroundMaterial('acrylic');
-        } catch {
-          try {
-            win.setBackgroundMaterial('mica');
-          } catch {}
-        }
-      }
-    } else {
-      win.setBackgroundColor('#0b1220');
-      if (typeof win.setBackgroundMaterial === 'function') {
-        try {
-          win.setBackgroundMaterial('none');
+          win.setBackgroundMaterial(enabled ? 'mica' : 'none');
         } catch {}
       }
+    }
+    if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
+      try {
+        win.setVibrancy(enabled ? 'under-window' : null);
+      } catch {}
     }
   } catch (e) {
     console.warn('[ELYRA] glass mode:', e.message);
