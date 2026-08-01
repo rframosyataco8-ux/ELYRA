@@ -15,6 +15,7 @@ import {
   Database,
   ClipboardList,
   Beaker,
+  CalendarDays,
 } from 'lucide-react';
 
 export type AppPage =
@@ -23,7 +24,8 @@ export type AppPage =
   | 'config'
   | 'productos'
   | 'registro-prensa'
-  | 'afq';
+  | 'afq'
+  | 'cronograma';
 
 interface SidebarProps {
   active: AppPage;
@@ -44,7 +46,7 @@ export function Sidebar({
   operator,
   onLogout,
 }: SidebarProps) {
-  const labPages: AppPage[] = ['productos', 'registro-prensa', 'afq'];
+  const labPages: AppPage[] = ['productos', 'registro-prensa', 'afq', 'cronograma'];
   const datosPages: AppPage[] = ['registro-prensa', 'afq'];
   const [labOpen, setLabOpen] = useState(labPages.includes(active));
   const [datosOpen, setDatosOpen] = useState(datosPages.includes(active));
@@ -223,6 +225,22 @@ export function Sidebar({
                     </div>
                   )}
                 </div>
+
+                {/* Cronograma */}
+                <button
+                  onClick={() => onNavigate('cronograma')}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-all ${
+                    active === 'cronograma'
+                      ? 'bg-sky-500/20 text-sky-100 border border-sky-400/35 shadow-[0_0_20px_rgba(14,165,233,0.15)]'
+                      : 'text-sky-300/55 hover:text-sky-100 hover:bg-sky-500/10 border border-transparent'
+                  }`}
+                >
+                  <CalendarDays className={`w-3.5 h-3.5 shrink-0 ${active === 'cronograma' ? 'text-sky-300' : ''}`} />
+                  <span className="tracking-wide truncate">Cronograma</span>
+                  {active === 'cronograma' && (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8] shrink-0" />
+                  )}
+                </button>
               </div>
             )}
           </div>
