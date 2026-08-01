@@ -9,6 +9,7 @@ import { LoginGate, clearSession } from '@/components/LoginGate';
 import { ProductsPanel, type ProductView } from '@/components/ProductsPanel';
 import { RegistroPrensaPanel } from '@/components/RegistroPrensaPanel';
 import { AfqPanel, type AfqView } from '@/components/AfqPanel';
+import { CronogramaPanel } from '@/components/CronogramaPanel';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
@@ -41,7 +42,7 @@ const VIEW_LABEL: Record<string, string> = {
   analisis: 'Análisis',
 };
 
-const LAB_PAGES: AppPage[] = ['productos', 'registro-prensa', 'afq'];
+const LAB_PAGES: AppPage[] = ['productos', 'registro-prensa', 'afq', 'cronograma'];
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -493,6 +494,8 @@ export default function App() {
             )}
 
             {page === 'afq' && <AfqPanel onSelectProduct={handleSelectProduct} />}
+
+            {page === 'cronograma' && <CronogramaPanel />}
 
             {page === 'config' && (
               <div className="max-w-lg mx-auto w-full space-y-5 pt-4 animate-fade-in overflow-y-auto pb-4">
