@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* —— Tokens por tema (coherentes en toda la UI) —— */
+/* ═══════════ DARK ═══════════ */
 :root,
 [data-theme='dark'] {
   --ely-bg: #0b1220;
@@ -29,60 +29,71 @@
   --ely-nav-hover: rgba(56, 189, 248, 0.1);
   --ely-nav-active: rgba(56, 189, 248, 0.2);
   --ely-header-border: rgba(56, 189, 248, 0.1);
+  --ely-card: rgba(15, 23, 42, 0.55);
+  --ely-card-hover: rgba(56, 189, 248, 0.12);
+  --ely-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
 }
 
+/* ═══════════ LIGHT — premium, suave a la vista ═══════════ */
 [data-theme='light'] {
-  --ely-bg: #f1f5f9;
+  --ely-bg: #eef3f8;
   --ely-bg-elevated: #ffffff;
-  --ely-bg-soft: #e8eef5;
-  --ely-surface: rgba(255, 255, 255, 0.88);
-  --ely-surface-strong: rgba(255, 255, 255, 0.96);
-  --ely-border: rgba(100, 116, 139, 0.2);
-  --ely-border-strong: rgba(2, 132, 199, 0.35);
-  --ely-text: #0f172a;
-  --ely-text-muted: #64748b;
-  --ely-text-dim: rgba(100, 116, 139, 0.55);
-  --ely-accent: #0284c7;
-  --ely-accent-soft: rgba(2, 132, 199, 0.1);
-  --ely-accent-mid: rgba(2, 132, 199, 0.18);
-  --ely-glow: rgba(2, 132, 199, 0.08);
-  --ely-scrollbar: rgba(100, 116, 139, 0.35);
-  --ely-input-bg: rgba(255, 255, 255, 0.95);
+  --ely-bg-soft: #e4ebf3;
+  --ely-surface: rgba(255, 255, 255, 0.92);
+  --ely-surface-strong: #ffffff;
+  --ely-border: rgba(71, 85, 105, 0.12);
+  --ely-border-strong: rgba(14, 116, 144, 0.28);
+  --ely-text: #0c1929;
+  --ely-text-muted: #5b6b7c;
+  --ely-text-dim: rgba(91, 107, 124, 0.55);
+  --ely-accent: #0e7490;
+  --ely-accent-soft: rgba(14, 116, 144, 0.09);
+  --ely-accent-mid: rgba(14, 116, 144, 0.16);
+  --ely-glow: rgba(14, 116, 144, 0.07);
+  --ely-scrollbar: rgba(100, 116, 139, 0.28);
+  --ely-input-bg: #ffffff;
   --ely-danger: #dc2626;
   --ely-success: #059669;
   --ely-warning: #d97706;
-  --ely-blur: 16px;
+  --ely-blur: 20px;
   --ely-radius: 16px;
-  --ely-nav-hover: rgba(2, 132, 199, 0.08);
-  --ely-nav-active: rgba(2, 132, 199, 0.14);
-  --ely-header-border: rgba(100, 116, 139, 0.15);
+  --ely-nav-hover: rgba(14, 116, 144, 0.07);
+  --ely-nav-active: rgba(14, 116, 144, 0.12);
+  --ely-header-border: rgba(71, 85, 105, 0.1);
+  --ely-card: #ffffff;
+  --ely-card-hover: rgba(14, 116, 144, 0.06);
+  --ely-shadow: 0 4px 24px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
+/* ═══════════ CRISTAL — nivel máximo ═══════════ */
 [data-theme='transparent'] {
   --ely-bg: transparent;
-  --ely-bg-elevated: rgba(10, 18, 36, 0.28);
-  --ely-bg-soft: rgba(8, 16, 32, 0.22);
-  --ely-surface: rgba(14, 26, 48, 0.32);
-  --ely-surface-strong: rgba(16, 30, 56, 0.48);
-  --ely-border: rgba(186, 230, 253, 0.22);
-  --ely-border-strong: rgba(125, 211, 252, 0.4);
-  --ely-text: #f0f9ff;
-  --ely-text-muted: rgba(186, 230, 253, 0.72);
-  --ely-text-dim: rgba(186, 230, 253, 0.45);
-  --ely-accent: #7dd3fc;
-  --ely-accent-soft: rgba(56, 189, 248, 0.18);
-  --ely-accent-mid: rgba(56, 189, 248, 0.28);
-  --ely-glow: rgba(56, 189, 248, 0.16);
-  --ely-scrollbar: rgba(125, 211, 252, 0.4);
-  --ely-input-bg: rgba(8, 18, 36, 0.42);
+  --ely-bg-elevated: rgba(12, 22, 42, 0.22);
+  --ely-bg-soft: rgba(8, 16, 32, 0.18);
+  --ely-surface: rgba(255, 255, 255, 0.06);
+  --ely-surface-strong: rgba(255, 255, 255, 0.1);
+  --ely-border: rgba(255, 255, 255, 0.18);
+  --ely-border-strong: rgba(186, 230, 253, 0.45);
+  --ely-text: #f8fafc;
+  --ely-text-muted: rgba(226, 232, 240, 0.78);
+  --ely-text-dim: rgba(226, 232, 240, 0.5);
+  --ely-accent: #a5f3fc;
+  --ely-accent-soft: rgba(165, 243, 252, 0.14);
+  --ely-accent-mid: rgba(165, 243, 252, 0.25);
+  --ely-glow: rgba(125, 211, 252, 0.22);
+  --ely-scrollbar: rgba(165, 243, 252, 0.35);
+  --ely-input-bg: rgba(255, 255, 255, 0.08);
   --ely-danger: #fca5a5;
   --ely-success: #6ee7b7;
-  --ely-warning: #fcd34d;
-  --ely-blur: 28px;
-  --ely-radius: 18px;
-  --ely-nav-hover: rgba(125, 211, 252, 0.12);
-  --ely-nav-active: rgba(56, 189, 248, 0.22);
-  --ely-header-border: rgba(186, 230, 253, 0.15);
+  --ely-warning: #fde68a;
+  --ely-blur: 42px;
+  --ely-radius: 20px;
+  --ely-nav-hover: rgba(255, 255, 255, 0.08);
+  --ely-nav-active: rgba(165, 243, 252, 0.18);
+  --ely-header-border: rgba(255, 255, 255, 0.12);
+  --ely-card: rgba(255, 255, 255, 0.07);
+  --ely-card-hover: rgba(165, 243, 252, 0.12);
+  --ely-shadow: 0 16px 48px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 @layer base {
@@ -95,7 +106,7 @@
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
-    transition: background-color 0.3s ease, color 0.25s ease;
+    transition: background-color 0.35s ease, color 0.3s ease;
   }
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -115,30 +126,71 @@
   position: relative;
 }
 
-[data-theme='dark'] .ely-app { background: #0b1220; }
-[data-theme='light'] .ely-app { background: #f1f5f9; }
-
-[data-theme='transparent'] .ely-app {
+/* —— LIGHT: fondo papel suave con sutil profundidad —— */
+[data-theme='light'] .ely-app {
   background:
-    radial-gradient(ellipse 90% 60% at 20% -10%, rgba(56, 189, 248, 0.12), transparent 55%),
-    radial-gradient(ellipse 70% 50% at 100% 100%, rgba(99, 102, 241, 0.08), transparent 50%),
-    linear-gradient(165deg, rgba(8, 16, 32, 0.42) 0%, rgba(6, 12, 26, 0.28) 100%);
-  backdrop-filter: blur(var(--ely-blur)) saturate(1.35);
-  -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.35);
+    radial-gradient(ellipse 80% 50% at 10% 0%, rgba(14, 116, 144, 0.06), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(99, 102, 241, 0.04), transparent 45%),
+    linear-gradient(180deg, #f4f7fb 0%, #eef3f8 40%, #e8eef5 100%);
 }
 
+[data-theme='dark'] .ely-app {
+  background: #0b1220;
+}
+
+/* —— CRISTAL MÁXIMO: capas de vidrio, specular, blur extremo —— */
+[data-theme='transparent'] .ely-app {
+  background:
+    radial-gradient(ellipse 100% 70% at 15% -5%, rgba(165, 243, 252, 0.16), transparent 55%),
+    radial-gradient(ellipse 80% 60% at 95% 105%, rgba(167, 139, 250, 0.12), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 50% 50%, rgba(56, 189, 248, 0.05), transparent 70%),
+    linear-gradient(
+      155deg,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(12, 24, 48, 0.25) 35%,
+      rgba(6, 14, 30, 0.18) 100%
+    );
+  backdrop-filter: blur(var(--ely-blur)) saturate(1.55) brightness(1.05);
+  -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.55) brightness(1.05);
+  isolation: isolate;
+}
+
+/* Specular superior + borde luminoso */
 [data-theme='transparent'] .ely-app::before {
   content: '';
   pointer-events: none;
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.09) 0%,
-    rgba(255, 255, 255, 0.02) 12%,
-    transparent 28%
-  );
   z-index: 0;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.04) 8%,
+      transparent 22%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(165, 243, 252, 0.06) 0%,
+      transparent 20%,
+      transparent 80%,
+      rgba(167, 139, 250, 0.05) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* Micro-reflejos (ruido suave) */
+[data-theme='transparent'] .ely-app::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
 }
 
 [data-theme='transparent'] .ely-app > * {
@@ -152,12 +204,50 @@
   backdrop-filter: blur(var(--ely-blur));
   -webkit-backdrop-filter: blur(var(--ely-blur));
   border-radius: var(--ely-radius);
+  box-shadow: var(--ely-shadow);
 }
 
 .ely-text-muted { color: var(--ely-text-muted); }
 .ely-accent { color: var(--ely-accent); }
 
-/* Navegación coherente con el tema */
+/* Product / grid cards — tema-aware */
+.ely-product-card {
+  aspect-ratio: 5 / 4;
+  border-radius: 1rem;
+  border: 1px solid var(--ely-border);
+  background: var(--ely-card);
+  box-shadow: var(--ely-shadow);
+  transition: all 0.22s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+.ely-product-card:hover {
+  background: var(--ely-card-hover);
+  border-color: var(--ely-border-strong);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px var(--ely-glow);
+}
+.ely-product-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--ely-border);
+  background: var(--ely-accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ely-accent);
+  transition: transform 0.2s, border-color 0.2s;
+}
+.ely-product-card:hover .ely-product-icon {
+  transform: scale(1.06);
+  border-color: var(--ely-border-strong);
+}
+
 .ely-nav-item {
   width: 100%;
   display: flex;
@@ -176,11 +266,15 @@
   color: var(--ely-text);
   background: var(--ely-nav-active);
   border-color: var(--ely-border-strong);
-  box-shadow: 0 0 24px var(--ely-glow);
+  box-shadow: 0 0 20px var(--ely-glow);
 }
 .ely-nav-item.active .ely-nav-dot {
   background: var(--ely-accent);
   box-shadow: 0 0 10px var(--ely-accent);
+}
+
+[data-theme='light'] .ely-nav-item.active {
+  box-shadow: 0 2px 12px rgba(14, 116, 144, 0.1);
 }
 
 .ely-header {
@@ -198,38 +292,67 @@
     border: 1px solid var(--ely-border);
     backdrop-filter: blur(var(--ely-blur)) saturate(1.2);
     -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.2);
-    box-shadow: 0 0 40px var(--ely-glow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    box-shadow: var(--ely-shadow);
   }
 
   .hud-glass-strong {
     background: var(--ely-surface-strong);
     border: 1px solid var(--ely-border-strong);
-    backdrop-filter: blur(calc(var(--ely-blur) + 6px)) saturate(1.25);
-    -webkit-backdrop-filter: blur(calc(var(--ely-blur) + 6px)) saturate(1.25);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 0 50px var(--ely-glow), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(calc(var(--ely-blur) + 8px)) saturate(1.25);
+    -webkit-backdrop-filter: blur(calc(var(--ely-blur) + 8px)) saturate(1.25);
+    box-shadow: var(--ely-shadow);
   }
 
+  /* LIGHT panels: clean white cards */
+  [data-theme='light'] .hud-glass {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: rgba(71, 85, 105, 0.1);
+    box-shadow:
+      0 4px 20px rgba(15, 23, 42, 0.05),
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+
+  [data-theme='light'] .hud-glass-strong {
+    background: #ffffff;
+    border-color: rgba(14, 116, 144, 0.18);
+    box-shadow:
+      0 8px 28px rgba(15, 23, 42, 0.07),
+      0 1px 3px rgba(15, 23, 42, 0.04);
+  }
+
+  /* CRISTAL panels: ultra glass */
   [data-theme='transparent'] .hud-glass {
     background: linear-gradient(
       145deg,
-      rgba(255, 255, 255, 0.07) 0%,
-      rgba(14, 26, 48, 0.28) 40%,
-      rgba(8, 16, 32, 0.35) 100%
+      rgba(255, 255, 255, 0.12) 0%,
+      rgba(255, 255, 255, 0.04) 40%,
+      rgba(12, 24, 48, 0.2) 100%
     );
-    border-color: rgba(186, 230, 253, 0.28);
+    border-color: rgba(255, 255, 255, 0.22);
+    backdrop-filter: blur(32px) saturate(1.6);
+    -webkit-backdrop-filter: blur(32px) saturate(1.6);
     box-shadow:
-      0 12px 40px rgba(0, 0, 0, 0.22),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      0 16px 48px rgba(0, 0, 0, 0.25),
+      0 0 0 1px rgba(255, 255, 255, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      inset 0 -1px 0 rgba(165, 243, 252, 0.08);
   }
 
   [data-theme='transparent'] .hud-glass-strong {
     background: linear-gradient(
       160deg,
-      rgba(255, 255, 255, 0.1) 0%,
-      rgba(16, 32, 58, 0.45) 45%,
-      rgba(10, 20, 40, 0.55) 100%
+      rgba(255, 255, 255, 0.16) 0%,
+      rgba(255, 255, 255, 0.06) 35%,
+      rgba(14, 30, 56, 0.35) 100%
     );
-    border-color: rgba(125, 211, 252, 0.38);
+    border-color: rgba(186, 230, 253, 0.4);
+    backdrop-filter: blur(40px) saturate(1.7);
+    -webkit-backdrop-filter: blur(40px) saturate(1.7);
+    box-shadow:
+      0 20px 56px rgba(0, 0, 0, 0.3),
+      0 0 80px rgba(125, 211, 252, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28);
   }
 
   .hud-glow {
@@ -242,21 +365,35 @@
   [data-theme='light'] .text-glow,
   [data-theme='light'] .text-glow-soft {
     text-shadow: none;
+    color: var(--ely-text);
   }
   .text-glow-soft {
     text-shadow: 0 0 10px rgba(56, 189, 248, 0.25);
+  }
+  [data-theme='transparent'] .text-glow {
+    text-shadow: 0 0 20px rgba(165, 243, 252, 0.45), 0 0 40px rgba(56, 189, 248, 0.2);
   }
 
   .input-hud {
     background: var(--ely-input-bg);
     border: 1px solid var(--ely-border-strong);
-    box-shadow: 0 0 20px var(--ely-glow);
+    box-shadow: 0 0 16px var(--ely-glow);
+  }
+
+  [data-theme='light'] .input-hud {
+    background: #ffffff;
+    border-color: rgba(71, 85, 105, 0.18);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
   }
 
   [data-theme='transparent'] .input-hud {
-    background: rgba(8, 18, 36, 0.45);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.25);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    box-shadow:
+      0 0 28px rgba(165, 243, 252, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
   }
 
   .status-chip {
@@ -267,6 +404,13 @@
     border-radius: 9999px;
     background: var(--ely-accent-soft);
     border: 1px solid var(--ely-border);
+  }
+
+  [data-theme='transparent'] .status-chip {
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: rgba(165, 243, 252, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 
   .theme-card {
@@ -287,6 +431,67 @@
     background: var(--ely-accent-soft);
     box-shadow: 0 0 18px var(--ely-glow);
   }
+
+  [data-theme='light'] .theme-card {
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+  }
+  [data-theme='light'] .theme-card.active {
+    box-shadow: 0 4px 16px rgba(14, 116, 144, 0.12);
+  }
+
+  [data-theme='transparent'] .theme-card {
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* Overrides Tailwind sky-* en tema light/crystal para coherencia */
+[data-theme='light'] .text-white {
+  color: var(--ely-text) !important;
+}
+[data-theme='light'] .text-sky-100,
+[data-theme='light'] .text-sky-200,
+[data-theme='light'] .text-sky-50 {
+  color: var(--ely-text) !important;
+}
+[data-theme='light'] .text-sky-300,
+[data-theme='light'] .text-sky-400 {
+  color: var(--ely-text-muted) !important;
+}
+[data-theme='light'] .border-sky-500\/10,
+[data-theme='light'] .border-sky-500\/12,
+[data-theme='light'] .border-sky-500\/15 {
+  border-color: var(--ely-header-border) !important;
+}
+[data-theme='light'] .bg-sky-950\/35,
+[data-theme='light'] .bg-sky-950\/50 {
+  background: var(--ely-card) !important;
+}
+[data-theme='light'] .bg-sky-500\/10,
+[data-theme='light'] .bg-sky-500\/15,
+[data-theme='light'] .bg-sky-500\/20 {
+  background: var(--ely-accent-soft) !important;
+}
+[data-theme='light'] .border-sky-500\/20,
+[data-theme='light'] .border-sky-500\/25,
+[data-theme='light'] .border-sky-400\/30,
+[data-theme='light'] .border-sky-400\/35 {
+  border-color: var(--ely-border) !important;
+}
+
+[data-theme='transparent'] .bg-sky-950\/35,
+[data-theme='transparent'] .bg-sky-950\/50 {
+  background: var(--ely-card) !important;
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+[data-theme='transparent'] .border-sky-500\/20,
+[data-theme='transparent'] .border-sky-500\/15,
+[data-theme='transparent'] .border-sky-500\/12 {
+  border-color: var(--ely-border) !important;
 }
 
 @layer utilities {
