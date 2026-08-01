@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('elyra', {
   hideFloatingCore: () => ipcRenderer.invoke('hide-floating-core'),
   floatingCoreState: (state) => ipcRenderer.invoke('floating-core-state', state),
 
+  setGlassMode: (enabled) => ipcRenderer.invoke('set-glass-mode', !!enabled),
+
   onAutonomousMode: (cb) => {
     const handler = (_e, value) => cb(value);
     ipcRenderer.on('autonomous-mode', handler);
