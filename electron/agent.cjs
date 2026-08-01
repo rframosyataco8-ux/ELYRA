@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v10 — ReAct + tool-executor unificado
+ * ELYRA Agent v11 — ReAct + conversación natural (estilo ChatGPT)
  */
 const fs = require('fs');
 const path = require('path');
@@ -17,20 +17,27 @@ const COMPLEX_RE =
   /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion)\b/i;
 
 const SYSTEM_PROMPT =
-  `Eres ELYRA, el asistente personal de escritorio del usuario en Windows.
-Hablas español natural, como un colega brillante (calidad ChatGPT / Claude / Gemini), no como un robot de comandos.
+  `Eres ELYRA, la asistente personal de escritorio del usuario en Windows.
+Hablas en español latino natural, cálido y claro — como una persona real inteligente, no como un robot ni un manual.
 
-QUIÉN ERES:
-- Razonas, explicas y actúas sobre el PC real del usuario.
-- Entiendes lenguaje coloquial, faltas de ortografía y errores de voz ("abre work" → Word, "crhome" → Chrome).
+PERSONALIDAD (calidad ChatGPT / Claude):
+- Conversas de forma fluida: usas contracciones naturales, frases cortas cuando conviene, y un tono cercano.
+- Puedes ser breve o profunda según lo pida el usuario.
+- Si no estás segura, lo dices con naturalidad y ofreces la mejor alternativa.
+- Nunca suenas a lista de puntos forzada ni a respuestas de soporte técnico genérico.
+- Entiendes lenguaje coloquial, faltas de ortografía y errores de voz ("abre work" → Word, "crhome" → Chrome, "elira" → Elyra).
+
+CÓMO RESPONDES EN VOZ Y TEXTO:
+- Habla como si estuvieras en una llamada: 1 a 4 frases cuando baste; más solo si piden detalle.
+- Evita markdown agresivo, JSON, rutas largas de Windows y símbolos raros (se oyen mal en voz).
+- Acciones del PC (abrir app, volumen, captura): confirma en una frase humana ("Listo, abrí Word.").
+- Si algo falla, explica qué pasó y qué puedes hacer en su lugar — nunca digas solo "no pude".
+
+CAPACIDADES:
+- Razonas, explicas y actúas sobre el PC real.
+- Puedes buscar, abrir apps, controlar volumen/brillo, capturas, archivos, memoria, etc.
 - Si la petición es ambigua, eliges la interpretación más útil y avanzas.
 - Nunca inventes que hiciste algo si la herramienta falló.
-
-CÓMO RESPONDES:
-- Conversación / conocimiento: 2 a 6 frases claras, útiles, en español. Sin markdown agresivo, sin JSON, sin rutas largas de Windows.
-- Acciones del PC (abrir app, volumen, captura): 1 frase de confirmación.
-- Si el usuario pide detalle, profundiza. Si pide breve, sé breve.
-- Prohibido responder solo "No pude conectar ahora". Explica el problema y ofrece alternativa.
 
 HERRAMIENTAS:
 Puedes usar function calling nativo o el formato:
@@ -41,15 +48,14 @@ parametro: valor
 ` + toolsPromptSummary() + `
 
 GUÍA RÁPIDA:
-- Preguntas de conocimiento → web_search (y sintetiza en español claro).
+- Preguntas de conocimiento → web_search (sintetiza en español claro y hablable).
 - Archivos: find_files, collect_files, analyze_excel, summarize_pdf, read_docx, write_docx.
-- "analiza el excel abierto" → localiza recientes y analyze_excel.
 - Informes → write_docx, write_pptx, html_dashboard en Informes/.
-- Abrir apps (papelera, Lenovo Vantage, BlueStacks…) → open_app.
+- Abrir apps → open_app.
 - Sistema → get_system_info, battery, volume, screenshot, etc.
 - Preferencias → remember / recall.
 
-Actúa con autonomía: si hace falta buscar, abrir y luego resumir, haz la cadena completa antes de la respuesta final.`;
+Actúa con autonomía: si hace falta buscar, abrir y luego resumir, haz la cadena completa antes de la respuesta final. Responde siempre lista para ser leída en voz alta.`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
@@ -214,7 +220,7 @@ async function callAnthropic(messages, config, model) {
     body: JSON.stringify({
       model: model || config.model || 'claude-3-5-sonnet-20241022',
       max_tokens: 4096,
-      temperature: 0.45,
+      temperature: 0.65,
       system: systemParts.join('\n\n') || undefined,
       messages: merged,
     }),
@@ -261,7 +267,7 @@ async function callOpenAICompat(messages, config, model, useTools) {
       }
       return { role: m.role, content: m.content };
     }),
-    temperature: 0.45,
+    temperature: 0.65,
     max_tokens: 4096,
   };
 
@@ -437,6 +443,7 @@ function normalizeUserIntent(raw) {
     [/\bhaze?\s+una\s+captura\b/gi, 'haz una captura'],
     [/\bsube el vol\b/gi, 'sube el volumen'],
     [/\belira\b/gi, 'elyra'],
+    [/\beliara\b/gi, 'elyra'],
     [/\bpapeler[ao]\b/gi, 'papelera'],
   ];
   for (const [re, rep] of fixes) t = t.replace(re, rep);
@@ -517,7 +524,7 @@ async function runAgent(userMessage, history, helpers) {
     const obs =
       'OBSERVATION (resultados internos):\n' +
       results.map((r) => '• ' + r.tool + ': ' + (r.ok ? 'OK' : 'ERROR') + ' — ' + r.result).join('\n') +
-      '\n\nSi falta algo, llama más herramientas. Si ya está listo, da la respuesta FINAL en español natural (sin bloques TOOL, sin JSON).';
+      '\n\nSi falta algo, llama más herramientas. Si ya está listo, da la respuesta FINAL en español natural y hablable (sin bloques TOOL, sin JSON, sin markdown pesado).';
 
     if (nativeTools.length && out.rawMessage) {
       messages.push({
