@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld('elyraFloating', {
     ipcRenderer.on('floating-state', handler);
     return () => ipcRenderer.removeListener('floating-state', handler);
   },
+  restoreMain: () => ipcRenderer.invoke('restore-from-floating'),
 });

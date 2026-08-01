@@ -25,25 +25,18 @@ function cleanQuery(q) {
 
 /**
  * Detecta búsquedas en sitios concretos y compuestos navegador+query.
- * @returns
- *  | { type: 'youtube_search', query: string }
- *  | { type: 'google_search', query: string }
- *  | { type: 'wiki_search', query: string }
- *  | { type: 'compound_search', browser: string, query: string }
- *  | null
  */
 function parseCompound(text) {
   const t = applyTypos(text).toLowerCase().trim();
 
-  // --- YouTube prioritario (antes de chrome/google) ---
-  // "busca hh en youtube" / "busca en youtube hh" / "youtube busca hh"
-  // "abre youtube y busca hh" / "pon el video hh en youtube"
   const ytPatterns = [
     /\b(?:busca|buscar|buscame|busca\s+me|busca\s+el\s+video|pon|reproduce|play)\s+(.+?)\s+en\s+(?:youtube|yt)\b/i,
     /\b(?:busca|buscar|buscame)\s+en\s+(?:youtube|yt)\s+(.+)/i,
     /\b(?:abre|abrir|abre\s+me|abreme)\s+(?:el\s+)?(?:youtube|yt)\s+(?:y|,)?\s*(?:me\s+)?(?:busca|buscar|buscame|pon|reproduce)?\s*(.+)/i,
     /\b(?:youtube|yt)\s+(?:busca|buscar|buscame|search)\s+(.+)/i,
     /\b(?:video|vídeo)\s+(?:de\s+)?(.+?)\s+en\s+(?:youtube|yt)\b/i,
+    /\b(?:pon|poner|reproduce|play|escucha|quiero\s+escuchar)\s+(?:la\s+)?(?:musica|música|cancion|canción|tema|video|vídeo)\s+(?:de\s+)?(.+)/i,
+    /\b(?:pon|reproduce|play)\s+(.+?)\s+(?:en\s+youtube|por\s+favor)?$/i,
   ];
   for (const re of ytPatterns) {
     const m = t.match(re);
@@ -56,7 +49,6 @@ function parseCompound(text) {
     }
   }
 
-  // Wikipedia
   const wiki = t.match(
     /\b(?:busca|buscar|buscame|qué es|que es)\s+(.+?)\s+en\s+(?:wikipedia|wiki)\b/i,
   );
@@ -64,7 +56,6 @@ function parseCompound(text) {
     return { type: 'wiki_search', query: cleanQuery(wiki[1]) };
   }
 
-  // Google explícito: "busca X en google"
   const gExplicit = t.match(
     /\b(?:busca|buscar|buscame)\s+(.+?)\s+en\s+google\b/i,
   );
@@ -72,7 +63,6 @@ function parseCompound(text) {
     return { type: 'google_search', query: cleanQuery(gExplicit[1]) };
   }
 
-  // "abre chrome/edge y busca X"
   const compound = t.match(
     /\b(?:abre|abrir)\s+(?:el\s+|la\s+)?(chrome|navegador|browser|edge|firefox)\s*(?:y|,)?\s*(?:me\s+)?(?:busca|buscar|buscame|busca\s+me)\s+(.+)/i,
   );
@@ -90,7 +80,6 @@ function parseCompound(text) {
   if (compound2) {
     const left = compound2[1].trim();
     const query = cleanQuery(compound2[2]);
-    // Si el lado izquierdo es youtube → youtube_search
     if (/youtube|\byt\b/.test(left)) {
       return { type: 'youtube_search', query };
     }
@@ -98,13 +87,11 @@ function parseCompound(text) {
     return { type: 'compound_search', browser, query };
   }
 
-  // "busca X" genérico (Google + conocimiento)
   const searchOnly = t.match(
     /\b(?:busca|buscar|buscame|googlea|investiga)\s+(?:información\s+)?(?:sobre\s+)?(.+)/i,
   );
   if (searchOnly && !/\b(abre|abrir)\b/.test(t)) {
     let query = cleanQuery(searchOnly[1]);
-    // residual "en youtube" por si cleanQuery no lo quitó del final raro
     if (/\ben\s+youtube\b/i.test(searchOnly[1]) || /\byoutube\b/i.test(t)) {
       query = query.replace(/\s*youtube\s*/gi, '').trim();
       if (query) return { type: 'youtube_search', query };
@@ -126,7 +113,7 @@ function cleanOpenName(name) {
 }
 
 function youtubeSearchUrl(query) {
-  return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query);
+  return 'https://www.youtube.com/results?search_query=' + encodeURIComponent(query) + '&sp=EgIQAQ%253D%253D';
 }
 
 function googleSearchUrl(query) {
