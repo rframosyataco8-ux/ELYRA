@@ -108,21 +108,35 @@ function hideFloatingCore() {
   }
 }
 
-function openProductWindow(productName) {
+/**
+ * opts: string | { name, category?, views?, view? }
+ * views: 'dashboard,datos,analisis' o 'dashboard,datos'
+ */
+function openProductWindow(opts) {
+  const options =
+    typeof opts === 'string'
+      ? { name: opts, category: 'Cadmio y Plaguicidas', views: 'dashboard,datos,analisis' }
+      : {
+          name: (opts && opts.name) || 'Producto',
+          category: (opts && opts.category) || 'Cadmio y Plaguicidas',
+          views: (opts && opts.views) || 'dashboard,datos,analisis',
+          view: (opts && opts.view) || 'dashboard',
+        };
+
   if (productWindow && !productWindow.isDestroyed()) {
     productWindow.close();
   }
-  // Ocultar ventana principal mientras se muestra el producto
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.hide();
   }
+
   productWindow = new BrowserWindow({
-    width: 520,
-    height: 360,
-    minWidth: 400,
-    minHeight: 280,
+    width: 980,
+    height: 640,
+    minWidth: 720,
+    minHeight: 480,
     backgroundColor: '#030810',
-    title: productName || 'Producto',
+    title: options.name,
     frame: false,
     titleBarStyle: 'hidden',
     alwaysOnTop: false,
@@ -134,12 +148,18 @@ function openProductWindow(productName) {
     },
     show: false,
   });
-  const q = encodeURIComponent(productName || 'Producto');
-  productWindow.loadFile(path.join(__dirname, 'product-window.html'), { query: { name: productName || 'Producto' } });
+
+  productWindow.loadFile(path.join(__dirname, 'product-window.html'), {
+    query: {
+      name: options.name,
+      category: options.category,
+      views: options.views,
+      view: options.view || 'dashboard',
+    },
+  });
   productWindow.once('ready-to-show', () => productWindow.show());
   productWindow.on('closed', () => {
     productWindow = null;
-    // Al cerrar el producto, volver a mostrar la principal
     if (mainWindow && !mainWindow.isDestroyed() && !isQuitting) {
       mainWindow.show();
     }
@@ -411,9 +431,8 @@ ipcMain.handle('agent-config-test', async (_e, partial) => {
   return testApiConnection(partial || {});
 });
 
-// —— Producto y núcleo flotante ——
-ipcMain.handle('open-product-window', (_e, productName) => {
-  openProductWindow(productName || 'Producto');
+ipcMain.handle('open-product-window', (_e, opts) => {
+  openProductWindow(opts || 'Producto');
   return { ok: true };
 });
 ipcMain.handle('close-product-window', () => {
