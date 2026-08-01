@@ -12,11 +12,22 @@ import {
   Package,
   FlaskConical,
   ChevronDown,
+  Database,
+  ClipboardList,
+  Beaker,
 } from 'lucide-react';
 
+export type AppPage =
+  | 'inicio'
+  | 'asistente'
+  | 'config'
+  | 'productos'
+  | 'registro-prensa'
+  | 'afq';
+
 interface SidebarProps {
-  active: 'inicio' | 'asistente' | 'config' | 'productos';
-  onNavigate: (page: 'inicio' | 'asistente' | 'config' | 'productos') => void;
+  active: AppPage;
+  onNavigate: (page: AppPage) => void;
   hasApiKey?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -33,14 +44,17 @@ export function Sidebar({
   operator,
   onLogout,
 }: SidebarProps) {
-  const [labOpen, setLabOpen] = useState(active === 'productos');
+  const labPages: AppPage[] = ['productos', 'registro-prensa', 'afq'];
+  const datosPages: AppPage[] = ['registro-prensa', 'afq'];
+  const [labOpen, setLabOpen] = useState(labPages.includes(active));
+  const [datosOpen, setDatosOpen] = useState(datosPages.includes(active));
 
   const topItems = [
     { id: 'inicio' as const, label: 'Inicio', icon: Home },
     { id: 'asistente' as const, label: 'Conversación', icon: MessageSquare },
   ];
 
-  const labActive = active === 'productos';
+  const labActive = labPages.includes(active);
 
   return (
     <aside
@@ -79,8 +93,7 @@ export function Sidebar({
         </button>
       </div>
 
-      <nav className={`flex-1 space-y-1.5 ${collapsed ? 'px-2' : 'px-3'}`}>
-        {/* Inicio + Conversación */}
+      <nav className={`flex-1 space-y-1.5 overflow-y-auto ${collapsed ? 'px-2' : 'px-3'}`}>
         {topItems.map((item) => {
           const isActive = active === item.id;
           return (
@@ -109,7 +122,7 @@ export function Sidebar({
           );
         })}
 
-        {/* Laboratorio (desplegable) */}
+        {/* Laboratorio */}
         {collapsed ? (
           <button
             onClick={() => {
@@ -143,10 +156,11 @@ export function Sidebar({
             </button>
 
             {labOpen && (
-              <div className="ml-3 pl-3 border-l border-sky-500/20 space-y-1">
+              <div className="ml-2 pl-2.5 border-l border-sky-500/20 space-y-1">
+                {/* Cadmio y Plaguicidas */}
                 <button
                   onClick={() => onNavigate('productos')}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-all ${
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-all ${
                     active === 'productos'
                       ? 'bg-sky-500/20 text-sky-100 border border-sky-400/35 shadow-[0_0_20px_rgba(14,165,233,0.15)]'
                       : 'text-sky-300/55 hover:text-sky-100 hover:bg-sky-500/10 border border-transparent'
@@ -158,6 +172,57 @@ export function Sidebar({
                     <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8] shrink-0" />
                   )}
                 </button>
+
+                {/* Datos (submenú) */}
+                <div className="space-y-0.5">
+                  <button
+                    onClick={() => setDatosOpen((v) => !v)}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-all ${
+                      datosPages.includes(active)
+                        ? 'bg-sky-500/10 text-sky-100 border border-sky-400/20'
+                        : 'text-sky-300/55 hover:text-sky-100 hover:bg-sky-500/10 border border-transparent'
+                    }`}
+                  >
+                    <Database className={`w-3.5 h-3.5 shrink-0 ${datosPages.includes(active) ? 'text-sky-300' : ''}`} />
+                    <span className="tracking-wide flex-1 text-left truncate">Datos</span>
+                    <ChevronDown
+                      className={`w-3 h-3 text-sky-400/45 transition-transform duration-200 ${datosOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+
+                  {datosOpen && (
+                    <div className="ml-2 pl-2 border-l border-sky-500/15 space-y-0.5">
+                      <button
+                        onClick={() => onNavigate('registro-prensa')}
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] transition-all ${
+                          active === 'registro-prensa'
+                            ? 'bg-sky-500/20 text-sky-100 border border-sky-400/35'
+                            : 'text-sky-400/60 hover:text-sky-100 hover:bg-sky-500/10 border border-transparent'
+                        }`}
+                      >
+                        <ClipboardList className="w-3 h-3 shrink-0" />
+                        <span className="truncate">Registro de prensa</span>
+                        {active === 'registro-prensa' && (
+                          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8] shrink-0" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => onNavigate('afq')}
+                        className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] transition-all ${
+                          active === 'afq'
+                            ? 'bg-sky-500/20 text-sky-100 border border-sky-400/35'
+                            : 'text-sky-400/60 hover:text-sky-100 hover:bg-sky-500/10 border border-transparent'
+                        }`}
+                      >
+                        <Beaker className="w-3 h-3 shrink-0" />
+                        <span className="truncate">AFQ</span>
+                        {active === 'afq' && (
+                          <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8] shrink-0" />
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
