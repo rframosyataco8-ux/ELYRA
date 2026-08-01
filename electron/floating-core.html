@@ -37,7 +37,7 @@
 <body>
   <div id="root">
     <canvas id="globe" width="220" height="220"></canvas>
-    <div class="label">ELYRA</div>
+    <div class="label">ELYRA · doble clic para abrir</div>
   </div>
   <script>
     const canvas = document.getElementById('globe');
@@ -47,7 +47,6 @@
     let speaking = false;
     let listening = false;
 
-    // Simple fibonacci sphere points
     const points = [];
     const count = 120;
     const golden = Math.PI * (3 - Math.sqrt(5));
@@ -89,7 +88,6 @@
 
       ctx.clearRect(0, 0, size, size);
 
-      // Atmosphere
       const atmosA = 0.08 + act * 0.12;
       const outer = ctx.createRadialGradient(size/2, size/2, size*0.04, size/2, size/2, size*0.5);
       outer.addColorStop(0, `rgba(125,211,252,${atmosA * 0.9})`);
@@ -101,7 +99,6 @@
       const projected = points.map(project);
       projected.sort((a, b) => a.depth - b.depth);
 
-      // Nodes
       for (let i = 0; i < projected.length; i++) {
         const p = projected[i];
         const base = points[i];
@@ -114,7 +111,6 @@
         ctx.fill();
       }
 
-      // Core
       const coreR = 12 + act * 6 + Math.sin(t * 2.5) * 2;
       const core = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, coreR * 2.8);
       core.addColorStop(0, 'rgba(255,255,255,0.9)');
@@ -130,13 +126,21 @@
     }
     draw();
 
-    // Listen for state from main process
     if (window.elyraFloating) {
       window.elyraFloating.onState((s) => {
         speaking = !!s.speaking;
         listening = !!s.listening;
+        const lab = document.querySelector('.label');
+        if (lab) lab.textContent = listening ? 'ESCUCHANDO' : speaking ? 'HABLANDO' : 'ELYRA';
       });
     }
+    document.body.addEventListener('dblclick', () => {
+      window.elyraFloating?.restoreMain?.();
+    });
+    document.body.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      window.elyraFloating?.restoreMain?.();
+    });
   </script>
 </body>
 </html>
