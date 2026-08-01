@@ -4,7 +4,7 @@ export const THEME_OPTIONS: { id: ThemeId; label: string; hint: string }[] = [
   { id: 'dark', label: 'Oscuro', hint: 'Azul profundo, cómodo de noche' },
   { id: 'light', label: 'Claro', hint: 'Grises suaves, no cansa la vista' },
   { id: 'system', label: 'Sistema', hint: 'Sigue Windows claro/oscuro' },
-  { id: 'transparent', label: 'Transparente', hint: 'Cristal con desenfoque' },
+  { id: 'transparent', label: 'Cristal', hint: 'Vidrio avanzado · blur + acrylic' },
 ];
 
 const STORAGE_KEY = 'elyra-theme';
@@ -21,20 +21,28 @@ export function resolveTheme(id: ThemeId): 'dark' | 'light' | 'transparent' {
   if (id === 'transparent') return 'transparent';
   if (id === 'light') return 'light';
   if (id === 'dark') return 'dark';
-  // system
   try {
     if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'light';
   } catch {}
   return 'dark';
 }
 
+function syncElectronGlass(resolved: 'dark' | 'light' | 'transparent') {
+  try {
+    const glass = resolved === 'transparent';
+    window.elyra?.setGlassMode?.(glass);
+  } catch {}
+}
+
 export function applyTheme(id: ThemeId) {
   const resolved = resolveTheme(id);
   document.documentElement.setAttribute('data-theme', resolved);
+  document.documentElement.classList.toggle('theme-crystal', resolved === 'transparent');
   document.documentElement.style.colorScheme = resolved === 'light' ? 'light' : 'dark';
   try {
     localStorage.setItem(STORAGE_KEY, id);
   } catch {}
+  syncElectronGlass(resolved);
 }
 
 export function initTheme(): ThemeId {
