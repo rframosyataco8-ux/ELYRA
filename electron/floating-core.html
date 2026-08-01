@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ELYRA Núcleo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%;
+      background: transparent;
+      overflow: hidden;
+      -webkit-app-region: drag;
+      font-family: system-ui, sans-serif;
+    }
+    #root {
+      width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    canvas { display: block; }
+    .label {
+      position: absolute;
+      bottom: 8px;
+      left: 0; right: 0;
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      color: rgba(125, 211, 252, 0.55);
+      pointer-events: none;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <canvas id="globe" width="220" height="220"></canvas>
+    <div class="label">ELYRA</div>
+  </div>
+  <script>
+    const canvas = document.getElementById('globe');
+    const ctx = canvas.getContext('2d');
+    const size = 220;
+    let t = 0;
+    let speaking = false;
+    let listening = false;
+
+    // Simple fibonacci sphere points
+    const points = [];
+    const count = 120;
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    for (let i = 0; i < count; i++) {
+      const y = 1 - (i / (count - 1)) * 2;
+      const radius = Math.sqrt(Math.max(0, 1 - y * y));
+      const theta = golden * i;
+      points.push({
+        ox: Math.cos(theta) * radius,
+        oy: y,
+        oz: Math.sin(theta) * radius,
+        pulse: (i * 0.37) % (Math.PI * 2),
+      });
+    }
+
+    let rotY = 0, rotX = 0.22;
+
+    function project(p) {
+      let x = p.ox * Math.cos(rotY) - p.oz * Math.sin(rotY);
+      let z = p.ox * Math.sin(rotY) + p.oz * Math.cos(rotY);
+      let y = p.oy;
+      const y2 = y * Math.cos(rotX) - z * Math.sin(rotX);
+      const z2 = y * Math.sin(rotX) + z * Math.cos(rotX);
+      const scale = size * 0.34;
+      const perspective = 700 / (700 + z2 * scale);
+      return {
+        sx: size / 2 + x * scale * perspective,
+        sy: size / 2 + y2 * scale * perspective * 0.94,
+        depth: z2,
+        scale: perspective,
+      };
+    }
+
+    function draw() {
+      t += 0.016;
+      const act = speaking || listening ? 1 : 0.35;
+      rotY += 0.004 + act * 0.008;
+      rotX = 0.2 + Math.sin(t * 0.35) * 0.03;
+
+      ctx.clearRect(0, 0, size, size);
+
+      // Atmosphere
+      const atmosA = 0.08 + act * 0.12;
+      const outer = ctx.createRadialGradient(size/2, size/2, size*0.04, size/2, size/2, size*0.5);
+      outer.addColorStop(0, `rgba(125,211,252,${atmosA * 0.9})`);
+      outer.addColorStop(0.4, `rgba(56,189,248,${atmosA * 0.3})`);
+      outer.addColorStop(1, 'transparent');
+      ctx.fillStyle = outer;
+      ctx.fillRect(0, 0, size, size);
+
+      const projected = points.map(project);
+      projected.sort((a, b) => a.depth - b.depth);
+
+      // Nodes
+      for (let i = 0; i < projected.length; i++) {
+        const p = projected[i];
+        const base = points[i];
+        const pulse = 0.7 + 0.3 * Math.sin(t * 2 + base.pulse);
+        const r = (1.2 + act * 0.6) * p.scale * pulse;
+        const depthFactor = Math.max(0.15, (p.depth + 1) / 2);
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${Math.round(120 + depthFactor * 40)}, ${Math.round(210 + depthFactor * 20)}, 252, ${0.3 + depthFactor * 0.6})`;
+        ctx.fill();
+      }
+
+      // Core
+      const coreR = 12 + act * 6 + Math.sin(t * 2.5) * 2;
+      const core = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, coreR * 2.8);
+      core.addColorStop(0, 'rgba(255,255,255,0.9)');
+      core.addColorStop(0.2, 'rgba(224,242,254,0.7)');
+      core.addColorStop(0.45, `rgba(56,189,248,${0.4 + act * 0.2})`);
+      core.addColorStop(1, 'transparent');
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(size/2, size/2, coreR * 2.8, 0, Math.PI * 2);
+      ctx.fill();
+
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    // Listen for state from main process
+    if (window.elyraFloating) {
+      window.elyraFloating.onState((s) => {
+        speaking = !!s.speaking;
+        listening = !!s.listening;
+      });
+    }
+  </script>
+</body>
+</html>
