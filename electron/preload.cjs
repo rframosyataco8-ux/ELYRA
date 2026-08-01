@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld('elyra', {
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
 
+  openProductWindow: (name) => ipcRenderer.invoke('open-product-window', name),
+  closeProductWindow: () => ipcRenderer.invoke('close-product-window'),
+  showFloatingCore: () => ipcRenderer.invoke('show-floating-core'),
+  hideFloatingCore: () => ipcRenderer.invoke('hide-floating-core'),
+  floatingCoreState: (state) => ipcRenderer.invoke('floating-core-state', state),
+
   onAutonomousMode: (cb) => {
     const handler = (_e, value) => cb(value);
     ipcRenderer.on('autonomous-mode', handler);
