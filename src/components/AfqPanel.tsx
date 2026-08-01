@@ -18,30 +18,34 @@ interface AfqPanelProps {
 
 export function AfqPanel({ onSelectProduct }: AfqPanelProps) {
   return (
-    <div className="flex-1 flex flex-col min-h-0 px-5 py-4 animate-fade-in overflow-y-auto">
-      <div className="flex items-center gap-2 mb-5">
-        <Beaker className="w-4 h-4 text-sky-400" />
-        <div>
-          <h2 className="text-lg font-medium text-white tracking-wide">AFQ</h2>
-          <p className="text-[11px] text-sky-400/50 tracking-wide">Análisis físico químico</p>
-        </div>
-      </div>
+    <div className="flex-1 flex flex-col min-h-0 animate-fade-in overflow-y-auto">
+      <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
+        <div className="w-full max-w-3xl">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <Beaker className="w-5 h-5 text-sky-400" />
+            <h2 className="text-xl font-medium text-white tracking-wide">AFQ</h2>
+          </div>
+          <p className="text-center text-[12px] text-sky-400/50 tracking-wide mb-8">
+            Análisis físico químico
+          </p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-2xl">
-        {AFQ_PRODUCTS.map((name) => (
-          <button
-            key={name}
-            onClick={() => onSelectProduct?.(name)}
-            className="aspect-[4/3] rounded-xl border border-sky-500/25 bg-sky-950/40 hover:bg-sky-500/15 hover:border-sky-400/45 transition-all flex flex-col items-center justify-center gap-2 p-3 group"
-          >
-            <div className="w-10 h-10 rounded-lg border border-sky-500/30 bg-sky-500/10 flex items-center justify-center group-hover:border-sky-400/50 transition-colors">
-              <Package className="w-5 h-5 text-sky-400/70 group-hover:text-sky-300" />
-            </div>
-            <span className="text-[12px] text-sky-200/80 text-center leading-tight tracking-wide group-hover:text-sky-100">
-              {name}
-            </span>
-          </button>
-        ))}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
+            {AFQ_PRODUCTS.map((name) => (
+              <button
+                key={name}
+                onClick={() => onSelectProduct?.(name)}
+                className="aspect-[5/4] rounded-2xl border border-sky-500/20 bg-sky-950/35 hover:bg-sky-500/12 hover:border-sky-400/40 hover:shadow-[0_0_28px_rgba(14,165,233,0.12)] transition-all duration-200 flex flex-col items-center justify-center gap-3 p-4 group"
+              >
+                <div className="w-11 h-11 rounded-xl border border-sky-500/25 bg-sky-500/10 flex items-center justify-center group-hover:border-sky-400/50 group-hover:scale-105 transition-all">
+                  <Package className="w-5 h-5 text-sky-400/75 group-hover:text-sky-300" />
+                </div>
+                <span className="text-[12.5px] text-sky-200/80 text-center leading-snug tracking-wide group-hover:text-sky-50 px-1">
+                  {name}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
