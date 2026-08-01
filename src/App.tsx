@@ -31,7 +31,7 @@ function detectFromKey(key: string) {
 function greetingFor(operator: string) {
   const h = new Date().getHours();
   const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
-  return `${saludo}, ${operator}. Sistemas operativos. Estoy a su disposición.`;
+  return `${saludo}, ${operator}. Lista.`;
 }
 
 const LAB_PAGES: AppPage[] = ['productos', 'registro-prensa', 'afq', 'cronograma'];
@@ -48,6 +48,7 @@ export default function App() {
   const [thinking, setThinking] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
   const [continuous, setContinuous] = useState(false);
+  const [deskMode, setDeskMode] = useState(false);
   const [wakeEnabled, setWakeEnabled] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [cfgApiKey, setCfgApiKey] = useState('');
@@ -65,8 +66,10 @@ export default function App() {
   const bootOnceRef = useRef(false);
   const processingRef = useRef(false);
   const continuousRef = useRef(false);
+  const deskModeRef = useRef(false);
   const floatingActiveRef = useRef(false);
   continuousRef.current = continuous;
+  deskModeRef.current = deskMode;
   messagesRef.current = messages;
 
   const addMessage = useCallback((role: 'user' | 'elyra', text: string) => {
@@ -111,8 +114,8 @@ export default function App() {
     } finally {
       setThinking(false);
       processingRef.current = false;
-      if (continuousRef.current) {
-        setTimeout(() => window.dispatchEvent(new CustomEvent('elyra-relisten')), 1600);
+      if (continuousRef.current || deskModeRef.current) {
+        setTimeout(() => window.dispatchEvent(new CustomEvent('elyra-relisten')), 1200);
       }
     }
   }, [addMessage]);
@@ -123,7 +126,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isDesktop || !window.elyra) return;
-    const shouldFloat = speaking || listening || transcribing || thinking;
+    const shouldFloat = deskMode || speaking || listening || transcribing || thinking;
     if (shouldFloat && !floatingActiveRef.current) {
       floatingActiveRef.current = true;
       window.elyra.showFloatingCore?.();
@@ -132,25 +135,56 @@ export default function App() {
       window.elyra.hideFloatingCore?.();
     }
     if (floatingActiveRef.current) {
-      window.elyra.floatingCoreState?.({ speaking, listening: listening || transcribing });
+      window.elyra.floatingCoreState?.({
+        speaking,
+        listening: listening || transcribing || deskMode,
+      });
     }
-  }, [speaking, listening, transcribing, thinking]);
+  }, [speaking, listening, transcribing, thinking, deskMode]);
 
   const onWake = useCallback((cmd: string, isPresence: boolean) => {
     if (processingRef.current || busy) return;
-    if (isPresence || !cmd) processInput('estás ahí');
-    else processInput(cmd);
+    if (isPresence || !cmd) {
+      if (continuousRef.current || deskModeRef.current) return;
+      processInput('estás ahí');
+    } else processInput(cmd);
   }, [processInput, busy]);
 
   const { active: wakeListening } = useWakeWord({ enabled: authenticated && wakeEnabled && booted, busy, onWake });
 
   useEffect(() => {
     const onRelisten = () => {
-      if (continuousRef.current && !processingRef.current && !speaking) startListening();
+      if ((continuousRef.current || deskModeRef.current) && !processingRef.current && !speaking) {
+        startListening();
+      }
     };
     window.addEventListener('elyra-relisten', onRelisten);
     return () => window.removeEventListener('elyra-relisten', onRelisten);
   }, [startListening, speaking]);
+
+  useEffect(() => {
+    if (!deskMode || !booted || !authenticated) return;
+    if (processingRef.current || speaking || listening || transcribing || thinking) return;
+    const id = setTimeout(() => {
+      if (deskModeRef.current && !processingRef.current && !speaking) startListening();
+    }, 700);
+    return () => clearTimeout(id);
+  }, [deskMode, booted, authenticated, speaking, listening, transcribing, thinking, startListening]);
+
+  useEffect(() => {
+    if (!isDesktop || !window.elyra?.onDeskMode) return;
+    return window.elyra.onDeskMode((on: boolean) => {
+      setDeskMode(on);
+      if (on) {
+        setContinuous(true);
+        setWakeEnabled(true);
+      } else {
+        setContinuous(false);
+        window.elyra?.hideFloatingCore?.();
+        floatingActiveRef.current = false;
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -182,7 +216,7 @@ export default function App() {
           if (c && !c.hasKey) {
             bootMsg = greetingFor(operator) + ' Configure la API key cuando desee razonamiento avanzado; el control del PC ya está activo.';
           }
-        } catch {}
+        } catch { /* ignore */ }
       }
       addMessage('elyra', bootMsg);
       await speak(bootMsg);
@@ -319,7 +353,8 @@ export default function App() {
           <div className="flex items-center gap-2 text-[11px] text-sky-400/45 pl-1">
             <span className="font-medium text-sky-300/80 tracking-[0.18em]">ELYRA</span>
             {isDesktop && <span className="text-sky-500/40">· Escritorio</span>}
-            {wakeEnabled && wakeListening && <span className="text-cyan-400/70">· Escucha activa</span>}
+            {deskMode && <span className="text-amber-300/80">· Escritorio</span>}
+            {(wakeEnabled && wakeListening) || continuous ? <span className="text-cyan-400/70">· Escucha activa</span> : null}
             {naturalTts && <span className="text-emerald-400/55">· Voz neural</span>}
             {hasApiKey && <span className="text-violet-400/55">· IA activa</span>}
             {!hasApiKey && isDesktop && <span className="text-amber-400/65">· Sin API key</span>}
@@ -327,7 +362,17 @@ export default function App() {
           <div className="flex items-center gap-1 no-drag">
             {isDesktop && (
               <>
-                <button onClick={() => window.elyra?.minimize()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50"><Minus className="w-3.5 h-3.5" /></button>
+                <button
+                  onClick={() => {
+                    setDeskMode(true);
+                    setContinuous(true);
+                    setWakeEnabled(true);
+                    window.elyra?.showFloatingCore?.();
+                    window.elyra?.minimize?.();
+                  }}
+                  className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50"
+                  title="Minimizar · núcleo al lado · sigue escuchando (Ctrl+Shift+E oculta todo)"
+                ><Minus className="w-3.5 h-3.5" /></button>
                 <button onClick={() => window.elyra?.maximize()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-sky-500/10 text-sky-400/50"><Square className="w-3 h-3" /></button>
                 <button onClick={() => window.elyra?.close()} className="w-8 h-7 flex items-center justify-center rounded hover:bg-red-500/20 text-sky-400/50 hover:text-red-400"><X className="w-3.5 h-3.5" /></button>
               </>
@@ -340,16 +385,16 @@ export default function App() {
               <>
                 <div className="text-center space-y-1.5 mb-2 animate-boot">
                   <h2 className="text-2xl font-semibold text-white tracking-wide text-glow-soft">{operator}</h2>
-                  <p className="text-sm text-sky-300/55">{listening ? 'Le escucho…' : transcribing ? 'Procesando voz…' : thinking ? 'Analizando…' : wakeEnabled ? 'En espera · diga mi nombre cuando me necesite' : 'Micrófono o teclado listos'}</p>
+                  <p className="text-sm text-sky-300/55">{listening ? 'Le escucho…' : transcribing ? 'Procesando voz…' : thinking ? 'Analizando…' : deskMode ? 'Modo escritorio · le escucho' : wakeEnabled ? 'En espera · diga mi nombre cuando me necesite' : 'Micrófono o teclado listos'}</p>
                   <div className="status-chip mt-2 mx-auto">
                     {thinking || transcribing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" /> : (
-                      <span className={`w-1.5 h-1.5 rounded-full ${speaking || listening || wakeListening ? 'bg-sky-400 animate-pulse shadow-[0_0_8px_#38bdf8]' : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${speaking || listening || wakeListening || deskMode ? 'bg-sky-400 animate-pulse shadow-[0_0_8px_#38bdf8]' : 'bg-emerald-400 shadow-[0_0_6px_#34d399]'}`} />
                     )}
                     <span className="text-xs text-sky-300/85">{statusLabel}</span>
                   </div>
                 </div>
                 <div className="flex-1 flex items-center justify-center min-h-0">
-                  <NetworkGlobe speaking={speaking || thinking} listening={listening || transcribing || wakeListening} size={340} amplitude={amplitude} />
+                  <NetworkGlobe speaking={speaking || thinking} listening={listening || transcribing || wakeListening || deskMode} size={340} amplitude={amplitude} />
                 </div>
                 <div className="max-w-xl mx-auto w-full mb-2 max-h-24 overflow-hidden">
                   <ConversationLog messages={messages.slice(-4)} compact />
@@ -413,7 +458,7 @@ export default function App() {
                 </div>
                 <div className="hud-glass rounded-2xl p-5 space-y-4">
                   <h3 className="text-sm text-sky-100 font-medium">Voz</h3>
-                  <p className="text-[12px] text-sky-400/65 leading-relaxed">En cualquier momento diga «Elyra» para llamar mi atención, o «Elyra, abre Word» para una orden directa.</p>
+                  <p className="text-[12px] text-sky-400/65 leading-relaxed">Al minimizar, ELYRA queda a un lado y sigue escuchando. Ctrl+Shift+E oculta el sistema completo.</p>
                   <div className="flex items-center justify-between">
                     <span className="text-sky-100 text-sm flex items-center gap-2"><Radio className="w-3.5 h-3.5" /> Activación por voz</span>
                     <button onClick={() => setWakeEnabled((v) => !v)} className={`relative w-11 h-6 rounded-full transition-colors ${wakeEnabled ? 'bg-sky-500' : 'bg-sky-900 border border-sky-700'}`}><span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${wakeEnabled ? 'translate-x-5' : ''}`} /></button>
