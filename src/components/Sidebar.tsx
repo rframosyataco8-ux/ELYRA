@@ -1,4 +1,18 @@
-import { Home, MessageSquare, Settings, Zap, Activity, Cpu, PanelLeftClose, PanelLeftOpen, LogOut, Package } from 'lucide-react';
+import { useState } from 'react';
+import {
+  Home,
+  MessageSquare,
+  Settings,
+  Zap,
+  Activity,
+  Cpu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  LogOut,
+  Package,
+  FlaskConical,
+  ChevronDown,
+} from 'lucide-react';
 
 interface SidebarProps {
   active: 'inicio' | 'asistente' | 'config' | 'productos';
@@ -19,12 +33,14 @@ export function Sidebar({
   operator,
   onLogout,
 }: SidebarProps) {
-  const items = [
+  const [labOpen, setLabOpen] = useState(active === 'productos');
+
+  const topItems = [
     { id: 'inicio' as const, label: 'Inicio', icon: Home },
     { id: 'asistente' as const, label: 'Conversación', icon: MessageSquare },
-    { id: 'productos' as const, label: 'Cadmio y Plaguicidas', icon: Package },
-    { id: 'config' as const, label: 'Configuración', icon: Settings },
   ];
+
+  const labActive = active === 'productos';
 
   return (
     <aside
@@ -64,7 +80,8 @@ export function Sidebar({
       </div>
 
       <nav className={`flex-1 space-y-1.5 ${collapsed ? 'px-2' : 'px-3'}`}>
-        {items.map((item) => {
+        {/* Inicio + Conversación */}
+        {topItems.map((item) => {
           const isActive = active === item.id;
           return (
             <button
@@ -91,6 +108,83 @@ export function Sidebar({
             </button>
           );
         })}
+
+        {/* Laboratorio (desplegable) */}
+        {collapsed ? (
+          <button
+            onClick={() => {
+              setLabOpen(true);
+              onNavigate('productos');
+            }}
+            title="Laboratorio"
+            className={`w-full flex items-center justify-center px-0 py-2.5 rounded-xl text-sm transition-all duration-250 ${
+              labActive
+                ? 'bg-sky-500/20 text-sky-100 border border-sky-400/35 shadow-[0_0_28px_rgba(14,165,233,0.2)]'
+                : 'text-sky-200/50 hover:text-sky-100/85 hover:bg-sky-500/10 border border-transparent'
+            }`}
+          >
+            <FlaskConical className={`w-4 h-4 shrink-0 ${labActive ? 'text-sky-300' : ''}`} />
+          </button>
+        ) : (
+          <div className="space-y-1">
+            <button
+              onClick={() => setLabOpen((v) => !v)}
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm transition-all duration-250 ${
+                labActive
+                  ? 'bg-sky-500/10 text-sky-100 border border-sky-400/25'
+                  : 'text-sky-200/50 hover:text-sky-100/85 hover:bg-sky-500/10 border border-transparent'
+              }`}
+            >
+              <FlaskConical className={`w-4 h-4 shrink-0 ${labActive ? 'text-sky-300' : ''}`} />
+              <span className="tracking-wide flex-1 text-left">Laboratorio</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-sky-400/50 transition-transform duration-200 ${labOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {labOpen && (
+              <div className="ml-3 pl-3 border-l border-sky-500/20 space-y-1">
+                <button
+                  onClick={() => onNavigate('productos')}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-all ${
+                    active === 'productos'
+                      ? 'bg-sky-500/20 text-sky-100 border border-sky-400/35 shadow-[0_0_20px_rgba(14,165,233,0.15)]'
+                      : 'text-sky-300/55 hover:text-sky-100 hover:bg-sky-500/10 border border-transparent'
+                  }`}
+                >
+                  <Package className={`w-3.5 h-3.5 shrink-0 ${active === 'productos' ? 'text-sky-300' : ''}`} />
+                  <span className="tracking-wide truncate">Cadmio y Plaguicidas</span>
+                  {active === 'productos' && (
+                    <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8] shrink-0" />
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Configuración */}
+        <button
+          onClick={() => onNavigate('config')}
+          title={collapsed ? 'Configuración' : undefined}
+          className={`w-full flex items-center rounded-xl text-sm transition-all duration-250 ${
+            collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
+          } ${
+            active === 'config'
+              ? 'bg-sky-500/20 text-sky-100 border border-sky-400/35 shadow-[0_0_28px_rgba(14,165,233,0.2)]'
+              : 'text-sky-200/50 hover:text-sky-100/85 hover:bg-sky-500/10 border border-transparent'
+          }`}
+        >
+          <Settings className={`w-4 h-4 shrink-0 ${active === 'config' ? 'text-sky-300' : ''}`} />
+          {!collapsed && (
+            <>
+              <span className="tracking-wide truncate">Configuración</span>
+              {active === 'config' && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-sky-400 shadow-[0_0_10px_#38bdf8] shrink-0" />
+              )}
+            </>
+          )}
+        </button>
       </nav>
 
       <div className={`border-t border-sky-500/12 ${collapsed ? 'px-2 py-4' : 'px-4 pb-5 pt-4 space-y-3'}`}>
