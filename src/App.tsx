@@ -36,12 +36,6 @@ function greetingFor(operator: string) {
   return `${saludo}, ${operator}. Sistemas operativos. Estoy a su disposición.`;
 }
 
-const VIEW_LABEL: Record<string, string> = {
-  dashboard: 'Dashboard',
-  datos: 'Datos',
-  analisis: 'Análisis',
-};
-
 const LAB_PAGES: AppPage[] = ['productos', 'registro-prensa', 'afq', 'cronograma'];
 
 export default function App() {
@@ -260,17 +254,28 @@ export default function App() {
     await processInput(text);
   };
 
+  /** Cada producto / módulo abre su propio sistema independiente */
   const handleSelectProduct = async (name: string, view?: ProductView | AfqView) => {
     if (isDesktop && window.elyra?.openProductWindow) {
-      const title = view ? `${name} · ${VIEW_LABEL[view] || view}` : name;
-      await window.elyra.openProductWindow(title);
+      const isAfq = page === 'afq';
+      await window.elyra.openProductWindow({
+        name,
+        category: isAfq ? 'AFQ · Análisis físico químico' : 'Cadmio y Plaguicidas',
+        views: 'dashboard,datos,analisis',
+        view: view || 'dashboard',
+      });
     }
   };
 
+  /** Registro de prensa: solo Dashboard y Datos */
   const handleRegistroView = async (view: 'dashboard' | 'datos') => {
     if (isDesktop && window.elyra?.openProductWindow) {
-      const label = view === 'dashboard' ? 'Dashboard' : 'Datos';
-      await window.elyra.openProductWindow(`Registro de prensa · ${label}`);
+      await window.elyra.openProductWindow({
+        name: 'Registro de prensa',
+        category: 'Datos de laboratorio',
+        views: 'dashboard,datos',
+        view,
+      });
     }
   };
 
