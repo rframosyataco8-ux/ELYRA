@@ -71,6 +71,7 @@ interface ElyraAPI {
   showFloatingCore: () => Promise<{ ok: boolean }>;
   hideFloatingCore: () => Promise<{ ok: boolean }>;
   floatingCoreState: (state: { speaking?: boolean; listening?: boolean }) => Promise<{ ok: boolean }>;
+  setGlassMode: (enabled: boolean) => Promise<{ ok: boolean; glass?: boolean }>;
   onAutonomousMode: (cb: (value: boolean) => void) => () => void;
   onBargeIn: (cb: () => void) => () => void;
   isDesktop: boolean;
