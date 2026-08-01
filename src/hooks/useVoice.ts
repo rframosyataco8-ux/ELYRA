@@ -57,10 +57,14 @@ function fixSpanishTranscript(raw: string) {
     [/\bvisual estudio\b/gi, 'code'],
     [/\belira\b/gi, 'elyra'],
     [/\beliara\b/gi, 'elyra'],
+    [/\beliara\b/gi, 'elyra'],
+    [/\belira\b/gi, 'elyra'],
     [/\bexcelente\b/gi, 'excel'],
     [/\bpoder point\b/gi, 'powerpoint'],
     [/\byutub\b/gi, 'youtube'],
     [/\byutube\b/gi, 'youtube'],
+    [/\bcadmio\b/gi, 'cadmio'],
+    [/\bplaguicidas?\b/gi, 'plaguicidas'],
   ];
   for (const [re, rep] of pairs) t = t.replace(re, rep);
   return t;
@@ -213,11 +217,11 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'es-MX';
-    utterance.rate = 0.97;
-    utterance.pitch = 1.04;
+    utterance.rate = 0.94;
+    utterance.pitch = 1.02;
     const voices = window.speechSynthesis.getVoices();
     const preferred =
-      voices.find((v) => /dalia|elvira|sabina|paulina|maria|laura|helena|sabina/i.test(v.name)) ||
+      voices.find((v) => /dalia|elvira|sabina|paulina|maria|laura|helena|ximena|renata/i.test(v.name)) ||
       voices.find((v) => v.lang.startsWith('es')) ||
       null;
     if (preferred) utterance.voice = preferred;
@@ -335,6 +339,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             noiseSuppression: true,
             autoGainControl: true,
             channelCount: 1,
+            sampleRate: 48000,
           },
         });
       } catch {
@@ -350,7 +355,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       ];
       const mimeType = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
       const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
+        ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 })
         : new MediaRecorder(stream);
 
       chunksRef.current = [];
@@ -362,12 +367,14 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         const ctx = new AudioContext();
         const src = ctx.createMediaStreamSource(stream);
         const an = ctx.createAnalyser();
-        an.fftSize = 512;
+        an.fftSize = 1024;
+        an.smoothingTimeConstant = 0.35;
         src.connect(an);
         const data = new Uint8Array(an.frequencyBinCount);
-        const SILENCE_THRESHOLD = 0.016;
-        const SPEECH_THRESHOLD = 0.03;
-        const SILENCE_MS = 1200;
+        // Umbrales más sensibles: captura voz baja y no corta tan rápido
+        const SILENCE_THRESHOLD = 0.012;
+        const SPEECH_THRESHOLD = 0.022;
+        const SILENCE_MS = 1600;
 
         levelTimerRef.current = window.setInterval(() => {
           an.getByteTimeDomainData(data);
@@ -377,7 +384,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             sum += v * v;
           }
           const rms = Math.sqrt(sum / data.length);
-          setAmplitude(Math.min(1, rms * 5.2));
+          setAmplitude(Math.min(1, rms * 5.8));
 
           if (rms >= SPEECH_THRESHOLD) {
             speechStartedRef.current = true;
@@ -394,7 +401,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
               } catch {}
             }, SILENCE_MS);
           }
-        }, 50);
+        }, 40);
         (recorder as any)._elyraCtx = ctx;
       } catch {}
 
@@ -413,8 +420,8 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
 
         if (speakingRef.current) return;
 
-        if (!blob.size || blob.size < 350) {
-          setError('No se grabó audio. Revisa el micrófono.');
+        if (!blob.size || blob.size < 250) {
+          setError('No se grabó audio. Habla un poco más cerca del micrófono.');
           return;
         }
 
@@ -433,7 +440,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             setError(null);
             acceptTranscript(result.text);
           } else {
-            const err = result.error || 'No entendí. Habla más cerca.';
+            const err = result.error || 'No entendí del todo. Intenta de nuevo, un poco más claro.';
             if (/api key|sin api/i.test(err)) {
               setError('Falta API key de Groq para transcripción.');
             } else if (/429|límite/i.test(err)) {
@@ -450,16 +457,17 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
 
       mediaRecorderRef.current = recorder;
       listeningModeRef.current = 'whisper';
-      recorder.start(200);
+      recorder.start(150);
       setListening(true);
 
+      // Hasta 18 s de habla continua
       maxTimerRef.current = window.setTimeout(() => {
         try {
           if (mediaRecorderRef.current?.state === 'recording') {
             mediaRecorderRef.current.stop();
           }
         } catch {}
-      }, 14000);
+      }, 18000);
 
       return true;
     } catch (e: any) {
@@ -486,7 +494,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       setListening(true);
       setTranscribing(false);
       listeningModeRef.current = 'python';
-      const result = await window.elyra.sttListenPython(7);
+      const result = await window.elyra.sttListenPython(9);
       setListening(false);
       listeningModeRef.current = null;
       if (result.ok && result.text) {
@@ -510,10 +518,10 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       if (recognitionRef.current) recognitionRef.current.stop();
     } catch {}
     const recognition = new SR();
-    recognition.lang = 'es-ES';
+    recognition.lang = 'es-MX';
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.maxAlternatives = 3;
+    recognition.maxAlternatives = 5;
     recognition.onstart = () => {
       setListening(true);
       setError(null);
