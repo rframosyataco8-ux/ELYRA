@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
 import { ConversationLog, type Message } from '@/components/ConversationLog';
 import { LoginGate, clearSession } from '@/components/LoginGate';
+import { ProductsPanel } from '@/components/ProductsPanel';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
@@ -37,7 +38,7 @@ export default function App() {
   const [operator, setOperator] = useState('Operador');
   const [messages, setMessages] = useState<Message[]>([]);
   const [booted, setBooted] = useState(false);
-  const [page, setPage] = useState<'inicio' | 'asistente' | 'config'>('inicio');
+  const [page, setPage] = useState<'inicio' | 'asistente' | 'config' | 'productos'>('inicio');
   const [inputValue, setInputValue] = useState('');
   const [uptime, setUptime] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -62,6 +63,7 @@ export default function App() {
   const bootOnceRef = useRef(false);
   const processingRef = useRef(false);
   const continuousRef = useRef(false);
+  const floatingActiveRef = useRef(false);
   continuousRef.current = continuous;
   messagesRef.current = messages;
 
@@ -134,6 +136,22 @@ export default function App() {
   speakRef.current = speak;
 
   const busy = speaking || thinking || listening || transcribing;
+
+  // Núcleo flotante: al hablar / escuchar se oculta la ventana principal y aparece el planeta al lado
+  useEffect(() => {
+    if (!isDesktop || !window.elyra) return;
+    const shouldFloat = speaking || listening || transcribing || thinking;
+    if (shouldFloat && !floatingActiveRef.current) {
+      floatingActiveRef.current = true;
+      window.elyra.showFloatingCore?.();
+    } else if (!shouldFloat && floatingActiveRef.current) {
+      floatingActiveRef.current = false;
+      window.elyra.hideFloatingCore?.();
+    }
+    if (floatingActiveRef.current) {
+      window.elyra.floatingCoreState?.({ speaking, listening: listening || transcribing });
+    }
+  }, [speaking, listening, transcribing, thinking]);
 
   const onWake = useCallback(
     (cmd: string, isPresence: boolean) => {
@@ -230,6 +248,12 @@ export default function App() {
     if (!text || thinking || processingRef.current) return;
     setInputValue('');
     await processInput(text);
+  };
+
+  const handleSelectProduct = async (name: string) => {
+    if (isDesktop && window.elyra?.openProductWindow) {
+      await window.elyra.openProductWindow(name);
+    }
   };
 
   const onApiKeyChange = (value: string) => {
@@ -388,7 +412,7 @@ export default function App() {
         </header>
 
         <div className="flex-1 flex min-h-0">
-          <main className="flex-1 flex flex-col min-w-0 px-5 py-4">
+          <main className={`flex-1 flex flex-col min-w-0 ${page === 'productos' ? 'px-0 py-0' : 'px-5 py-4'}`}>
             {page === 'inicio' && (
               <>
                 <div className="text-center space-y-1.5 mb-2 animate-boot">
@@ -441,6 +465,10 @@ export default function App() {
                 </div>
                 <ConversationLog messages={messages} />
               </div>
+            )}
+
+            {page === 'productos' && (
+              <ProductsPanel onSelectProduct={handleSelectProduct} />
             )}
 
             {page === 'config' && (
@@ -557,49 +585,51 @@ export default function App() {
               </div>
             )}
 
-            <div className="w-full max-w-xl mx-auto mt-auto pt-3">
-              {error && <p className="text-red-400/80 text-xs text-center mb-2 px-2">{error}</p>}
-              <div className="flex items-center gap-2 rounded-full input-hud px-3 py-2">
-                <button
-                  onClick={handleToggleListen}
-                  disabled={thinking || transcribing}
-                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
-                    listening ? 'bg-red-500/35 text-red-100 shadow-[0_0_20px_rgba(248,113,113,0.4)]' : 'text-sky-400/70 hover:bg-sky-500/15'
-                  } disabled:opacity-40`}
-                >
-                  {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
-                </button>
-                <button
-                  onClick={() => setWakeEnabled((v) => !v)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                    wakeEnabled ? 'text-cyan-300 bg-cyan-500/20' : 'text-sky-500/40'
-                  }`}
-                  title="Activación por voz"
-                >
-                  <Radio className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => setContinuous((v) => !v)}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                    continuous ? 'text-amber-300 bg-amber-500/20' : 'text-sky-500/40'
-                  }`}
-                  title="Reescucha"
-                >
-                  <Ear className="w-3.5 h-3.5" />
-                </button>
-                <input
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                  disabled={thinking}
-                  placeholder="Escriba o diga mi nombre…"
-                  className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
-                />
-                <button onClick={handleSend} disabled={!inputValue.trim() || thinking} className="w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:bg-sky-500/15 disabled:opacity-30">
-                  {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </button>
+            {page !== 'productos' && (
+              <div className="w-full max-w-xl mx-auto mt-auto pt-3">
+                {error && <p className="text-red-400/80 text-xs text-center mb-2 px-2">{error}</p>}
+                <div className="flex items-center gap-2 rounded-full input-hud px-3 py-2">
+                  <button
+                    onClick={handleToggleListen}
+                    disabled={thinking || transcribing}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                      listening ? 'bg-red-500/35 text-red-100 shadow-[0_0_20px_rgba(248,113,113,0.4)]' : 'text-sky-400/70 hover:bg-sky-500/15'
+                    } disabled:opacity-40`}
+                  >
+                    {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+                  </button>
+                  <button
+                    onClick={() => setWakeEnabled((v) => !v)}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                      wakeEnabled ? 'text-cyan-300 bg-cyan-500/20' : 'text-sky-500/40'
+                    }`}
+                    title="Activación por voz"
+                  >
+                    <Radio className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setContinuous((v) => !v)}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                      continuous ? 'text-amber-300 bg-amber-500/20' : 'text-sky-500/40'
+                    }`}
+                    title="Reescucha"
+                  >
+                    <Ear className="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    disabled={thinking}
+                    placeholder="Escriba o diga mi nombre…"
+                    className="flex-1 bg-transparent outline-none text-sm text-sky-100 placeholder:text-sky-500/40"
+                  />
+                  <button onClick={handleSend} disabled={!inputValue.trim() || thinking} className="w-9 h-9 rounded-full flex items-center justify-center text-sky-400/60 hover:bg-sky-500/15 disabled:opacity-30">
+                    {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </main>
 
           {page === 'inicio' && (
