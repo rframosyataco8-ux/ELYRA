@@ -10,92 +10,320 @@
       width: 100%; height: 100%;
       background: #030810;
       color: #e0f2fe;
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
       overflow: hidden;
-      -webkit-app-region: drag;
     }
     .frame {
       width: 100%; height: 100%;
-      border: 2px solid rgba(56, 189, 248, 0.35);
+      border: 1.5px solid rgba(56, 189, 248, 0.3);
       display: flex;
       flex-direction: column;
     }
     .titlebar {
-      height: 36px;
+      height: 40px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 12px;
+      padding: 0 14px;
       border-bottom: 1px solid rgba(56, 189, 248, 0.15);
       background: rgba(14, 165, 233, 0.06);
+      -webkit-app-region: drag;
+    }
+    .title-wrap { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .title-icon {
+      width: 22px; height: 22px;
+      border-radius: 6px;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      background: rgba(14, 165, 233, 0.12);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: #7dd3fc;
+      flex-shrink: 0;
     }
     .title {
-      font-size: 12px;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      color: rgba(224, 242, 254, 0.9);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .subtitle {
+      font-size: 10px;
+      color: rgba(56, 189, 248, 0.5);
       letter-spacing: 0.12em;
-      color: rgba(125, 211, 252, 0.75);
       text-transform: uppercase;
     }
     .close {
       -webkit-app-region: no-drag;
-      width: 28px; height: 24px;
+      width: 30px; height: 26px;
       border: none;
       background: transparent;
       color: rgba(125, 211, 252, 0.5);
       cursor: pointer;
-      font-size: 16px;
-      border-radius: 4px;
+      font-size: 18px;
+      border-radius: 6px;
+      line-height: 1;
     }
     .close:hover { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
-    .body {
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 10px 14px 0;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+      background: rgba(8, 16, 32, 0.5);
+      -webkit-app-region: no-drag;
+    }
+    .tab {
+      padding: 8px 16px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      color: rgba(125, 211, 252, 0.55);
+      background: transparent;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab:hover { color: rgba(224, 242, 254, 0.85); background: rgba(14, 165, 233, 0.08); }
+    .tab.active {
+      color: #e0f2fe;
+      background: rgba(14, 165, 233, 0.15);
+      border-color: rgba(56, 189, 248, 0.3);
+      box-shadow: 0 0 16px rgba(14, 165, 233, 0.12);
+    }
+
+    .content {
       flex: 1;
+      overflow: auto;
+      padding: 18px;
+      -webkit-app-region: no-drag;
+    }
+    .panel { display: none; height: 100%; }
+    .panel.active { display: flex; flex-direction: column; gap: 16px; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .card {
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 12px;
+      background: rgba(8, 20, 40, 0.55);
+      padding: 14px 16px;
+    }
+    .card-label {
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: rgba(56, 189, 248, 0.55);
+      margin-bottom: 6px;
+    }
+    .card-value {
+      font-size: 22px;
+      font-weight: 600;
+      color: #e0f2fe;
+      letter-spacing: 0.02em;
+    }
+    .card-hint {
+      font-size: 11px;
+      color: rgba(125, 211, 252, 0.45);
+      margin-top: 4px;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(224, 242, 254, 0.9);
+      letter-spacing: 0.04em;
+    }
+    .section-desc {
+      font-size: 12px;
+      color: rgba(125, 211, 252, 0.5);
+      line-height: 1.5;
+    }
+
+    .chart-placeholder {
+      flex: 1;
+      min-height: 180px;
+      border: 1px dashed rgba(56, 189, 248, 0.25);
+      border-radius: 12px;
+      background: rgba(8, 20, 40, 0.4);
       display: flex;
       align-items: center;
       justify-content: center;
-      position: relative;
+      color: rgba(56, 189, 248, 0.35);
+      font-size: 12px;
+      letter-spacing: 0.1em;
     }
-    .screen {
-      width: 70%;
-      height: 65%;
-      border: 1.5px solid rgba(56, 189, 248, 0.4);
-      border-radius: 4px;
-      background: rgba(8, 20, 40, 0.6);
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
     }
-    .knob {
-      position: absolute;
-      right: 12%;
-      width: 36px; height: 36px;
-      border-radius: 50%;
-      border: 2px solid rgba(56, 189, 248, 0.45);
-      background: rgba(14, 165, 233, 0.08);
+    th {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      color: rgba(56, 189, 248, 0.6);
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 10px;
     }
-    .footer {
-      height: 18px;
-      border-top: 1px solid rgba(56, 189, 248, 0.12);
-      background: rgba(14, 165, 233, 0.04);
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.08);
+      color: rgba(224, 242, 254, 0.8);
     }
+    tr:hover td { background: rgba(14, 165, 233, 0.06); }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 7px 14px;
+      font-size: 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      background: rgba(14, 165, 233, 0.1);
+      color: rgba(224, 242, 254, 0.85);
+      cursor: pointer;
+      letter-spacing: 0.04em;
+    }
+    .btn:hover {
+      background: rgba(14, 165, 233, 0.2);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      color: rgba(125, 211, 252, 0.4);
+      text-align: center;
+    }
+    .empty-state p { font-size: 12px; max-width: 280px; line-height: 1.5; }
   </style>
 </head>
 <body>
   <div class="frame">
     <div class="titlebar">
-      <span class="title" id="productName">Producto</span>
+      <div class="title-wrap">
+        <div class="title-icon">◆</div>
+        <div>
+          <div class="title" id="productName">Producto</div>
+          <div class="subtitle">Cadmio y Plaguicidas</div>
+        </div>
+      </div>
       <button class="close" id="btnClose" title="Cerrar">×</button>
     </div>
-    <div class="body">
-      <div class="screen"></div>
-      <div class="knob"></div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="datos">Datos</button>
+      <button class="tab" data-tab="analisis">Análisis</button>
     </div>
-    <div class="footer"></div>
+
+    <div class="content">
+      <!-- Dashboard -->
+      <div class="panel active" id="panel-dashboard">
+        <div class="cards">
+          <div class="card">
+            <div class="card-label">Muestras</div>
+            <div class="card-value">—</div>
+            <div class="card-hint">Total registradas</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Cadmio prom.</div>
+            <div class="card-value">—</div>
+            <div class="card-hint">mg/kg</div>
+          </div>
+          <div class="card">
+            <div class="card-label">Estado</div>
+            <div class="card-value" style="font-size:16px;padding-top:4px">Sin datos</div>
+            <div class="card-hint">Última actualización</div>
+          </div>
+        </div>
+        <div class="section-title">Resumen del producto</div>
+        <div class="section-desc">Indicadores de cadmio y plaguicidas para este producto. Los valores se cargarán cuando conecte la fuente de datos.</div>
+        <div class="chart-placeholder">GRÁFICO · PRÓXIMAMENTE</div>
+      </div>
+
+      <!-- Datos -->
+      <div class="panel" id="panel-datos">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="section-title">Registro de datos</div>
+            <div class="section-desc">Tabla de mediciones y muestras</div>
+          </div>
+          <div class="toolbar">
+            <button class="btn" type="button">+ Nueva muestra</button>
+            <button class="btn" type="button">Importar</button>
+          </div>
+        </div>
+        <div style="border:1px solid rgba(56,189,248,0.15);border-radius:12px;overflow:hidden;background:rgba(8,20,40,0.4)">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Lote</th>
+                <th>Cadmio</th>
+                <th>Plaguicidas</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colspan="5" style="text-align:center;color:rgba(125,211,252,0.4);padding:28px">
+                  No hay registros aún. Agregue la primera muestra.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Análisis -->
+      <div class="panel" id="panel-analisis">
+        <div class="section-title">Análisis</div>
+        <div class="section-desc">Tendencias, límites regulatorios y comparación histórica para este producto.</div>
+        <div class="empty-state" style="min-height:220px">
+          <div style="font-size:28px;opacity:0.5">◎</div>
+          <p>El módulo de análisis se activará con datos de laboratorio vinculados a este producto.</p>
+        </div>
+      </div>
+    </div>
   </div>
+
   <script>
     const params = new URLSearchParams(location.search);
     const name = params.get('name') || 'Producto';
     document.getElementById('productName').textContent = name;
-    document.title = name;
+    document.title = name + ' · ELYRA';
+
     document.getElementById('btnClose').onclick = () => {
       if (window.elyraProduct) window.elyraProduct.close();
       else window.close();
     };
+
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+      });
+    });
   </script>
 </body>
 </html>
