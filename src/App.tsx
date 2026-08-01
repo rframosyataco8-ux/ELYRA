@@ -2,11 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useVoice } from '@/hooks/useVoice';
 import { useWakeWord } from '@/hooks/useWakeWord';
 import { NetworkGlobe } from '@/components/NetworkGlobe';
-import { Sidebar } from '@/components/Sidebar';
+import { Sidebar, type AppPage } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
 import { ConversationLog, type Message } from '@/components/ConversationLog';
 import { LoginGate, clearSession } from '@/components/LoginGate';
 import { ProductsPanel, type ProductView } from '@/components/ProductsPanel';
+import { RegistroPrensaPanel } from '@/components/RegistroPrensaPanel';
+import { AfqPanel } from '@/components/AfqPanel';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
@@ -39,12 +41,14 @@ const VIEW_LABEL: Record<ProductView, string> = {
   analisis: 'Análisis',
 };
 
+const LAB_PAGES: AppPage[] = ['productos', 'registro-prensa', 'afq'];
+
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [operator, setOperator] = useState('Operador');
   const [messages, setMessages] = useState<Message[]>([]);
   const [booted, setBooted] = useState(false);
-  const [page, setPage] = useState<'inicio' | 'asistente' | 'config' | 'productos'>('inicio');
+  const [page, setPage] = useState<AppPage>('inicio');
   const [inputValue, setInputValue] = useState('');
   const [uptime, setUptime] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -99,7 +103,7 @@ export default function App() {
           const history = messagesRef.current.slice(-12).map((m) => ({ role: m.role, text: m.text }));
           const result = await window.elyra.agentChat(cleaned, history);
           let reply = (result.response || '').trim();
-          if (/rate limit|"error".*429|org_[a-z0-9]+/i.test(reply)) {
+          if (/rate limit|\"error\".*429|org_[a-z0-9]+/i.test(reply)) {
             reply = 'El servicio está saturado un momento. Inténtelo de nuevo en unos segundos.';
           }
           if (reply) {
@@ -262,6 +266,13 @@ export default function App() {
     }
   };
 
+  const handleRegistroView = async (view: 'dashboard' | 'datos') => {
+    if (isDesktop && window.elyra?.openProductWindow) {
+      const label = view === 'dashboard' ? 'Dashboard' : 'Datos';
+      await window.elyra.openProductWindow(`Registro de prensa · ${label}`);
+    }
+  };
+
   const onApiKeyChange = (value: string) => {
     setCfgApiKey(value);
     setCfgTestMsg(null);
@@ -361,6 +372,8 @@ export default function App() {
     { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
     { label: 'Ollama local', url: 'http://localhost:11434/v1', model: 'llama3.2' },
   ];
+
+  const hideChatBar = LAB_PAGES.includes(page);
 
   if (!authenticated) {
     return (
@@ -473,9 +486,13 @@ export default function App() {
               </div>
             )}
 
-            {page === 'productos' && (
-              <ProductsPanel onSelectProduct={handleSelectProduct} />
+            {page === 'productos' && <ProductsPanel onSelectProduct={handleSelectProduct} />}
+
+            {page === 'registro-prensa' && (
+              <RegistroPrensaPanel onSelectView={handleRegistroView} />
             )}
+
+            {page === 'afq' && <AfqPanel />}
 
             {page === 'config' && (
               <div className="max-w-lg mx-auto w-full space-y-5 pt-4 animate-fade-in overflow-y-auto pb-4">
@@ -591,7 +608,7 @@ export default function App() {
               </div>
             )}
 
-            {page !== 'productos' && (
+            {!hideChatBar && (
               <div className="w-full max-w-xl mx-auto mt-auto pt-3">
                 {error && <p className="text-red-400/80 text-xs text-center mb-2 px-2">{error}</p>}
                 <div className="flex items-center gap-2 rounded-full input-hud px-3 py-2">
