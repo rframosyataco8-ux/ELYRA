@@ -25,6 +25,8 @@ const { routeChat } = require('./chat-router.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
 
 let mainWindow = null;
+let floatingCore = null;
+let productWindow = null;
 let tray = null;
 let isQuitting = false;
 const isDev = !app.isPackaged;
@@ -59,6 +61,90 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+function createFloatingCore() {
+  if (floatingCore && !floatingCore.isDestroyed()) {
+    floatingCore.show();
+    return floatingCore;
+  }
+  const { screen } = require('electron');
+  const display = screen.getPrimaryDisplay();
+  const { width: sw, height: sh } = display.workAreaSize;
+  floatingCore = new BrowserWindow({
+    width: 240,
+    height: 260,
+    x: sw - 280,
+    y: Math.floor(sh / 2 - 130),
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    backgroundColor: '#00000000',
+    title: 'ELYRA Núcleo',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-floating.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+    show: false,
+  });
+  floatingCore.setAlwaysOnTop(true, 'screen-saver');
+  floatingCore.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  floatingCore.loadFile(path.join(__dirname, 'floating-core.html'));
+  floatingCore.once('ready-to-show', () => floatingCore.show());
+  floatingCore.on('closed', () => {
+    floatingCore = null;
+  });
+  return floatingCore;
+}
+
+function hideFloatingCore() {
+  if (floatingCore && !floatingCore.isDestroyed()) {
+    floatingCore.hide();
+  }
+}
+
+function openProductWindow(productName) {
+  if (productWindow && !productWindow.isDestroyed()) {
+    productWindow.close();
+  }
+  // Ocultar ventana principal mientras se muestra el producto
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.hide();
+  }
+  productWindow = new BrowserWindow({
+    width: 520,
+    height: 360,
+    minWidth: 400,
+    minHeight: 280,
+    backgroundColor: '#030810',
+    title: productName || 'Producto',
+    frame: false,
+    titleBarStyle: 'hidden',
+    alwaysOnTop: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-product.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+    show: false,
+  });
+  const q = encodeURIComponent(productName || 'Producto');
+  productWindow.loadFile(path.join(__dirname, 'product-window.html'), { query: { name: productName || 'Producto' } });
+  productWindow.once('ready-to-show', () => productWindow.show());
+  productWindow.on('closed', () => {
+    productWindow = null;
+    // Al cerrar el producto, volver a mostrar la principal
+    if (mainWindow && !mainWindow.isDestroyed() && !isQuitting) {
+      mainWindow.show();
+    }
+  });
+  return productWindow;
 }
 
 function createTray() {
@@ -325,6 +411,32 @@ ipcMain.handle('agent-config-test', async (_e, partial) => {
   return testApiConnection(partial || {});
 });
 
+// —— Producto y núcleo flotante ——
+ipcMain.handle('open-product-window', (_e, productName) => {
+  openProductWindow(productName || 'Producto');
+  return { ok: true };
+});
+ipcMain.handle('close-product-window', () => {
+  if (productWindow && !productWindow.isDestroyed()) productWindow.close();
+  return { ok: true };
+});
+ipcMain.handle('show-floating-core', () => {
+  createFloatingCore();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+  return { ok: true };
+});
+ipcMain.handle('hide-floating-core', () => {
+  hideFloatingCore();
+  if (mainWindow && !mainWindow.isDestroyed() && !isQuitting) mainWindow.show();
+  return { ok: true };
+});
+ipcMain.handle('floating-core-state', (_e, state) => {
+  if (floatingCore && !floatingCore.isDestroyed()) {
+    floatingCore.webContents.send('floating-state', state || {});
+  }
+  return { ok: true };
+});
+
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
 ipcMain.on('window-maximize', () => {
   if (mainWindow?.isMaximized()) mainWindow.unmaximize();
@@ -361,4 +473,6 @@ app.on('window-all-closed', () => {});
 app.on('before-quit', () => {
   isQuitting = true;
   globalShortcut.unregisterAll();
+  if (floatingCore && !floatingCore.isDestroyed()) floatingCore.destroy();
+  if (productWindow && !productWindow.isDestroyed()) productWindow.destroy();
 });
