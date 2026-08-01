@@ -2,14 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* —— Tokens por tema (suaves, menos fatiga visual) —— */
+/* —— Tokens por tema —— */
 :root,
 [data-theme='dark'] {
   --ely-bg: #0b1220;
   --ely-bg-elevated: #111a2b;
   --ely-bg-soft: #0f172a;
-  --ely-surface: rgba(15, 23, 42, 0.72);
-  --ely-surface-strong: rgba(17, 26, 43, 0.92);
+  --ely-surface: rgba(15, 23, 42, 0.78);
+  --ely-surface-strong: rgba(17, 26, 43, 0.94);
   --ely-border: rgba(56, 189, 248, 0.14);
   --ely-border-strong: rgba(56, 189, 248, 0.28);
   --ely-text: #e2e8f0;
@@ -20,14 +20,16 @@
   --ely-scrollbar: rgba(56, 189, 248, 0.3);
   --ely-input-bg: rgba(15, 23, 42, 0.9);
   --ely-danger: #f87171;
+  --ely-blur: 18px;
+  --ely-radius: 16px;
 }
 
 [data-theme='light'] {
   --ely-bg: #f1f5f9;
   --ely-bg-elevated: #ffffff;
   --ely-bg-soft: #e8eef5;
-  --ely-surface: rgba(255, 255, 255, 0.82);
-  --ely-surface-strong: rgba(255, 255, 255, 0.95);
+  --ely-surface: rgba(255, 255, 255, 0.86);
+  --ely-surface-strong: rgba(255, 255, 255, 0.96);
   --ely-border: rgba(100, 116, 139, 0.18);
   --ely-border-strong: rgba(14, 165, 233, 0.35);
   --ely-text: #0f172a;
@@ -38,24 +40,29 @@
   --ely-scrollbar: rgba(100, 116, 139, 0.35);
   --ely-input-bg: rgba(255, 255, 255, 0.95);
   --ely-danger: #dc2626;
+  --ely-blur: 16px;
+  --ely-radius: 16px;
 }
 
+/* —— Cristal avanzado —— */
 [data-theme='transparent'] {
-  --ely-bg: rgba(8, 14, 28, 0.55);
-  --ely-bg-elevated: rgba(12, 20, 38, 0.45);
-  --ely-bg-soft: rgba(10, 16, 32, 0.4);
-  --ely-surface: rgba(12, 22, 42, 0.35);
-  --ely-surface-strong: rgba(14, 24, 48, 0.55);
-  --ely-border: rgba(125, 211, 252, 0.2);
-  --ely-border-strong: rgba(56, 189, 248, 0.35);
-  --ely-text: #e2e8f0;
-  --ely-text-muted: #94a3b8;
+  --ely-bg: transparent;
+  --ely-bg-elevated: rgba(10, 18, 36, 0.28);
+  --ely-bg-soft: rgba(8, 16, 32, 0.22);
+  --ely-surface: rgba(14, 26, 48, 0.32);
+  --ely-surface-strong: rgba(16, 30, 56, 0.48);
+  --ely-border: rgba(186, 230, 253, 0.22);
+  --ely-border-strong: rgba(125, 211, 252, 0.4);
+  --ely-text: #f0f9ff;
+  --ely-text-muted: rgba(186, 230, 253, 0.72);
   --ely-accent: #7dd3fc;
-  --ely-accent-soft: rgba(56, 189, 248, 0.14);
-  --ely-glow: rgba(14, 165, 233, 0.1);
-  --ely-scrollbar: rgba(125, 211, 252, 0.35);
-  --ely-input-bg: rgba(8, 16, 32, 0.5);
+  --ely-accent-soft: rgba(56, 189, 248, 0.18);
+  --ely-glow: rgba(56, 189, 248, 0.16);
+  --ely-scrollbar: rgba(125, 211, 252, 0.4);
+  --ely-input-bg: rgba(8, 18, 36, 0.42);
   --ely-danger: #fca5a5;
+  --ely-blur: 28px;
+  --ely-radius: 18px;
 }
 
 @layer base {
@@ -63,7 +70,7 @@
     box-sizing: border-box;
   }
   html {
-    background: var(--ely-bg);
+    background: transparent;
   }
   body {
     margin: 0;
@@ -72,7 +79,7 @@
     font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
-    transition: background-color 0.25s ease, color 0.25s ease;
+    transition: background-color 0.3s ease, color 0.25s ease;
   }
   ::-webkit-scrollbar {
     width: 5px;
@@ -93,20 +100,58 @@
   -webkit-app-region: no-drag;
 }
 
-/* Superficie principal de la app */
 .ely-app {
   background: var(--ely-bg);
   color: var(--ely-text);
+  min-height: 100%;
+  position: relative;
 }
 
+/* Fondo sólido en temas no cristal (la ventana Electron es transparente) */
+[data-theme='dark'] .ely-app {
+  background: #0b1220;
+}
+[data-theme='light'] .ely-app {
+  background: #f1f5f9;
+}
+
+/* Cristal: capa de vidrio global */
 [data-theme='transparent'] .ely-app {
-  background: transparent;
+  background:
+    radial-gradient(ellipse 90% 60% at 20% -10%, rgba(56, 189, 248, 0.12), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 100% 100%, rgba(99, 102, 241, 0.08), transparent 50%),
+    linear-gradient(165deg, rgba(8, 16, 32, 0.42) 0%, rgba(6, 12, 26, 0.28) 100%);
+  backdrop-filter: blur(var(--ely-blur)) saturate(1.35);
+  -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.35);
+}
+
+/* Brillo specular superior (efecto vidrio real) */
+[data-theme='transparent'] .ely-app::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.09) 0%,
+    rgba(255, 255, 255, 0.02) 12%,
+    transparent 28%
+  );
+  z-index: 0;
+}
+
+[data-theme='transparent'] .ely-app > * {
+  position: relative;
+  z-index: 1;
 }
 
 .ely-panel {
   background: var(--ely-surface);
   border: 1px solid var(--ely-border);
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(var(--ely-blur));
+  -webkit-backdrop-filter: blur(var(--ely-blur));
+  border-radius: var(--ely-radius);
 }
 
 .ely-text-muted {
@@ -121,17 +166,62 @@
   .hud-glass {
     background: var(--ely-surface);
     border: 1px solid var(--ely-border);
-    backdrop-filter: blur(20px);
+    backdrop-filter: blur(var(--ely-blur)) saturate(1.2);
+    -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.2);
     box-shadow:
       0 0 40px var(--ely-glow),
-      inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 
   .hud-glass-strong {
     background: var(--ely-surface-strong);
     border: 1px solid var(--ely-border-strong);
-    backdrop-filter: blur(24px);
-    box-shadow: 0 0 50px var(--ely-glow);
+    backdrop-filter: blur(calc(var(--ely-blur) + 6px)) saturate(1.25);
+    -webkit-backdrop-filter: blur(calc(var(--ely-blur) + 6px)) saturate(1.25);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.18),
+      0 0 50px var(--ely-glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Refuerzo cristal en paneles */
+  [data-theme='transparent'] .hud-glass {
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(14, 26, 48, 0.28) 40%,
+      rgba(8, 16, 32, 0.35) 100%
+    );
+    border-color: rgba(186, 230, 253, 0.28);
+    box-shadow:
+      0 12px 40px rgba(0, 0, 0, 0.22),
+      0 0 0 1px rgba(255, 255, 255, 0.04),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -1px 0 rgba(56, 189, 248, 0.06);
+  }
+
+  [data-theme='transparent'] .hud-glass-strong {
+    background: linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(16, 32, 58, 0.45) 45%,
+      rgba(10, 20, 40, 0.55) 100%
+    );
+    border-color: rgba(125, 211, 252, 0.38);
+    box-shadow:
+      0 16px 48px rgba(0, 0, 0, 0.28),
+      0 0 60px rgba(56, 189, 248, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+
+  [data-theme='transparent'] .input-hud {
+    background: rgba(8, 18, 36, 0.45);
+    border-color: rgba(125, 211, 252, 0.35);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow:
+      0 0 24px rgba(56, 189, 248, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
   .hud-glow {
@@ -167,7 +257,13 @@
     border: 1px solid var(--ely-border);
   }
 
-  /* Theme picker cards */
+  [data-theme='transparent'] .status-chip {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(56, 189, 248, 0.15);
+    border-color: rgba(125, 211, 252, 0.35);
+  }
+
   .theme-card {
     border: 1px solid var(--ely-border);
     background: var(--ely-surface);
@@ -175,7 +271,7 @@
     padding: 14px 12px;
     text-align: center;
     cursor: pointer;
-    transition: border-color 0.18s, background 0.18s, transform 0.15s;
+    transition: border-color 0.18s, background 0.18s, transform 0.15s, box-shadow 0.18s;
   }
   .theme-card:hover {
     border-color: var(--ely-border-strong);
@@ -185,6 +281,11 @@
     border-color: var(--ely-accent);
     background: var(--ely-accent-soft);
     box-shadow: 0 0 18px var(--ely-glow);
+  }
+
+  [data-theme='transparent'] .theme-card {
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
   }
 }
 
