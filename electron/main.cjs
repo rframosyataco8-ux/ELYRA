@@ -85,10 +85,17 @@ function createWindow() {
   if (isDev) mainWindow.loadURL('http://localhost:5173');
   else mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('restore', () => {
+    hideFloatingCore();
+    try {
+      mainWindow.webContents.send('elyra-desk-mode', false);
+    } catch {}
+  });
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
       mainWindow.hide();
+      hideFloatingCore();
     }
   });
   mainWindow.on('closed', () => {
@@ -485,19 +492,21 @@ ipcMain.handle('set-glass-mode', (_e, enabled) => {
 });
 ipcMain.handle('show-floating-core', () => {
   createFloatingCore();
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
   return { ok: true };
 });
 ipcMain.handle('hide-floating-core', () => {
   hideFloatingCore();
-  if (mainWindow && !mainWindow.isDestroyed() && !isQuitting) mainWindow.show();
   return { ok: true };
 });
 ipcMain.handle('restore-from-floating', () => {
   hideFloatingCore();
   if (mainWindow && !mainWindow.isDestroyed() && !isQuitting) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
     mainWindow.focus();
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('elyra-desk-mode', false);
   }
   return { ok: true };
 });
@@ -510,13 +519,19 @@ ipcMain.handle('floating-core-state', (_e, state) => {
 
 ipcMain.on('window-minimize', () => {
   createFloatingCore();
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.minimize();
+    mainWindow.webContents.send('elyra-desk-mode', true);
+  }
 });
 ipcMain.on('window-maximize', () => {
   if (mainWindow?.isMaximized()) mainWindow.unmaximize();
   else mainWindow?.maximize();
 });
-ipcMain.on('window-close', () => mainWindow?.hide());
+ipcMain.on('window-close', () => {
+  mainWindow?.hide();
+  hideFloatingCore();
+});
 
 app.whenReady().then(() => {
   ensureDefaultConfig();
@@ -531,10 +546,13 @@ app.whenReady().then(() => {
   createTray();
 
   globalShortcut.register('CommandOrControl+Shift+E', () => {
-    if (mainWindow?.isVisible()) mainWindow.hide();
-    else {
-      mainWindow?.show();
-      mainWindow?.focus();
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()) {
+      hideFloatingCore();
+      mainWindow.hide();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
     }
   });
 
