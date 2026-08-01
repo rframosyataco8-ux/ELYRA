@@ -1,5 +1,12 @@
 /// <reference types="vite/client" />
 
+interface ProductWindowOpts {
+  name: string;
+  category?: string;
+  views?: string;
+  view?: string;
+}
+
 interface ElyraAPI {
   getSystemStats: () => Promise<{
     cpu: number;
@@ -36,9 +43,18 @@ interface ElyraAPI {
   pcWindows: (action: string) => Promise<{ ok: boolean; result?: string }>;
   pcInput: (action: string, payload?: { text?: string }) => Promise<{ ok: boolean; result?: string }>;
   agentChat: (message: string, history: { role: string; text: string }[]) => Promise<{ response: string; intelligent?: boolean }>;
-  agentConfigGet: () => Promise<{ hasKey: boolean; baseUrl: string; model: string }>;
-  agentConfigSet: (partial: { apiKey?: string; baseUrl?: string; model?: string }) => Promise<{ hasKey: boolean; baseUrl: string; model: string }>;
-  agentConfigTest: (partial?: { apiKey?: string; baseUrl?: string; model?: string }) => Promise<{
+  agentConfigGet: () => Promise<{ hasKey: boolean; baseUrl: string; model: string; provider?: string }>;
+  agentConfigSet: (partial: {
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
+    provider?: string;
+  }) => Promise<{ hasKey: boolean; baseUrl: string; model: string; provider?: string }>;
+  agentConfigTest: (partial?: {
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
+  }) => Promise<{
     ok: boolean;
     message: string;
     error?: string;
@@ -50,7 +66,7 @@ interface ElyraAPI {
   minimize: () => void;
   maximize: () => void;
   close: () => void;
-  openProductWindow: (name: string) => Promise<{ ok: boolean }>;
+  openProductWindow: (opts: string | ProductWindowOpts) => Promise<{ ok: boolean }>;
   closeProductWindow: () => Promise<{ ok: boolean }>;
   showFloatingCore: () => Promise<{ ok: boolean }>;
   hideFloatingCore: () => Promise<{ ok: boolean }>;
