@@ -50,6 +50,11 @@ interface ElyraAPI {
   minimize: () => void;
   maximize: () => void;
   close: () => void;
+  openProductWindow: (name: string) => Promise<{ ok: boolean }>;
+  closeProductWindow: () => Promise<{ ok: boolean }>;
+  showFloatingCore: () => Promise<{ ok: boolean }>;
+  hideFloatingCore: () => Promise<{ ok: boolean }>;
+  floatingCoreState: (state: { speaking?: boolean; listening?: boolean }) => Promise<{ ok: boolean }>;
   onAutonomousMode: (cb: (value: boolean) => void) => () => void;
   onBargeIn: (cb: () => void) => () => void;
   isDesktop: boolean;
