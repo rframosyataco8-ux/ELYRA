@@ -13,7 +13,7 @@ export function getStoredTheme(): ThemeId {
   try {
     const v = localStorage.getItem(STORAGE_KEY) as ThemeId | null;
     if (v && THEME_OPTIONS.some((o) => o.id === v)) return v;
-  } catch {}
+  } catch { /* ignore */ }
   return 'dark';
 }
 
@@ -23,7 +23,7 @@ export function resolveTheme(id: ThemeId): 'dark' | 'light' | 'transparent' {
   if (id === 'dark') return 'dark';
   try {
     if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'light';
-  } catch {}
+  } catch { /* ignore */ }
   return 'dark';
 }
 
@@ -31,7 +31,7 @@ function syncElectronGlass(resolved: 'dark' | 'light' | 'transparent') {
   try {
     const glass = resolved === 'transparent';
     window.elyra?.setGlassMode?.(glass);
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 export function applyTheme(id: ThemeId) {
@@ -41,7 +41,7 @@ export function applyTheme(id: ThemeId) {
   document.documentElement.style.colorScheme = resolved === 'light' ? 'light' : 'dark';
   try {
     localStorage.setItem(STORAGE_KEY, id);
-  } catch {}
+  } catch { /* ignore */ }
   syncElectronGlass(resolved);
 }
 
