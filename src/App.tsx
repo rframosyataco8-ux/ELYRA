@@ -8,7 +8,7 @@ import { ConversationLog, type Message } from '@/components/ConversationLog';
 import { LoginGate, clearSession } from '@/components/LoginGate';
 import { ProductsPanel, type ProductView } from '@/components/ProductsPanel';
 import { RegistroPrensaPanel } from '@/components/RegistroPrensaPanel';
-import { AfqPanel } from '@/components/AfqPanel';
+import { AfqPanel, type AfqView } from '@/components/AfqPanel';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
@@ -35,7 +35,7 @@ function greetingFor(operator: string) {
   return `${saludo}, ${operator}. Sistemas operativos. Estoy a su disposición.`;
 }
 
-const VIEW_LABEL: Record<ProductView, string> = {
+const VIEW_LABEL: Record<string, string> = {
   dashboard: 'Dashboard',
   datos: 'Datos',
   analisis: 'Análisis',
@@ -259,9 +259,9 @@ export default function App() {
     await processInput(text);
   };
 
-  const handleSelectProduct = async (name: string, view?: ProductView) => {
+  const handleSelectProduct = async (name: string, view?: ProductView | AfqView) => {
     if (isDesktop && window.elyra?.openProductWindow) {
-      const title = view ? `${name} · ${VIEW_LABEL[view]}` : name;
+      const title = view ? `${name} · ${VIEW_LABEL[view] || view}` : name;
       await window.elyra.openProductWindow(title);
     }
   };
@@ -492,7 +492,7 @@ export default function App() {
               <RegistroPrensaPanel onSelectView={handleRegistroView} />
             )}
 
-            {page === 'afq' && <AfqPanel />}
+            {page === 'afq' && <AfqPanel onSelectProduct={handleSelectProduct} />}
 
             {page === 'config' && (
               <div className="max-w-lg mx-auto w-full space-y-5 pt-4 animate-fade-in overflow-y-auto pb-4">
