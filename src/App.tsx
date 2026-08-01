@@ -6,7 +6,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { SystemPanel } from '@/components/SystemPanel';
 import { ConversationLog, type Message } from '@/components/ConversationLog';
 import { LoginGate, clearSession } from '@/components/LoginGate';
-import { ProductsPanel } from '@/components/ProductsPanel';
+import { ProductsPanel, type ProductView } from '@/components/ProductsPanel';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
@@ -32,6 +32,12 @@ function greetingFor(operator: string) {
   const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
   return `${saludo}, ${operator}. Sistemas operativos. Estoy a su disposición.`;
 }
+
+const VIEW_LABEL: Record<ProductView, string> = {
+  dashboard: 'Dashboard',
+  datos: 'Datos',
+  analisis: 'Análisis',
+};
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -137,7 +143,6 @@ export default function App() {
 
   const busy = speaking || thinking || listening || transcribing;
 
-  // Núcleo flotante: al hablar / escuchar se oculta la ventana principal y aparece el planeta al lado
   useEffect(() => {
     if (!isDesktop || !window.elyra) return;
     const shouldFloat = speaking || listening || transcribing || thinking;
@@ -250,9 +255,10 @@ export default function App() {
     await processInput(text);
   };
 
-  const handleSelectProduct = async (name: string) => {
+  const handleSelectProduct = async (name: string, view?: ProductView) => {
     if (isDesktop && window.elyra?.openProductWindow) {
-      await window.elyra.openProductWindow(name);
+      const title = view ? `${name} · ${VIEW_LABEL[view]}` : name;
+      await window.elyra.openProductWindow(title);
     }
   };
 
