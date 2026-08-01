@@ -44,6 +44,11 @@ contextBridge.exposeInMainWorld('elyra', {
   showFloatingCore: () => ipcRenderer.invoke('show-floating-core'),
   hideFloatingCore: () => ipcRenderer.invoke('hide-floating-core'),
   floatingCoreState: (state) => ipcRenderer.invoke('floating-core-state', state),
+  onDeskMode: (cb) => {
+    const h = (_e, v) => cb(!!v);
+    ipcRenderer.on('elyra-desk-mode', h);
+    return () => ipcRenderer.removeListener('elyra-desk-mode', h);
+  },
 
   setGlassMode: (enabled) => ipcRenderer.invoke('set-glass-mode', !!enabled),
 
