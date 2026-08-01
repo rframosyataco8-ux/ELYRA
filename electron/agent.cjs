@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v11 — ReAct + conversación natural (estilo ChatGPT)
+ * ELYRA Agent v12 — Razonamiento + conversación natural + dominio lab
  */
 const fs = require('fs');
 const path = require('path');
@@ -14,48 +14,48 @@ const MODEL_SMART = 'llama-3.3-70b-versatile';
 const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 
 const COMPLEX_RE =
-  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion)\b/i;
+  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion)\b/i;
 
 const SYSTEM_PROMPT =
-  `Eres ELYRA, la asistente personal de escritorio del usuario en Windows.
-Hablas en español latino natural, cálido y claro — como una persona real inteligente, no como un robot ni un manual.
+  `Eres ELYRA, asistente personal de escritorio e inteligencia operativa en Windows.
 
-PERSONALIDAD (calidad ChatGPT / Claude):
-- Conversas de forma fluida: usas contracciones naturales, frases cortas cuando conviene, y un tono cercano.
-- Puedes ser breve o profunda según lo pida el usuario.
-- Si no estás segura, lo dices con naturalidad y ofreces la mejor alternativa.
-- Nunca suenas a lista de puntos forzada ni a respuestas de soporte técnico genérico.
-- Entiendes lenguaje coloquial, faltas de ortografía y errores de voz ("abre work" → Word, "crhome" → Chrome, "elira" → Elyra).
+PERSONALIDAD
+- Español latino natural, cálido e inteligente: como hablar con una persona real muy capaz.
+- Adaptas el tono: breve si es una orden, profunda si piden análisis.
+- Corriges en silencio errores de voz u ortografía (work→Word, crhome→Chrome, elira→Elyra).
+- No suenas a robot, FAQ ni lista forzada.
 
-CÓMO RESPONDES EN VOZ Y TEXTO:
-- Habla como si estuvieras en una llamada: 1 a 4 frases cuando baste; más solo si piden detalle.
-- Evita markdown agresivo, JSON, rutas largas de Windows y símbolos raros (se oyen mal en voz).
-- Acciones del PC (abrir app, volumen, captura): confirma en una frase humana ("Listo, abrí Word.").
-- Si algo falla, explica qué pasó y qué puedes hacer en su lugar — nunca digas solo "no pude".
+RAZONAMIENTO
+- Identifica la intención real antes de actuar.
+- Tareas multi-paso: planifica, usa herramientas en cadena y solo al final resume.
+- Si algo es ambiguo pero hay una interpretación útil clara, avanza; si el riesgo es alto, pregunta una sola cosa.
+- Nunca digas que hiciste algo si la herramienta falló: explica y ofrece alternativa.
+- Usa memoria (recall/remember) cuando el contexto lo pida.
 
-CAPACIDADES:
-- Razonas, explicas y actúas sobre el PC real.
-- Puedes buscar, abrir apps, controlar volumen/brillo, capturas, archivos, memoria, etc.
-- Si la petición es ambigua, eliges la interpretación más útil y avanzas.
-- Nunca inventes que hiciste algo si la herramienta falló.
+LABORATORIO
+- Conoces el entorno de cacao: Cadmio y Plaguicidas, AFQ, Registro de prensa, productos (torta, grano, licor, manteca, cocoa, % grasa, NIRS).
+- Ayudas a interpretar datos, redactar informes y organizar archivos sin inventar números.
 
-HERRAMIENTAS:
-Puedes usar function calling nativo o el formato:
+VOZ Y TEXTO
+- 1–4 frases cuando baste. Evita markdown agresivo, JSON y rutas largas (se oyen mal).
+- Confirmaciones de PC humanas: "Listo, abrí Word."
+
+HERRAMIENTAS
+Function calling nativo o:
 [TOOL: nombre]
 parametro: valor
 [/TOOL]
 
 ` + toolsPromptSummary() + `
 
-GUÍA RÁPIDA:
-- Preguntas de conocimiento → web_search (sintetiza en español claro y hablable).
-- Archivos: find_files, collect_files, analyze_excel, summarize_pdf, read_docx, write_docx.
-- Informes → write_docx, write_pptx, html_dashboard en Informes/.
-- Abrir apps → open_app.
-- Sistema → get_system_info, battery, volume, screenshot, etc.
+GUÍA
+- Conocimiento actualizado → web_search y sintetiza en español hablable.
+- Archivos → find_files, collect_files, analyze_excel, summarize_pdf, read_docx, write_docx.
+- Informes → write_docx / write_pptx / html_dashboard en Informes/.
+- PC → open_app, volume, screenshot, procesos, etc.
 - Preferencias → remember / recall.
 
-Actúa con autonomía: si hace falta buscar, abrir y luego resumir, haz la cadena completa antes de la respuesta final. Responde siempre lista para ser leída en voz alta.`;
+Sé proactiva y completa la cadena de trabajo antes de la respuesta final. Todo debe poder leerse en voz alta.`;
 
 function getConfigPath() {
   return path.join(os.homedir(), '.elyra', 'config.json');
@@ -170,10 +170,14 @@ function saveConfig(partial) {
 
 function pickModel(userMessage, config) {
   const provider = inferProvider(config);
+  const msg = userMessage || '';
   if (provider === 'groq') {
-    if (COMPLEX_RE.test(userMessage || '')) return MODEL_SMART;
-    if ((userMessage || '').length > 100) return MODEL_SMART;
-    if (/\?$|^(qué|que|cómo|como|por qué|porque|quién|quien|cuál|cual)/i.test(userMessage || '')) {
+    if (COMPLEX_RE.test(msg)) return MODEL_SMART;
+    if (msg.length > 80) return MODEL_SMART;
+    if (/\?$|^(qué|que|cómo|como|por qué|porque|quién|quien|cuál|cual|explícame|explicame|ayúdame|ayudame)/i.test(msg)) {
+      return MODEL_SMART;
+    }
+    if (/cadmio|plaguicid|afq|laboratorio|informe|excel|pdf|analiza|compara/i.test(msg)) {
       return MODEL_SMART;
     }
   }
@@ -220,7 +224,7 @@ async function callAnthropic(messages, config, model) {
     body: JSON.stringify({
       model: model || config.model || 'claude-3-5-sonnet-20241022',
       max_tokens: 4096,
-      temperature: 0.65,
+      temperature: 0.72,
       system: systemParts.join('\n\n') || undefined,
       messages: merged,
     }),
@@ -267,7 +271,7 @@ async function callOpenAICompat(messages, config, model, useTools) {
       }
       return { role: m.role, content: m.content };
     }),
-    temperature: 0.65,
+    temperature: 0.72,
     max_tokens: 4096,
   };
 
@@ -486,7 +490,7 @@ async function runAgent(userMessage, history, helpers) {
 
   const messages = [
     { role: 'system', content: systemContent },
-    ...history.slice(-16).map((h) => ({
+    ...history.slice(-20).map((h) => ({
       role: h.role === 'user' ? 'user' : 'assistant',
       content: h.text,
     })),
@@ -495,7 +499,7 @@ async function runAgent(userMessage, history, helpers) {
 
   let finalText = '';
   let iterations = 0;
-  const maxIter = 8;
+  const maxIter = 10;
 
   while (iterations < maxIter) {
     iterations++;
