@@ -20,8 +20,6 @@
       flex-direction: column;
       background: radial-gradient(ellipse at top left, rgba(14,165,233,0.06), transparent 50%), #030810;
     }
-
-    /* Titlebar */
     .titlebar {
       height: 44px;
       display: flex;
@@ -71,16 +69,7 @@
       line-height: 1;
     }
     .close:hover { background: rgba(239, 68, 68, 0.22); color: #fca5a5; }
-
-    /* Body: sidebar + content */
-    .body {
-      flex: 1;
-      display: flex;
-      min-height: 0;
-      -webkit-app-region: no-drag;
-    }
-
-    /* Left nav options */
+    .body { flex: 1; display: flex; min-height: 0; -webkit-app-region: no-drag; }
     .nav {
       width: 168px;
       flex-shrink: 0;
@@ -125,6 +114,7 @@
       color: #e0f2fe;
       box-shadow: 0 0 20px rgba(14, 165, 233, 0.15);
     }
+    .nav-btn.hidden { display: none; }
     .nav-btn .ico {
       width: 36px; height: 36px;
       border-radius: 10px;
@@ -137,29 +127,12 @@
       background: rgba(14, 165, 233, 0.2);
     }
     .nav-btn svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; }
-
-    /* Main content */
-    .main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      overflow: hidden;
-    }
-    .content {
-      flex: 1;
-      overflow: auto;
-      padding: 20px 22px;
-    }
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+    .content { flex: 1; overflow: auto; padding: 20px 22px; }
     .panel { display: none; height: 100%; }
     .panel.active { display: flex; flex-direction: column; gap: 18px; }
-
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 14px;
-    }
-    @media (max-width: 640px) {
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    @media (max-width: 720px) {
       .cards { grid-template-columns: 1fr; }
       .nav { width: 120px; }
     }
@@ -189,7 +162,6 @@
       color: rgba(125, 211, 252, 0.42);
       margin-top: 6px;
     }
-
     .section-title {
       font-size: 14px;
       font-weight: 500;
@@ -202,7 +174,6 @@
       line-height: 1.55;
       max-width: 520px;
     }
-
     .chart-placeholder {
       flex: 1;
       min-height: 200px;
@@ -218,7 +189,6 @@
       font-size: 11px;
       letter-spacing: 0.12em;
     }
-
     .table-wrap {
       border: 1px solid rgba(56, 189, 248, 0.15);
       border-radius: 14px;
@@ -244,7 +214,6 @@
       color: rgba(224, 242, 254, 0.8);
     }
     tr:hover td { background: rgba(14, 165, 233, 0.05); }
-
     .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
     .btn {
       padding: 8px 16px;
@@ -255,7 +224,6 @@
       color: rgba(224, 242, 254, 0.88);
       cursor: pointer;
       letter-spacing: 0.04em;
-      transition: all 0.15s;
     }
     .btn:hover {
       background: rgba(14, 165, 233, 0.22);
@@ -265,7 +233,6 @@
       background: rgba(14, 165, 233, 0.22);
       border-color: rgba(56, 189, 248, 0.4);
     }
-
     .empty-state {
       flex: 1;
       display: flex;
@@ -299,7 +266,7 @@
         </div>
         <div>
           <div class="title" id="productName">Producto</div>
-          <div class="subtitle" id="productCategory">Cadmio y Plaguicidas</div>
+          <div class="subtitle" id="productCategory">Sistema independiente</div>
         </div>
       </div>
       <button class="close" id="btnClose" title="Cerrar">×</button>
@@ -320,7 +287,7 @@
           </div>
           Datos
         </button>
-        <button class="nav-btn" data-tab="analisis" type="button">
+        <button class="nav-btn" data-tab="analisis" type="button" id="navAnalisis">
           <div class="ico">
             <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           </div>
@@ -338,9 +305,9 @@
                 <div class="card-hint">Total registradas</div>
               </div>
               <div class="card">
-                <div class="card-label">Cadmio prom.</div>
+                <div class="card-label">Indicador</div>
                 <div class="card-value">—</div>
-                <div class="card-hint">mg/kg</div>
+                <div class="card-hint">Valor promedio</div>
               </div>
               <div class="card">
                 <div class="card-label">Estado</div>
@@ -349,8 +316,8 @@
               </div>
             </div>
             <div>
-              <div class="section-title">Resumen del producto</div>
-              <div class="section-desc" style="margin-top:6px">Indicadores de cadmio y plaguicidas. Los valores se mostrarán al conectar la fuente de datos.</div>
+              <div class="section-title">Resumen</div>
+              <div class="section-desc" style="margin-top:6px">Sistema independiente de este módulo. Los valores se mostrarán al conectar la fuente de datos.</div>
             </div>
             <div class="chart-placeholder">
               <span style="font-size:22px;opacity:0.5">▣</span>
@@ -362,10 +329,10 @@
             <div class="header-row">
               <div>
                 <div class="section-title">Registro de datos</div>
-                <div class="section-desc" style="margin-top:4px">Mediciones y muestras del producto</div>
+                <div class="section-desc" style="margin-top:4px">Mediciones y registros de este sistema</div>
               </div>
               <div class="toolbar">
-                <button class="btn btn-primary" type="button">+ Nueva muestra</button>
+                <button class="btn btn-primary" type="button">+ Nuevo registro</button>
                 <button class="btn" type="button">Importar</button>
               </div>
             </div>
@@ -374,16 +341,16 @@
                 <thead>
                   <tr>
                     <th>Fecha</th>
-                    <th>Lote</th>
-                    <th>Cadmio</th>
-                    <th>Plaguicidas</th>
+                    <th>Lote / Ref.</th>
+                    <th>Valor</th>
+                    <th>Observación</th>
                     <th>Estado</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td colspan="5" style="text-align:center;color:rgba(125,211,252,0.38);padding:36px 14px">
-                      No hay registros aún. Agregue la primera muestra.
+                      No hay registros aún. Agregue el primero.
                     </td>
                   </tr>
                 </tbody>
@@ -394,11 +361,11 @@
           <div class="panel" id="panel-analisis">
             <div>
               <div class="section-title">Análisis</div>
-              <div class="section-desc" style="margin-top:4px">Tendencias, límites regulatorios y comparación histórica.</div>
+              <div class="section-desc" style="margin-top:4px">Tendencias, límites y comparación histórica de este producto.</div>
             </div>
             <div class="empty-state">
               <div style="font-size:32px;opacity:0.45">◎</div>
-              <p>El módulo de análisis se activará con datos de laboratorio vinculados a este producto.</p>
+              <p>El módulo de análisis se activará con datos vinculados a este sistema.</p>
             </div>
           </div>
         </div>
@@ -409,14 +376,23 @@
   <script>
     const params = new URLSearchParams(location.search);
     const name = params.get('name') || 'Producto';
-    const category = params.get('category') || 'Cadmio y Plaguicidas';
-    const initial = params.get('view') || 'dashboard';
+    const category = params.get('category') || 'Sistema independiente';
+    const viewsRaw = (params.get('views') || 'dashboard,datos,analisis').toLowerCase();
+    const allowed = viewsRaw.split(',').map((s) => s.trim()).filter(Boolean);
+    const initial = params.get('view') || allowed[0] || 'dashboard';
 
     document.getElementById('productName').textContent = name;
     document.getElementById('productCategory').textContent = category;
     document.title = name + ' · ELYRA';
 
+    document.querySelectorAll('.nav-btn').forEach((btn) => {
+      if (!allowed.includes(btn.dataset.tab)) {
+        btn.classList.add('hidden');
+      }
+    });
+
     function showTab(id) {
+      if (!allowed.includes(id)) return;
       document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.tab === id));
       document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + id));
     }
@@ -425,7 +401,7 @@
       btn.addEventListener('click', () => showTab(btn.dataset.tab));
     });
 
-    if (['dashboard', 'datos', 'analisis'].includes(initial)) showTab(initial);
+    showTab(allowed.includes(initial) ? initial : allowed[0]);
 
     document.getElementById('btnClose').onclick = () => {
       if (window.elyraProduct) window.elyraProduct.close();
