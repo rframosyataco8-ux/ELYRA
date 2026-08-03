@@ -3,6 +3,7 @@
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
+const { tryLocalMath } = require('./local-math.cjs');
 const {
   applyTypos,
   parseCompound,
@@ -144,7 +145,6 @@ async function trySmartTopic(fixed, text) {
   for (const re of patterns) {
     const m = String(fixed).match(re) || text.match(re);
     if (m && m[1]) {
-      // no tratar "hh en youtube" como tema de conocimiento
       if (/\byoutube\b|\ben\s+yt\b/i.test(m[1])) continue;
       topic = m[1].replace(/[?.!]+$/, '').trim();
       break;
@@ -280,7 +280,6 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     return { response: (r.result || 'Sin datos').slice(0, 500), intelligent: false };
   }
 
-  // —— Búsquedas (YouTube primero) ——
   const compound = parseCompound(text);
 
   if (compound?.type === 'youtube_search') {
@@ -310,7 +309,6 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   }
 
   if (compound?.type === 'compound_search') {
-    // Solo chrome/edge + google, NUNCA youtube disfrazado
     if (/youtube|\byt\b/i.test(compound.browser || '')) {
       await helpers.openUrl(youtubeSearchUrl(compound.query));
       return {
@@ -336,7 +334,6 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   }
 
   if (compound?.type === 'google_search') {
-    // Si la query pide video implícito
     if (/\b(video|vídeo|cancion|canción|trailer|clip)\b/i.test(text)) {
       await helpers.openUrl(youtubeSearchUrl(compound.query));
       return {
@@ -419,9 +416,8 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     /\b(?:abre|abrir|lanza|ejecuta|abreme|abrime)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
   if (openMatch || /\b(abre|abrir)\b/.test(text)) {
-    // No tratar "abre youtube y busca X" aquí (ya lo cubre parseCompound)
     if (/\by\s+(?:me\s+)?busca/i.test(text) && /youtube/i.test(text)) {
-      /* leave to compound — already handled above */
+      /* leave to compound */
     } else {
       const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos'];
       for (const f of folderKeys) {
@@ -452,6 +448,13 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
         const r = await helpers.openApp(name);
         return { response: r.message || r.result, intelligent: false, via: 'open-app' };
       }
+    }
+  }
+
+  {
+    const mathReply = tryLocalMath(text);
+    if (mathReply) {
+      return { response: mathReply, intelligent: false, via: 'local-math' };
     }
   }
 
