@@ -68,6 +68,7 @@ interface ElyraAPI {
   close: () => void;
   openProductWindow: (opts: string | ProductWindowOpts) => Promise<{ ok: boolean }>;
   closeProductWindow: () => Promise<{ ok: boolean }>;
+  onDeskMode?: (cb: (on: boolean) => void) => () => void;
   showFloatingCore: () => Promise<{ ok: boolean }>;
   hideFloatingCore: () => Promise<{ ok: boolean }>;
   floatingCoreState: (state: { speaking?: boolean; listening?: boolean }) => Promise<{ ok: boolean }>;
