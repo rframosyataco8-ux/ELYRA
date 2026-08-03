@@ -135,7 +135,7 @@ function normalizeUserIntent(text) {
     .trim();
 }
 
-async function callLLM({ messages, config, model }) {
+async function callLLM(messages, config, model) {
   const provider = inferProvider(config);
   const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
   const url = baseUrl + '/chat/completions';
@@ -168,14 +168,14 @@ async function testApiConnection(partial) {
     const config = { ...getConfig(), ...(partial || {}) };
     if (!config.apiKey) return { ok: false, message: 'Falta la API key.' };
     const model = config.model || MODEL_FAST;
-    const result = await callLLM({
-      messages: [
+    const result = await callLLM(
+      [
         { role: 'system', content: 'Responde solo: ok' },
         { role: 'user', content: 'ping' },
       ],
       config,
       model,
-    });
+    );
     return {
       ok: true,
       message: 'Conexión correcta con ' + model + '.',
@@ -188,16 +188,18 @@ async function testApiConnection(partial) {
   }
 }
 
-async function runAgent({ message, history, helpers }) {
+/** Firma compatible con chat-router: runAgent(message, history, helpers) */
+async function runAgent(message, history, helpers) {
   const config = getConfig();
   const cleanedUser = normalizeUserIntent(message);
   if (!config.apiKey) {
     return { response: fallbackResponse(cleanedUser), intelligent: false, via: 'no-key' };
   }
 
-  const systemContent = hooks.enrichSystemPrompt
-    ? hooks.enrichSystemPrompt(SYSTEM_PROMPT, cleanedUser)
-    : SYSTEM_PROMPT + '\n\n' + (typeof toolsPromptSummary === 'function' ? toolsPromptSummary() : '');
+  const systemContent =
+    hooks.enrichSystemPrompt
+      ? hooks.enrichSystemPrompt(SYSTEM_PROMPT, cleanedUser)
+      : SYSTEM_PROMPT + '\n\n' + (typeof toolsPromptSummary === 'function' ? toolsPromptSummary() : '');
 
   const messages = [{ role: 'system', content: systemContent }];
   const hist = Array.isArray(history) ? history.slice(-12) : [];
@@ -242,7 +244,6 @@ async function runAgent({ message, history, helpers }) {
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
         if (steps === 1 && model !== MODEL_FAST) {
-          // retry fast model once
           continue;
         }
         throw new Error('LLM ' + res.status + ' ' + errText.slice(0, 180));
@@ -304,7 +305,9 @@ module.exports = {
   ensureDefaultConfig,
   normalizeUserIntent,
   testApiConnection,
+  detectProviderFromKey,
   SYSTEM_PROMPT,
   MODEL_FAST,
   MODEL_SMART,
+  MODEL_CHAIN: MODEL_CHAIN_GROQ,
 };
