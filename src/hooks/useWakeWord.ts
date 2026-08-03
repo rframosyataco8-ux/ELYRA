@@ -12,7 +12,7 @@ function stripWake(raw: string): string {
   return String(raw || '')
     .replace(WAKE_RE, ' ')
     .replace(/\b(hey|oiga|oye)\b/gi, ' ')
-    .replace(/[,\.!?]+/g, ' ')
+    .replace(/[,.!?]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -71,16 +71,12 @@ export function useWakeWord({ enabled, busy, onWake }: UseWakeWordOptions) {
     setActive(false);
   }, []);
 
-  const scheduleRestart = useCallback(
-    (ms: number) => {
-      if (restartTimer.current) window.clearTimeout(restartTimer.current);
-      restartTimer.current = window.setTimeout(() => {
-        if (enabledRef.current && !busyRef.current) startInternal();
-      }, ms);
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  const scheduleRestart = useCallback((ms: number) => {
+    if (restartTimer.current) window.clearTimeout(restartTimer.current);
+    restartTimer.current = window.setTimeout(() => {
+      if (enabledRef.current && !busyRef.current) startInternal();
+    }, ms);
+  }, []);
 
   const startInternal = () => {
     if (!enabledRef.current || busyRef.current) return false;
@@ -90,14 +86,19 @@ export function useWakeWord({ enabled, busy, onWake }: UseWakeWordOptions) {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return false;
 
-    stop();
     startingRef.current = true;
+    try {
+      recRef.current?.abort?.();
+    } catch {}
+    try {
+      recRef.current?.stop?.();
+    } catch {}
 
     const rec = new SR();
     rec.lang = 'es-ES';
     rec.continuous = true;
     rec.interimResults = true;
-    rec.maxAlternatives = 2;
+    rec.maxAlternatives = 1;
 
     rec.onstart = () => {
       startingRef.current = false;
@@ -133,11 +134,9 @@ export function useWakeWord({ enabled, busy, onWake }: UseWakeWordOptions) {
 
       if (!hasWake) return;
 
-      // Preferir final; permitir interim si ya trae orden clara
       const words = transcript.split(/\s+/).length;
       if (!anyFinal && words < 2) return;
 
-      // Eco de la propia voz de ELYRA
       if (
         /sistemas operativos|estoy a su disposicion|buenos dias|buenas tardes|buenas noches|soy elyra|configura|api key/i.test(
           transcript,
@@ -196,7 +195,6 @@ export function useWakeWord({ enabled, busy, onWake }: UseWakeWordOptions) {
     }
     startInternal();
     return () => stop();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, busy]);
 
   return { active, lastHeard, start, stop };
