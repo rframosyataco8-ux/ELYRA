@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v14 — Razonamiento + conversación natural + dominio lab
+ * ELYRA Agent v15 — Razonamiento + conversación natural + dominio lab
  */
 const fs = require('fs');
 const path = require('path');
@@ -14,7 +14,7 @@ const MODEL_SMART = 'llama-3.3-70b-versatile';
 const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 
 const COMPLEX_RE =
-  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion)\b/i;
+  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas)\b/i;
 
 const SYSTEM_PROMPT = require('./agent-prompt.cjs');
 
@@ -111,7 +111,7 @@ function saveConfig(partial) {
 }
 
 function isComplexQuery(text) {
-  return COMPLEX_RE.test(text || '') || (text || '').length > 180;
+  return COMPLEX_RE.test(text || '') || (text || '').length > 160;
 }
 
 function selectModel(config, userText) {
@@ -124,35 +124,34 @@ function fallbackResponse(userText) {
   const t = (userText || '').toLowerCase();
   if (/hola|buenos|buenas/.test(t)) return 'Hola. Estoy lista. ¿En qué te ayudo?';
   if (/gracias/.test(t)) return 'Con gusto.';
-  return 'Puedo abrir aplicaciones, buscar información, calcular, controlar el PC y trabajar con archivos. Dime qué necesitas.';
+  if (/qui[eé]n eres|que eres|qu[eé] eres/.test(t)) {
+    return 'Soy ELYRA, tu asistente de escritorio y de laboratorio. Puedo controlar el PC y ayudarte con cacao, cadmio y AFQ.';
+  }
+  return 'Puedo abrir apps, buscar en la web, calcular, manejar archivos y apoyar el laboratorio. Dime qué necesitas y lo hago.';
 }
 
 function normalizeUserIntent(text) {
   return String(text || '')
     .replace(/\belira\b/gi, 'elyra')
+    .replace(/\beliara\b/gi, 'elyra')
     .replace(/\bcrhome\b/gi, 'chrome')
     .replace(/\bwork\b/gi, 'word')
     .trim();
 }
 
 async function callLLM(messages, config, model) {
-  const provider = inferProvider(config);
   const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
   const url = baseUrl + '/chat/completions';
   const body = {
     model: model || config.model || MODEL_FAST,
     messages,
     temperature: 0.4,
-    max_tokens: 1200,
+    max_tokens: 1400,
   };
   const headers = {
     'Content-Type': 'application/json',
     Authorization: 'Bearer ' + (config.apiKey || ''),
   };
-  if (provider === 'openrouter') {
-    headers['HTTP-Referer'] = 'https://elyra.local';
-    headers['X-Title'] = 'ELYRA';
-  }
   const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
@@ -196,35 +195,40 @@ async function runAgent(message, history, helpers) {
     return { response: fallbackResponse(cleanedUser), intelligent: false, via: 'no-key' };
   }
 
-  const systemContent =
-    hooks.enrichSystemPrompt
-      ? hooks.enrichSystemPrompt(SYSTEM_PROMPT, cleanedUser)
-      : SYSTEM_PROMPT + '\n\n' + (typeof toolsPromptSummary === 'function' ? toolsPromptSummary() : '');
+  const systemContent = hooks.enrichSystemPrompt
+    ? hooks.enrichSystemPrompt(SYSTEM_PROMPT, cleanedUser)
+    : SYSTEM_PROMPT + '\n\n' + (typeof toolsPromptSummary === 'function' ? toolsPromptSummary() : '');
 
   const messages = [{ role: 'system', content: systemContent }];
-  const hist = Array.isArray(history) ? history.slice(-12) : [];
+  const hist = Array.isArray(history) ? history.slice(-16) : [];
   for (const h of hist) {
     const role = h.role === 'elyra' || h.role === 'assistant' ? 'assistant' : 'user';
-    messages.push({ role, content: h.text || h.content || '' });
+    const content = (h.text || h.content || '').trim();
+    if (content) messages.push({ role, content });
   }
   messages.push({ role: 'user', content: cleanedUser });
 
-  const model = selectModel(config, cleanedUser);
+  let model = selectModel(config, cleanedUser);
   const tools = TOOL_DEFINITIONS || [];
+  const wantsTools =
+    /\b(abre|abrir|busca|buscar|pon|reproduce|archivo|excel|pdf|captura|volumen|carpeta|google|youtube|recuerda|analiza|guarda|escribe|crea|genera)\b/i.test(
+      cleanedUser,
+    );
 
   try {
     let reply = '';
     let steps = 0;
-    const maxSteps = 8;
+    const maxSteps = 10;
     let currentMessages = messages.slice();
+    let usedTools = false;
 
     while (steps < maxSteps) {
       steps += 1;
       const body = {
         model,
         messages: currentMessages,
-        temperature: 0.35,
-        max_tokens: 1400,
+        temperature: wantsTools || steps > 1 ? 0.25 : 0.4,
+        max_tokens: 1600,
       };
       if (tools.length) {
         body.tools = tools;
@@ -254,6 +258,7 @@ async function runAgent(message, history, helpers) {
       const toolCalls = choice.tool_calls || [];
 
       if (toolCalls.length && helpers && executeTool) {
+        usedTools = true;
         currentMessages.push(choice);
         for (const tc of toolCalls) {
           const name = tc.function?.name || tc.name;
@@ -265,7 +270,13 @@ async function runAgent(message, history, helpers) {
           }
           let toolResult;
           try {
-            toolResult = await executeTool(name, args, helpers);
+            if (hooks.extendExecute) {
+              toolResult = await hooks.extendExecute(name, args, helpers, (n, p, h) =>
+                executeTool(n, p, h),
+              );
+            } else {
+              toolResult = await executeTool(name, args, helpers);
+            }
           } catch (err) {
             toolResult = { ok: false, error: err.message || String(err) };
           }
@@ -279,11 +290,32 @@ async function runAgent(message, history, helpers) {
       }
 
       reply = (choice.content || '').trim();
+      if (
+        steps < maxSteps &&
+        !usedTools &&
+        model !== MODEL_SMART &&
+        (!reply || reply.length < 12 || /no puedo|no sé|no se|as an ai|como ia/i.test(reply))
+      ) {
+        model = MODEL_SMART;
+        currentMessages = messages.slice();
+        continue;
+      }
       break;
     }
 
     if (!reply) reply = fallbackResponse(cleanedUser);
-    return { response: reply, intelligent: true, via: 'agent-v14', model };
+    reply = reply
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/\*\*?/g, '')
+      .replace(/^#+\s+/gm, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    try {
+      if (hooks.noteInteraction) hooks.noteInteraction(cleanedUser, reply);
+    } catch {}
+
+    return { response: reply, intelligent: true, via: 'agent-v15', model, steps, usedTools };
   } catch (err) {
     return {
       response:
