@@ -7,35 +7,58 @@ function tryLocalMath(raw) {
     .replace(/,/g, '.')
     .trim();
 
+  // raíz
   let m = t.match(/\b(?:raiz(?:\s+cuadrada)?(?:\s+de)?|sqrt)\s*(\d+(?:\.\d+)?)\b/);
   if (m) {
     const n = parseFloat(m[1]);
     if (!Number.isFinite(n) || n < 0) return 'No puedo calcular la raíz de un número negativo.';
     const r = Math.sqrt(n);
     const shown = Number.isInteger(r) ? String(r) : r.toFixed(4).replace(/\.?0+$/, '');
-    return `La raíz cuadrada de ${n} es ${shown}.`;
+    return 'La raíz cuadrada de ' + n + ' es ' + shown + '.';
   }
 
+  // potencias
   m = t.match(/\b(\d+(?:\.\d+)?)\s*(?:al\s+)?cuadrado\b/);
   if (m) {
     const n = parseFloat(m[1]);
-    return `${n} al cuadrado es ${n * n}.`;
+    return n + ' al cuadrado es ' + n * n + '.';
   }
   m = t.match(/\b(\d+(?:\.\d+)?)\s*(?:al\s+)?cubo\b/);
   if (m) {
     const n = parseFloat(m[1]);
-    return `${n} al cubo es ${n * n * n}.`;
+    return n + ' al cubo es ' + n * n * n + '.';
   }
 
+  // porcentaje ANTES de la expresión general
+  m = t.match(/(\d+(?:\.\d+)?)\s*(?:%|por\s*ciento)\s*(?:de\s+)(\d+(?:\.\d+)?)/);
+  if (m) {
+    const pct = parseFloat(m[1]);
+    const base = parseFloat(m[2]);
+    const val = (pct / 100) * base;
+    const shown = Number.isInteger(val) ? String(val) : Math.round(val * 100) / 100;
+    return pct + '% de ' + base + ' es ' + shown + '.';
+  }
+
+  // cuanto es / calcula expresión
   m = t.match(
-    /(?:cuanto\s+es|cuánto\s+es|calcula|calcular|resultado\s+de|cuanto\s+da|cuánto\s+da)\s+(.+)/i,
+    /(?:cuanto\s+es|cuanto\s+da|calcula|calcular|resultado\s+de)\s+(.+)/i,
   );
   let expr = m ? m[1] : null;
   if (!expr) {
-    m = t.match(/^(\d+(?:\.\d+)?\s*[\+\-\*\/x×÷]\s*\d+(?:\.\d+)?(?:\s*[\+\-\*\/x×÷]\s*\d+(?:\.\d+)?){0,4})$/);
+    m = t.match(
+      /^(\d+(?:\.\d+)?\s*[\+\-\*\/x×÷]\s*\d+(?:\.\d+)?(?:\s*[\+\-\*\/x×÷]\s*\d+(?:\.\d+)?){0,4})$/,
+    );
     if (m) expr = m[1];
   }
   if (expr) {
+    const pm = expr.match(/(\d+(?:\.\d+)?)\s*(?:%|por\s*ciento)\s*(?:de\s+)(\d+(?:\.\d+)?)/);
+    if (pm) {
+      const pct = parseFloat(pm[1]);
+      const base = parseFloat(pm[2]);
+      const val = (pct / 100) * base;
+      const shown = Number.isInteger(val) ? String(val) : Math.round(val * 100) / 100;
+      return pct + '% de ' + base + ' es ' + shown + '.';
+    }
     let e = expr
       .replace(/\s+/g, '')
       .replace(/[x×]/gi, '*')
@@ -52,6 +75,7 @@ function tryLocalMath(raw) {
       return null;
     }
   }
+
   return null;
 }
 
