@@ -1,8 +1,73 @@
 /**
- * Búsqueda web enriquecida — DDG HTML + Instant + Wikipedia
- * Para que ELYRA tenga más "conocimiento de internet" sin API de pago.
+ * Búsqueda web enriquecida V2 — DDG + Wikipedia + snippets
+ * ELYRA usa esto para conocimiento real de internet sin API de pago.
  */
 const { smartKnowledge } = require('./smart-knowledge.cjs');
+
+function stripHtml(s) {
+  return String(s || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function fetchDDGSnippets(query) {
+  const snippets = [];
+  try {
+    const res = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query), {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'text/html',
+      },
+    });
+    const html = await res.text();
+    // result__snippet
+    const reSnippet = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td|div)>/gi;
+    let sm;
+    while ((sm = reSnippet.exec(html)) !== null && snippets.length < 6) {
+      const t = stripHtml(sm[1]);
+      if (t.length > 50) snippets.push(t);
+    }
+    // fallback: result__a titles + nearby text
+    if (snippets.length < 2) {
+      const reAlt = /class="result__a"[^>]*>([\s\S]*?)<\/a>/gi;
+      while ((sm = reAlt.exec(html)) !== null && snippets.length < 6) {
+        const t = stripHtml(sm[1]);
+        if (t.length > 20) snippets.push(t);
+      }
+    }
+  } catch {}
+  return snippets;
+}
+
+async function fetchDDGInstant(query) {
+  try {
+    const res = await fetch(
+      'https://api.duckduckgo.com/?q=' +
+        encodeURIComponent(query) +
+        '&format=json&no_html=1&skip_disambig=1',
+      { headers: { 'User-Agent': 'ELYRA/5.1' } },
+    );
+    const data = await res.json();
+    const parts = [];
+    if (data.AbstractText) parts.push(data.AbstractText);
+    if (data.Answer) parts.push(data.Answer);
+    if (data.Definition) parts.push(data.Definition);
+    if (Array.isArray(data.RelatedTopics)) {
+      for (const t of data.RelatedTopics.slice(0, 3)) {
+        if (t && t.Text) parts.push(t.Text);
+      }
+    }
+    return parts;
+  } catch {
+    return [];
+  }
+}
 
 async function deepWebSearch(query) {
   const q = String(query || '').trim();
@@ -10,7 +75,7 @@ async function deepWebSearch(query) {
 
   const parts = [];
 
-  // 1) Resumen estructurado (wiki/ddg)
+  // 1) Resumen estructurado (Wikipedia / DDG abstract)
   try {
     const sk = await smartKnowledge(q);
     if (sk.ok && sk.response) {
@@ -18,33 +83,30 @@ async function deepWebSearch(query) {
     }
   } catch {}
 
-  // 2) Snippets DuckDuckGo HTML
+  // 2) Instant answers
   try {
-    const res = await fetch('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(q), {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ELYRA/4.2' },
-    });
-    const html = await res.text();
-    const re = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td)>/gi;
-    let sm;
-    const snippets = [];
-    while ((sm = re.exec(html)) !== null && snippets.length < 5) {
-      const t = sm[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-      if (t.length > 40) snippets.push(t);
-    }
-    if (snippets.length) {
-      parts.push('Fuentes web: ' + snippets.slice(0, 3).join(' · '));
+    const instant = await fetchDDGInstant(q);
+    for (const p of instant) {
+      if (p && !parts.some((x) => x.includes(p.slice(0, 40)))) {
+        parts.push(p);
+      }
     }
   } catch {}
 
-  // 3) DDG Instant JSON extra
+  // 3) Snippets HTML de la web real
   try {
-    const res = await fetch(
-      'https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_html=1&skip_disambig=1',
-      { headers: { 'User-Agent': 'ELYRA/4.2' } },
-    );
-    const data = await res.json();
-    if (data.AbstractText && !parts.some((p) => p.includes(data.AbstractText.slice(0, 40)))) {
-      parts.unshift(data.AbstractText);
+    const snippets = await fetchDDGSnippets(q);
+    if (snippets.length) {
+      // Tomar los mejores y unir sin ruido
+      const unique = [];
+      for (const s of snippets) {
+        if (!unique.some((u) => u.slice(0, 50) === s.slice(0, 50))) unique.push(s);
+      }
+      if (unique.length && parts.length === 0) {
+        parts.push(unique.slice(0, 3).join(' '));
+      } else if (unique.length) {
+        parts.push('Más datos: ' + unique.slice(0, 2).join(' · '));
+      }
     }
   } catch {}
 
@@ -55,16 +117,25 @@ async function deepWebSearch(query) {
         'No hallé un resumen sólido sobre "' +
         q +
         '". Puedo abrirte Google o YouTube con esa búsqueda.',
+      query: q,
     };
   }
 
+  // Respuesta hablable: prioriza el primer bloque sólido
   let response = parts[0];
-  if (parts.length > 1 && parts[1].startsWith('Fuentes')) {
-    response = parts[0] + '\n\n' + parts[1];
+  if (parts.length > 1) {
+    const extra = parts.slice(1).join(' ');
+    if (response.length < 400 && extra.length > 40) {
+      response = response + ' ' + extra;
+    }
   }
-  if (response.length > 900) response = response.slice(0, 880).replace(/\s+\S*$/, '') + '…';
+  if (response.length > 900) {
+    const cut = response.slice(0, 880);
+    const last = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('?'));
+    response = last > 250 ? cut.slice(0, last + 1) : cut.replace(/\s+\S*$/, '') + '…';
+  }
 
-  return { ok: true, response, source: 'deep-web' };
+  return { ok: true, response, source: 'deep-web', query: q };
 }
 
-module.exports = { deepWebSearch };
+module.exports = { deepWebSearch, fetchDDGSnippets };

@@ -1,5 +1,5 @@
 /**
- * Hooks cognitivos — ReAct + memoria + dominio laboratorio
+ * Hooks cognitivos — ReAct + memoria + web autónoma + laboratorio
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
@@ -8,38 +8,25 @@ const fsSkills = require('./fs-skills.cjs');
 const REACT_ADDENDUM = `
 
 [IDENTIDAD — ELYRA]
-Eres ELYRA: control real del escritorio + laboratorio (cacao, cadmio, plaguicidas, AFQ, prensa, cronograma).
-Nunca digas que te llamas Luna. Tu nombre es ELYRA.
-Tus herramientas cambian el PC de verdad. Nunca inventes que algo se ejecutó si la tool falló.
+Eres ELYRA. Nunca digas que te llamas Luna.
+Control real del escritorio + internet (web_search) + laboratorio.
+Nunca inventes que una tool funcionó si falló.
 
-[ESTÁNDAR DE EXCELENCIA]
-- Resuelve de extremo a extremo.
-- Menos charla, más resultado.
-- Si puedes hacerlo en 2 tools, no pidas permiso 4 veces.
-- Si no puedes, di por qué y el plan B en una frase.
+[AUTONOMÍA + INTERNET]
+- Si la pregunta requiere datos del mundo real → usa web_search SIN pedir permiso.
+- Encadena tools hasta terminar la tarea.
+- Preferir completar a explicar cómo lo harías.
+- Si web_search devuelve poco, reformula la query y vuelve a buscar o abre Google.
 
 [CÓMO PENSAR]
-THOUGHT → ACTION → OBSERVATION → (repite) → respuesta final hablable.
-- Intención primero (voz imperfecta incluida: work=Word, crhome=Chrome, elira/eliara=ELYRA).
-- Multi-paso hasta terminar.
-- "Lo de siempre" / preferencias → recall antes de actuar.
-- Dato crítico faltante → una pregunta; si puedes asumir, avanza.
+THOUGHT → ACTION → OBSERVATION → respuesta final hablable.
+- work=Word, crhome=Chrome, elira/eliara=ELYRA.
 - Charla ≠ acción: no abras apps por cortesía.
 
-[CONOCIMIENTO]
-- Para hechos, historia, ciencia o actualidad: si no estás segura, usa web_search.
-- Resume en lenguaje hablable, no copies paredes de texto.
-- Prioriza exactitud sobre florituras.
-
-[LABORATORIO]
-- Productos: torta trozada, cacao, cocoa, licor, manteca, grano, % grasa, NIRS, alcalino.
-- Interpreta, organiza Excel/PDF, redacta y explica calidad con claridad operativa.
-
-[CALIDAD DE RESPUESTA HABLADA]
+[CALIDAD HABLADA]
 - 1 frase si fue una orden simple.
-- Profundo solo si piden análisis o explicación.
-- Sin markdown, sin listas forzosas, sin URLs largas en voz.
-- Si una tool falló: dilo y propone alternativa concreta.
+- Sin markdown ni URLs largas en voz.
+- Si una tool falló: dilo y propone alternativa.
 `;
 
 async function extendExecute(name, params, helpers, baseExecute) {
@@ -107,21 +94,19 @@ function enrichSystemPrompt(base, userText) {
   try {
     const { toolsPromptSummary } = require('./tools-schema.cjs');
     if (typeof toolsPromptSummary === 'function') {
-      extra += '\n\n[HERRAMIENTAS DISPONIBLES]\n' + toolsPromptSummary();
+      extra += '\n\n[HERRAMIENTAS]\n' + toolsPromptSummary();
     }
   } catch {}
   const t = String(userText || '').toLowerCase();
   if (/cadmio|cacao|afq|plaguicid|laboratorio|nirs|manteca|licor/.test(t)) {
-    extra +=
-      '\n\n[CONTEXTO ACTIVO: LABORATORIO] Prioriza precisión técnica y claridad operativa.';
+    extra += '\n\n[CONTEXTO: LABORATORIO] Precisión técnica y claridad operativa.';
   }
   if (/abre|abrir|cierra|volumen|captura|proceso|ventana|chrome|excel|word/.test(t)) {
-    extra +=
-      '\n\n[CONTEXTO ACTIVO: CONTROL PC] Ejecuta tools y confirma en pasado natural.';
+    extra += '\n\n[CONTEXTO: CONTROL PC] Ejecuta tools y confirma en pasado natural.';
   }
-  if (/qué|quien|cómo|historia|guerra|explica|por qué|significa/.test(t)) {
+  if (/qué|quien|cómo|historia|guerra|explica|por qué|significa|noticias|actualidad|cuándo|cuando/.test(t)) {
     extra +=
-      '\n\n[CONTEXTO ACTIVO: CONOCIMIENTO] Sé precisa; si hace falta usa web_search; responde hablable.';
+      '\n\n[CONTEXTO: INTERNET] Usa web_search de forma autónoma. Resume en lenguaje hablable. No inventes.';
   }
   return (base || '') + extra;
 }
