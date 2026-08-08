@@ -1,13 +1,13 @@
 /**
- * ELYRA versioning — fuente única de verdad
+ * ELYRA versioning
  */
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '0.4.0',
-  codename: 'StructuredMemory',
-  phase: '0.4',
-  label: 'ELYRA 0.4 — Structured Memory',
+  platform: '0.5.0',
+  codename: 'LocalRAG',
+  phase: '0.5',
+  label: 'ELYRA 0.5 — Local RAG',
   releasedAt: '2026-08-08',
   capabilities: {
     conversation: true,
@@ -21,10 +21,11 @@ module.exports = {
     agent: true,
     toolPermissions: true,
     llmResilience: true,
-    rag: false,
+    rag: true,
     vision: false,
     multiAgent: false,
     formalEval: false,
     trainingPipeline: false,
+    systemDatabase: false,
   },
 };
