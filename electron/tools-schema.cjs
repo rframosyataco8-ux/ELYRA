@@ -1,6 +1,6 @@
 /**
  * ELYRA Tool Schemas — Function Calling (OpenAI-compatible)
- * Control autónomo completo del PC + laboratorio
+ * PC + laboratorio + RAG local 0.5
  */
 const FS_EXTRA = require('./tools-fs-extra.cjs');
 
@@ -14,6 +14,36 @@ const TOOL_DEFINITIONS = [
         type: 'object',
         properties: { query: { type: 'string' } },
         required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'rag_search',
+      description:
+        'Busca en el índice local de documentos del usuario (Documentos, Informes, Escritorio, Descargas). Usa esto para preguntas sobre informes, PDFs, protocolos o notas propias.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' },
+          limit: { type: 'string', description: 'Número de fragmentos (opcional)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'reindex_docs',
+      description:
+        'Reconstruye el índice RAG local de documentos del usuario. force=true relee todos los archivos.',
+      parameters: {
+        type: 'object',
+        properties: {
+          force: { type: 'boolean' },
+        },
       },
     },
   },
