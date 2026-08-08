@@ -14,11 +14,12 @@ const ICONS: Record<ThemeId, typeof Moon> = {
   transparent: Sparkles,
 };
 
+/** Franjas de color que representan cada tema */
 const PREVIEWS: Record<ThemeId, string[]> = {
-  dark: ['#0d1117', '#151b23', '#58a6ff', '#e6edf3'],
-  light: ['#f6f8fc', '#ffffff', '#0b57d0', '#1f1f1f'],
-  system: ['#0d1117', '#f6f8fc', '#58a6ff', '#0b57d0'],
-  transparent: ['#1a2030', '#2a3548', '#8ab4f8', '#f1f3f4'],
+  dark: ['#0b0f14', '#141a22', '#1c2430', '#58a6ff', '#e6edf3'],
+  light: ['#f0f3f8', '#ffffff', '#e8eef6', '#0b57d0', '#1f1f1f'],
+  system: ['#0b0f14', '#f0f3f8', '#58a6ff', '#0b57d0', '#8b949e'],
+  transparent: ['#12182a', '#1e283c', '#8ab4f8', '#c5d7f7', '#f1f3f4'],
 };
 
 export function ThemeSettings() {
@@ -50,8 +51,7 @@ export function ThemeSettings() {
         </h3>
       </div>
       <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
-        Temas pensados para uso prolongado. Claro imita Google Workspace; oscuro es
-        neutro y cómodo de noche.
+        Elija un tema pensado para uso prolongado en laboratorio. Transiciones suaves al cambiar.
       </p>
       <div className="grid grid-cols-2 gap-3">
         {THEME_OPTIONS.map((opt) => {
@@ -65,12 +65,12 @@ export function ThemeSettings() {
               onClick={() => select(opt.id)}
               className={`theme-card ${active ? 'active' : ''}`}
             >
-              <div className="theme-preview">
+              <div className="theme-preview" style={{ height: 36, borderRadius: 10 }}>
                 {colors.map((c, i) => (
                   <span key={i} style={{ background: c }} />
                 ))}
               </div>
-              <div className="flex items-center justify-center gap-1.5 mb-1">
+              <div className="flex items-center justify-center gap-1.5 mb-1.5">
                 <Icon
                   className="w-4 h-4"
                   style={{ color: active ? 'var(--ely-accent)' : 'var(--ely-text-muted)' }}
