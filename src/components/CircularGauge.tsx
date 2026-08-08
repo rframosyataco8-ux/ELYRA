@@ -9,22 +9,20 @@ export function CircularGauge({ label, value, color, size = 72 }: CircularGaugeP
   const stroke = 5;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (value / 100) * circumference;
+  const offset = circumference - (Math.min(100, Math.max(0, value)) / 100) * circumference;
 
   return (
     <div className="flex flex-col items-center gap-1.5">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
-          {/* Background track */}
           <circle
             cx={size / 2}
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke="rgba(30, 60, 100, 0.4)"
+            stroke="var(--ely-track)"
             strokeWidth={stroke}
           />
-          {/* Progress */}
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -35,19 +33,21 @@ export function CircularGauge({ label, value, color, size = 72 }: CircularGaugeP
             strokeLinecap="round"
             strokeDasharray={circumference}
             strokeDashoffset={offset}
-            style={{
-              filter: `drop-shadow(0 0 6px ${color})`,
-              transition: 'stroke-dashoffset 0.8s ease',
-            }}
+            style={{ transition: 'stroke-dashoffset 0.7s cubic-bezier(0.2, 0, 0, 1)' }}
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-sm font-semibold text-white/90" style={{ textShadow: `0 0 10px ${color}` }}>
-            {value}%
+          <span
+            className="text-sm font-semibold tabular-nums"
+            style={{ color: 'var(--ely-text)' }}
+          >
+            {Math.round(value)}%
           </span>
         </div>
       </div>
-      <span className="text-[11px] text-sky-300/70 tracking-wide">{label}</span>
+      <span className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
+        {label}
+      </span>
     </div>
   );
 }
