@@ -22,12 +22,12 @@ export function ConversationLog({ messages, compact }: Props) {
   if (!messages.length) {
     return (
       <div
-        className="flex-1 flex items-center justify-center text-sm"
+        className="flex-1 flex items-center justify-center text-sm animate-fade-in"
         style={{ color: 'var(--ely-text-dim)' }}
       >
         <div className="text-center space-y-2">
           <div
-            className="w-10 h-10 mx-auto rounded-full flex items-center justify-center"
+            className="w-10 h-10 mx-auto rounded-full flex items-center justify-center animate-soft-pulse"
             style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
           >
             <span className="text-lg">◈</span>
@@ -43,11 +43,10 @@ export function ConversationLog({ messages, compact }: Props) {
       ref={ref}
       className={`flex-1 overflow-y-auto space-y-3 pr-1 ${compact ? 'max-h-28' : ''}`}
     >
-      {messages.map((m, idx) => (
+      {messages.map((m) => (
         <div
           key={m.id}
-          className={`flex animate-fade-in ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          style={{ animationDelay: `${Math.min(idx * 20, 80)}ms` }}
+          className={`flex ely-msg-enter ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}
         >
           <div
             className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed ${
