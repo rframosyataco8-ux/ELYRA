@@ -1,6 +1,6 @@
 /**
- * ELYRA Agent v17 — Operador autónomo PC + laboratorio + voz humana
- * Proveedores: Groq, Gemini, NVIDIA NIM, Claude, OpenAI, xAI, OpenRouter, Ollama
+ * ELYRA / LUNA Agent v18 — Operador autónomo PC + laboratorio + voz humana
+ * Fix: reintento sin tools ante 404 function-calling; errores limpios; modelos más robustos
  */
 const fs = require('fs');
 const path = require('path');
@@ -10,18 +10,18 @@ const hooks = require('./agent-hooks.cjs');
 const { executeTool } = require('./tool-executor.cjs');
 
 const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1';
-const MODEL_FAST = 'llama-3.1-8b-instant';
+const MODEL_FAST = 'llama-3.3-70b-versatile';
 const MODEL_SMART = 'llama-3.3-70b-versatile';
-const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
+const MODEL_FALLBACK = 'llama-3.1-8b-instant';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
 const NVIDIA_BASE = 'https://integrate.api.nvidia.com/v1';
-const NVIDIA_MODEL = 'nvidia/llama-3.1-nemotron-70b-instruct';
+const NVIDIA_MODEL = 'meta/llama-3.3-70b-instruct';
 
 const COMPLEX_RE =
-  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas|ejecuta|comando|powershell|proceso|ventana|mouse|clic|click|teclado|autónom|autonom|hazlo todo|completa|termina)\b/i;
+  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas|ejecuta|comando|powershell|proceso|ventana|mouse|clic|click|teclado|autónom|autonom|hazlo todo|completa|termina|guerra|historia|ciencia|política|politica)\b/i;
 
 const SYSTEM_PROMPT = require('./agent-prompt.cjs');
 
@@ -66,7 +66,7 @@ function detectProviderFromKey(apiKey) {
   if (k.startsWith('sk-ant-')) {
     return {
       baseUrl: 'https://api.anthropic.com',
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-20250514',
       provider: 'anthropic',
     };
   }
@@ -160,9 +160,9 @@ function selectModel(config, userText) {
   const provider = inferProvider(config);
   if (provider === 'gemini') return config.model || GEMINI_MODEL;
   if (provider === 'nvidia') return config.model || NVIDIA_MODEL;
-  if (config.model && config.model !== MODEL_FAST) return config.model;
+  if (config.model) return config.model;
   if (isComplexQuery(userText)) return MODEL_SMART;
-  return config.model || MODEL_FAST;
+  return MODEL_FAST;
 }
 
 function llmHeaders(config) {
@@ -199,10 +199,10 @@ function fallbackResponse(userText) {
   const t = (userText || '').toLowerCase();
   if (/hola|buenos|buenas/.test(t)) return 'Hola. Estoy lista. ¿En qué te ayudo?';
   if (/gracias/.test(t)) return 'Con gusto.';
-  if (/qui[eé]n eres|que eres|qu[eé] eres/.test(t)) {
-    return 'Soy ELYRA, operadora de tu PC y del laboratorio. Puedo controlar Windows y apoyarte con cacao, cadmio y AFQ.';
+  if (/qui[eé]n eres|que eres|qu[eé] eres|pres[eé]ntate/.test(t)) {
+    return 'Soy Luna. Puedo controlar tu PC, buscar información y ayudarte con el laboratorio. Dime qué necesitas.';
   }
-  return 'Puedo abrir apps, usar teclado y mouse, ejecutar comandos, manejar archivos y apoyar el laboratorio. Dime qué necesitas.';
+  return 'Puedo abrir apps, controlar el sistema, buscar en la web y ayudarte con el laboratorio. ¿Qué hacemos?';
 }
 
 function normalizeUserIntent(text) {
@@ -212,6 +212,34 @@ function normalizeUserIntent(text) {
     .replace(/\bcrhome\b/gi, 'chrome')
     .replace(/\bwork\b/gi, 'word')
     .trim();
+}
+
+function isToolApiError(status, errText) {
+  if (status === 404 && /function|tool|not found for account/i.test(errText)) return true;
+  if (status === 400 && /tool|function|tool_calls/i.test(errText)) return true;
+  if (/Function '.*': Not found/i.test(errText)) return true;
+  return false;
+}
+
+function cleanUserFacingError(errMsg) {
+  const m = String(errMsg || '');
+  if (/401|unauthorized|invalid.*key|api key/i.test(m)) {
+    return 'La API key no es válida o expiró. Revísala en Configuración.';
+  }
+  if (/429|rate limit/i.test(m)) {
+    return 'El servicio de inteligencia está saturado un momento. Prueba en unos segundos.';
+  }
+  if (/404|not found|function/i.test(m)) {
+    return 'El modelo no aceptó la petición de herramientas. Reintenté en modo simple.';
+  }
+  if (/ENOTFOUND|ECONNREFUSED|network|fetch failed/i.test(m)) {
+    return 'No hay conexión con el servicio de inteligencia. Revisa internet o la URL del proveedor.';
+  }
+  // Nunca volcar JSON crudo al usuario
+  if (m.length > 160 || /[{}\[\]]/.test(m)) {
+    return 'El modelo no respondió bien. Puedo reintentar o usar control local y búsquedas.';
+  }
+  return 'Tuve un problema al razonar. Puedo reintentar o usar control local del PC.';
 }
 
 async function callLLM(messages, config, model) {
@@ -267,7 +295,7 @@ async function testApiConnection(partial) {
   } catch (err) {
     return {
       ok: false,
-      message: 'No se pudo conectar: ' + (err.message || String(err)),
+      message: 'No se pudo conectar: ' + cleanUserFacingError(err.message || String(err)),
       error: String(err),
     };
   }
@@ -311,10 +339,12 @@ async function runAgent(message, history, helpers) {
       cleanedUser,
     );
 
+  let disableTools = false;
+
   try {
     let reply = '';
     let steps = 0;
-    const maxSteps = 20;
+    const maxSteps = 16;
     let currentMessages = messages.slice();
     let usedTools = false;
 
@@ -323,10 +353,10 @@ async function runAgent(message, history, helpers) {
       const body = {
         model,
         messages: currentMessages,
-        temperature: wantsTools || steps > 1 ? 0.18 : 0.32,
-        max_tokens: 2000,
+        temperature: wantsTools || steps > 1 ? 0.2 : 0.35,
+        max_tokens: 2200,
       };
-      if (tools.length) {
+      if (tools.length && !disableTools) {
         body.tools = tools;
         body.tool_choice = 'auto';
       }
@@ -340,15 +370,27 @@ async function runAgent(message, history, helpers) {
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        if (
-          steps === 1 &&
-          provider !== 'gemini' &&
-          provider !== 'nvidia' &&
-          model !== MODEL_FAST
-        ) {
-          model = MODEL_FAST;
+
+        // Fix principal: 404 Function not found → reintentar SIN tools
+        if (!disableTools && isToolApiError(res.status, errText)) {
+          disableTools = true;
+          currentMessages = messages.slice();
+          steps = Math.max(0, steps - 1);
           continue;
         }
+
+        // Modelo inválido → fallback más simple
+        if (
+          (res.status === 404 || res.status === 400) &&
+          model !== MODEL_FALLBACK &&
+          provider === 'groq'
+        ) {
+          model = MODEL_FALLBACK;
+          disableTools = true;
+          currentMessages = messages.slice();
+          continue;
+        }
+
         throw new Error('LLM ' + res.status + ' ' + errText.slice(0, 220));
       }
 
@@ -356,7 +398,7 @@ async function runAgent(message, history, helpers) {
       const choice = data.choices?.[0]?.message || {};
       const toolCalls = choice.tool_calls || [];
 
-      if (toolCalls.length && helpers) {
+      if (toolCalls.length && helpers && !disableTools) {
         usedTools = true;
         currentMessages.push(choice);
         for (const tc of toolCalls) {
@@ -386,8 +428,8 @@ async function runAgent(message, history, helpers) {
       if (
         steps < maxSteps &&
         !usedTools &&
-        provider !== 'gemini' &&
-        provider !== 'nvidia' &&
+        !disableTools &&
+        provider === 'groq' &&
         model !== MODEL_SMART &&
         (!reply || reply.length < 12 || /no puedo|no sé|no se|as an ai|como ia|no tengo acceso/i.test(reply))
       ) {
@@ -410,15 +452,20 @@ async function runAgent(message, history, helpers) {
       if (hooks.noteInteraction) hooks.noteInteraction(cleanedUser, reply);
     } catch {}
 
-    return { response: reply, intelligent: true, via: 'agent-v17', model, steps, usedTools };
+    return {
+      response: reply,
+      intelligent: true,
+      via: disableTools ? 'agent-v18-no-tools' : 'agent-v18',
+      model,
+      steps,
+      usedTools,
+    };
   } catch (err) {
     return {
-      response:
-        'Tuve un problema al razonar: ' +
-        (err.message || 'error') +
-        '. Puedo reintentar o usar control local del PC.',
+      response: cleanUserFacingError(err.message || 'error'),
       intelligent: false,
       via: 'agent-error',
+      errorDetail: String(err.message || err).slice(0, 200),
     };
   }
 }
@@ -436,7 +483,8 @@ module.exports = {
   SYSTEM_PROMPT,
   MODEL_FAST,
   MODEL_SMART,
-  MODEL_CHAIN: MODEL_CHAIN_GROQ,
+  MODEL_FALLBACK,
+  MODEL_CHAIN: [MODEL_FAST, MODEL_FALLBACK],
   GEMINI_BASE,
   GEMINI_MODEL,
   NVIDIA_BASE,

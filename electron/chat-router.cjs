@@ -1,5 +1,5 @@
 /**
- * Router ELYRA v9 — conversación vocal natural + PC + búsquedas
+ * Router ELYRA / LUNA v10 — conversación vocal + PC + búsquedas + fallbacks fuertes
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
@@ -29,7 +29,6 @@ function pickPresence() {
   return PRESENCE_REPLIES[Math.floor(Math.random() * PRESENCE_REPLIES.length)];
 }
 
-/** Respuestas cortas y hablables (estilo voz) */
 function speakify(text) {
   if (!text) return text;
   let t = String(text);
@@ -39,13 +38,25 @@ function speakify(text) {
   t = t.replace(/\n{2,}/g, '. ');
   t = t.replace(/\n/g, ' ');
   t = t.replace(/\s+/g, ' ').trim();
-  // Acortar muros de texto para voz
-  if (t.length > 480) {
-    const cut = t.slice(0, 480);
+  // No mostrar JSON / errores técnicos al usuario
+  if (/\{\s*"status"|Not found for account|tool_call/i.test(t)) {
+    return 'El modelo tuvo un tropiezo. Puedo buscarlo en la web o controlar el PC.';
+  }
+  if (t.length > 520) {
+    const cut = t.slice(0, 520);
     const last = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('?'));
     t = last > 200 ? cut.slice(0, last + 1) : cut + '.';
   }
   return t;
+}
+
+function looksLikeKnowledgeQuestion(text) {
+  const t = String(text || '').toLowerCase();
+  if (t.length < 8) return false;
+  if (/\b(abre|abrir|cierra|volumen|brillo|captura|chrome|excel|word|carpeta)\b/.test(t)) return false;
+  return /\b(qué|que|quién|quien|cómo|como|por qué|porque|cuándo|cuando|dónde|donde|explica|cuéntame|cuentame|historia|guerra|pasó|paso|significa|diferencia|quién inventó|quien invento)\b/i.test(
+    t,
+  );
 }
 
 async function routeChat({
@@ -66,16 +77,24 @@ async function routeChat({
   let text = applyTypos((fixed || '').toLowerCase().trim());
 
   text = text
-    .replace(/\b(hey\s+)?(elyra|elira|eliara)\b/gi, ' ')
+    .replace(/\b(hey\s+)?(elyra|elira|eliara|luna)\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
   if (
     !text ||
-    /^(estas ahi|estás ahí|estas alli|me escuchas|me oyes|hola|oye|hey|buenos dias|buenas tardes|buenas noches|ey|eh)$/i.test(
+    /^(estas ahi|estás ahí|estas alli|me escuchas|me oyes|hola|oye|hey|buenos dias|buenas tardes|buenas noches|ey|eh|presentate|preséntate)$/i.test(
       text,
     )
   ) {
+    if (/present/i.test(text)) {
+      return {
+        response:
+          'Soy Luna. Asistente de voz de tu escritorio. Controlo el PC, busco información y te ayudo con el laboratorio. ¿En qué te ayudo?',
+        intelligent: true,
+        via: 'presence',
+      };
+    }
     return { response: pickPresence(), intelligent: true, via: 'presence' };
   }
 
@@ -101,9 +120,13 @@ async function routeChat({
   if (!config.apiKey) {
     const sk = await trySmartTopic(fixed, text);
     if (sk) return { ...sk, response: speakify(sk.response) };
+    if (looksLikeKnowledgeQuestion(text)) {
+      const deep = await deepWebSearch(fixed);
+      if (deep.ok) return { response: speakify(deep.response), intelligent: true, via: 'deep-nokey' };
+    }
     return {
       response:
-        'Aún no tengo clave de inteligencia configurada. Puedo controlar el PC y buscar en la web. Si quieres razonar más a fondo, agrega una API key en Configuración.',
+        'Aún no tengo clave de inteligencia configurada. Puedo controlar el PC y buscar en la web. Agrega una API key en Configuración para razonar más a fondo.',
       intelligent: false,
     };
   }
@@ -111,24 +134,41 @@ async function routeChat({
   try {
     const result = await runAgent(fixed, history || [], helpers);
     const resp = result?.response || '';
+    const via = result?.via || 'llm';
 
-    if (/api key no es válida|no hay api key|falta la api|no pude conectar|401|unauthorized/i.test(resp)) {
+    // Si el agente falló o devolvió error técnico → conocimiento web
+    if (
+      result?.intelligent === false ||
+      via === 'agent-error' ||
+      /api key no es válida|no hay api key|falta la api|no pude conectar|401|unauthorized|tropiezo|no respondió bien|revisa la api/i.test(
+        resp,
+      )
+    ) {
       const sk = await trySmartTopic(fixed, text);
       if (sk) {
         return {
-          response: speakify(sk.response + ' Por cierto, la API no respondió del todo.'),
+          response: speakify(sk.response),
           intelligent: true,
           via: 'smart-fallback',
         };
       }
+      if (looksLikeKnowledgeQuestion(text) || looksLikeKnowledgeQuestion(fixed)) {
+        const deep = await deepWebSearch(fixed);
+        if (deep.ok) {
+          return { response: speakify(deep.response), intelligent: true, via: 'deep-fallback' };
+        }
+      }
       return {
-        response: 'El modelo no respondió bien. Revisa la API key. Mientras, sigo con el PC y las búsquedas.',
+        response: speakify(
+          resp ||
+            'El modelo no respondió bien. Mientras, puedo controlar el PC y buscar en la web.',
+        ),
         intelligent: false,
         via: 'error',
       };
     }
 
-    return { response: speakify(resp), intelligent: true, via: 'llm' };
+    return { response: speakify(resp), intelligent: true, via };
   } catch (err) {
     const msg = String(err.message || err);
     if (/429|rate limit/i.test(msg)) {
@@ -141,6 +181,10 @@ async function routeChat({
     }
     const sk = await trySmartTopic(fixed, text);
     if (sk) return { ...sk, response: speakify(sk.response), via: 'smart-error' };
+    if (looksLikeKnowledgeQuestion(fixed)) {
+      const deep = await deepWebSearch(fixed);
+      if (deep.ok) return { response: speakify(deep.response), intelligent: true, via: 'deep-error' };
+    }
     return {
       response: 'Tuve un tropiezo con el modelo. Sigo lista para el sistema y búsquedas.',
       intelligent: false,
@@ -153,6 +197,7 @@ async function trySmartTopic(fixed, text) {
   const patterns = [
     /(?:dime|cuéntame|cuentame|explícame|explicame|qué sabes|que sabes)\s+(?:sobre|de|acerca de)\s+(.+)/i,
     /(?:qué es|que es|quién es|quien es)\s+(.+)/i,
+    /(?:qué|que)\s+(?:pasó|paso|sucedió|ocurrió)\s+(?:en|durante)?\s*(.+)/i,
     /(?:busca|buscar|buscame|investiga)\s+(?:información\s+)?(?:sobre\s+)?(.+)/i,
     /(?:la\s+)?ia\s+de\s+(.+)/i,
     /^(gemini|chatgpt|claude|python|javascript|react)(?:\s+google)?$/i,
@@ -165,8 +210,12 @@ async function trySmartTopic(fixed, text) {
       break;
     }
   }
-  if (!topic && text.split(/\s+/).length <= 4 && !/\b(abre|abrir|volumen|brillo|youtube)\b/.test(text)) {
-    if (/gemini|chatgpt|claude|python|openai|groq|llama/.test(text)) topic = text;
+  // Preguntas abiertas de historia / ciencia
+  if (!topic && looksLikeKnowledgeQuestion(fixed)) {
+    topic = String(fixed).replace(/[?.!]+$/, '').trim();
+  }
+  if (!topic && text.split(/\s+/).length <= 6 && !/\b(abre|abrir|volumen|brillo|youtube)\b/.test(text)) {
+    if (/gemini|chatgpt|claude|python|openai|groq|llama|guerra|historia/.test(text)) topic = text;
   }
   if (!topic || topic.length < 2) return null;
   const deep = await deepWebSearch(topic);
