@@ -3,7 +3,6 @@ import {
   Home,
   MessageSquare,
   Settings,
-  Activity,
   PanelLeftClose,
   PanelLeftOpen,
   LogOut,
@@ -15,15 +14,10 @@ import {
   Beaker,
   CalendarDays,
 } from 'lucide-react';
+import type { LabUser } from '@/lib/users';
+import { canAccessPage, type AppPage } from '@/lib/users';
 
-export type AppPage =
-  | 'inicio'
-  | 'asistente'
-  | 'config'
-  | 'productos'
-  | 'registro-prensa'
-  | 'afq'
-  | 'cronograma';
+export type { AppPage };
 
 interface SidebarProps {
   active: AppPage;
@@ -32,6 +26,7 @@ interface SidebarProps {
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   operator?: string;
+  user?: LabUser | null;
   onLogout?: () => void;
 }
 
@@ -48,8 +43,18 @@ export function Sidebar({
   collapsed = false,
   onToggleCollapse,
   operator,
+  user,
   onLogout,
 }: SidebarProps) {
+  const allow = (page: AppPage) => canAccessPage(user ?? null, page);
+
+  const showProductos = allow('productos');
+  const showRegistro = allow('registro-prensa');
+  const showAfq = allow('afq');
+  const showCronograma = allow('cronograma');
+  const showDatos = showRegistro || showAfq;
+  const showLab = showProductos || showDatos || showCronograma;
+
   const labPages: AppPage[] = ['productos', 'registro-prensa', 'afq', 'cronograma'];
   const datosPages: AppPage[] = ['registro-prensa', 'afq'];
   const [labOpen, setLabOpen] = useState(labPages.includes(active));
@@ -58,7 +63,7 @@ export function Sidebar({
   const topItems = [
     { id: 'inicio' as const, label: 'Inicio', icon: Home },
     { id: 'asistente' as const, label: 'Conversación', icon: MessageSquare },
-  ];
+  ].filter((item) => allow(item.id));
 
   const labActive = labPages.includes(active);
 
@@ -72,7 +77,6 @@ export function Sidebar({
         borderRight: '1px solid var(--ely-border)',
       }}
     >
-      {/* Brand */}
       <div className={`pt-5 pb-4 flex items-center ${collapsed ? 'flex-col gap-3 px-2' : 'gap-3 px-4'}`}>
         <div
           className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
@@ -85,14 +89,11 @@ export function Sidebar({
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <h1
-              className="font-medium text-[15px] tracking-tight leading-tight"
-              style={{ color: 'var(--ely-text)' }}
-            >
+            <h1 className="font-medium text-[15px] tracking-tight leading-tight" style={{ color: 'var(--ely-text)' }}>
               ELYRA
             </h1>
             <p className="text-[11px] mt-0.5" style={{ color: 'var(--ely-text-muted)' }}>
-              Asistente inteligente
+              {user?.roleLabel || 'Asistente inteligente'}
             </p>
           </div>
         )}
@@ -106,7 +107,6 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* Navigation */}
       <nav className={`flex-1 space-y-0.5 overflow-y-auto ${collapsed ? 'px-2' : 'px-3'}`}>
         {topItems.map((item) => {
           const isActive = active === item.id;
@@ -123,96 +123,111 @@ export function Sidebar({
           );
         })}
 
-        {collapsed ? (
-          <button
-            onClick={() => {
-              setLabOpen(true);
-              onNavigate('productos');
-            }}
-            title="Laboratorio"
-            className={navClass(labActive, true)}
-          >
-            <FlaskConical className="w-4 h-4 shrink-0" />
-          </button>
-        ) : (
-          <div className="space-y-0.5 pt-1">
-            <button onClick={() => setLabOpen((v) => !v)} className={navClass(labActive, false)}>
+        {showLab &&
+          (collapsed ? (
+            <button
+              onClick={() => {
+                setLabOpen(true);
+                if (showProductos) onNavigate('productos');
+                else if (showRegistro) onNavigate('registro-prensa');
+                else if (showAfq) onNavigate('afq');
+                else if (showCronograma) onNavigate('cronograma');
+              }}
+              title="Laboratorio"
+              className={navClass(labActive, true)}
+            >
               <FlaskConical className="w-4 h-4 shrink-0" />
-              <span className="flex-1 text-left truncate">Laboratorio</span>
-              <ChevronDown
-                className={`w-3.5 h-3.5 transition-transform duration-200 ${labOpen ? 'rotate-180' : ''}`}
-                style={{ color: 'var(--ely-text-dim)' }}
-              />
             </button>
+          ) : (
+            <div className="space-y-0.5 pt-1">
+              <button onClick={() => setLabOpen((v) => !v)} className={navClass(labActive, false)}>
+                <FlaskConical className="w-4 h-4 shrink-0" />
+                <span className="flex-1 text-left truncate">Laboratorio</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${labOpen ? 'rotate-180' : ''}`}
+                  style={{ color: 'var(--ely-text-dim)' }}
+                />
+              </button>
 
-            {labOpen && (
-              <div className="ml-3 pl-3 space-y-0.5" style={{ borderLeft: '1px solid var(--ely-border)' }}>
-                <button
-                  onClick={() => onNavigate('productos')}
-                  className={navClass(active === 'productos', false) + ' !py-2 !px-3 text-[13px]'}
-                >
-                  <Package className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Cadmio y Plaguicidas</span>
-                </button>
+              {labOpen && (
+                <div className="ml-3 pl-3 space-y-0.5" style={{ borderLeft: '1px solid var(--ely-border)' }}>
+                  {showProductos && (
+                    <button
+                      onClick={() => onNavigate('productos')}
+                      className={navClass(active === 'productos', false) + ' !py-2 !px-3 text-[13px]'}
+                    >
+                      <Package className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">Cadmio y Plaguicidas</span>
+                    </button>
+                  )}
 
-                <div className="space-y-0.5">
-                  <button
-                    onClick={() => setDatosOpen((v) => !v)}
-                    className={navClass(datosPages.includes(active), false) + ' !py-2 !px-3 text-[13px]'}
-                  >
-                    <Database className="w-3.5 h-3.5 shrink-0" />
-                    <span className="flex-1 text-left truncate">Datos</span>
-                    <ChevronDown
-                      className={`w-3 h-3 transition-transform duration-200 ${datosOpen ? 'rotate-180' : ''}`}
-                      style={{ color: 'var(--ely-text-dim)' }}
-                    />
-                  </button>
-
-                  {datosOpen && (
-                    <div className="ml-2 pl-2 space-y-0.5" style={{ borderLeft: '1px solid var(--ely-border)' }}>
+                  {showDatos && (
+                    <div className="space-y-0.5">
                       <button
-                        onClick={() => onNavigate('registro-prensa')}
-                        className={navClass(active === 'registro-prensa', false) + ' !py-1.5 !px-2.5 text-[12px]'}
+                        onClick={() => setDatosOpen((v) => !v)}
+                        className={navClass(datosPages.includes(active), false) + ' !py-2 !px-3 text-[13px]'}
                       >
-                        <ClipboardList className="w-3 h-3 shrink-0" />
-                        <span className="truncate">Registro de prensa</span>
+                        <Database className="w-3.5 h-3.5 shrink-0" />
+                        <span className="flex-1 text-left truncate">Datos</span>
+                        <ChevronDown
+                          className={`w-3 h-3 transition-transform duration-200 ${datosOpen ? 'rotate-180' : ''}`}
+                          style={{ color: 'var(--ely-text-dim)' }}
+                        />
                       </button>
-                      <button
-                        onClick={() => onNavigate('afq')}
-                        className={navClass(active === 'afq', false) + ' !py-1.5 !px-2.5 text-[12px]'}
-                      >
-                        <Beaker className="w-3 h-3 shrink-0" />
-                        <span className="truncate">AFQ</span>
-                      </button>
+
+                      {datosOpen && (
+                        <div className="ml-2 pl-2 space-y-0.5" style={{ borderLeft: '1px solid var(--ely-border)' }}>
+                          {showRegistro && (
+                            <button
+                              onClick={() => onNavigate('registro-prensa')}
+                              className={navClass(active === 'registro-prensa', false) + ' !py-1.5 !px-2.5 text-[12px]'}
+                            >
+                              <ClipboardList className="w-3 h-3 shrink-0" />
+                              <span className="truncate">Registro de prensa</span>
+                            </button>
+                          )}
+                          {showAfq && (
+                            <button
+                              onClick={() => onNavigate('afq')}
+                              className={navClass(active === 'afq', false) + ' !py-1.5 !px-2.5 text-[12px]'}
+                            >
+                              <Beaker className="w-3 h-3 shrink-0" />
+                              <span className="truncate">AFQ</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
-                </div>
 
-                <button
-                  onClick={() => onNavigate('cronograma')}
-                  className={navClass(active === 'cronograma', false) + ' !py-2 !px-3 text-[13px]'}
-                >
-                  <CalendarDays className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Cronograma</span>
-                </button>
-              </div>
-            )}
+                  {showCronograma && (
+                    <button
+                      onClick={() => onNavigate('cronograma')}
+                      className={navClass(active === 'cronograma', false) + ' !py-2 !px-3 text-[13px]'}
+                    >
+                      <CalendarDays className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">Cronograma</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+
+        {allow('config') && (
+          <div className="pt-1">
+            <button
+              onClick={() => onNavigate('config')}
+              title={collapsed ? 'Configuración' : undefined}
+              className={navClass(active === 'config', collapsed)}
+            >
+              <Settings className="w-4 h-4 shrink-0" />
+              {!collapsed && <span className="truncate">Configuración</span>}
+            </button>
           </div>
         )}
-
-        <div className="pt-1">
-          <button
-            onClick={() => onNavigate('config')}
-            title={collapsed ? 'Configuración' : undefined}
-            className={navClass(active === 'config', collapsed)}
-          >
-            <Settings className="w-4 h-4 shrink-0" />
-            {!collapsed && <span className="truncate">Configuración</span>}
-          </button>
-        </div>
       </nav>
 
-      {/* Footer status */}
       <div
         className={`${collapsed ? 'px-2 py-4' : 'px-4 pb-5 pt-3 space-y-3'}`}
         style={{ borderTop: '1px solid var(--ely-border)' }}
@@ -222,10 +237,7 @@ export function Sidebar({
             <div className="flex items-center gap-3 px-1">
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
-                style={{
-                  background: 'var(--ely-accent-soft)',
-                  color: 'var(--ely-accent)',
-                }}
+                style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
               >
                 {(operator || 'O').charAt(0).toUpperCase()}
               </div>
@@ -233,12 +245,8 @@ export function Sidebar({
                 <p className="text-sm font-medium truncate" style={{ color: 'var(--ely-text)' }}>
                   {operator || 'Operador'}
                 </p>
-                <p className="text-[11px] flex items-center gap-1.5" style={{ color: 'var(--ely-text-muted)' }}>
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: hasApiKey ? 'var(--ely-success)' : 'var(--ely-warning)' }}
-                  />
-                  {hasApiKey ? 'IA conectada' : 'Sin API key'}
+                <p className="text-[11px] truncate" style={{ color: 'var(--ely-text-muted)' }}>
+                  {user?.roleLabel || (hasApiKey ? 'IA conectada' : 'Sin API key')}
                 </p>
               </div>
             </div>
