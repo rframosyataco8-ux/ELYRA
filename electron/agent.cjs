@@ -18,7 +18,7 @@ const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
 const NVIDIA_BASE = 'https://integrate.api.nvidia.com/v1';
-const NVIDIA_MODEL = 'meta/llama-3.1-8b-instruct';
+const NVIDIA_MODEL = 'nvidia/llama-3.1-nemotron-70b-instruct';
 
 const COMPLEX_RE =
   /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas)\b/i;
@@ -54,11 +54,9 @@ function detectProviderFromKey(apiKey) {
       provider: 'anthropic',
     };
   }
-  /* Gemini: AIza… o AQ.… */
   if (k.startsWith('AIza') || k.startsWith('AQ.')) {
     return { baseUrl: GEMINI_BASE, model: GEMINI_MODEL, provider: 'gemini' };
   }
-  /* NVIDIA NIM / build.nvidia.com */
   if (k.startsWith('nvapi-')) {
     return { baseUrl: NVIDIA_BASE, model: NVIDIA_MODEL, provider: 'nvidia' };
   }
@@ -143,7 +141,6 @@ function llmHeaders(config) {
     headers['x-api-key'] = key;
     headers['anthropic-version'] = '2023-06-01';
   } else {
-    /* OpenAI-compatible: Groq, NVIDIA NIM, OpenAI, xAI, OpenRouter, Ollama */
     headers.Authorization = 'Bearer ' + key;
   }
   return headers;
