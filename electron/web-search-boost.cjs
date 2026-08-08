@@ -1,8 +1,8 @@
 /**
- * Búsqueda web enriquecida V2 — DDG + Wikipedia + snippets
- * ELYRA usa esto para conocimiento real de internet sin API de pago.
+ * Búsqueda web enriquecida V2 — DDG + Wikipedia + snippets + caché
  */
 const { smartKnowledge } = require('./smart-knowledge.cjs');
+const searchCache = require('./search-cache.cjs');
 
 function stripHtml(s) {
   return String(s || '')
@@ -26,14 +26,12 @@ async function fetchDDGSnippets(query) {
       },
     });
     const html = await res.text();
-    // result__snippet
     const reSnippet = /class="result__snippet[^"]*"[^>]*>([\s\S]*?)<\/(?:a|td|div)>/gi;
     let sm;
     while ((sm = reSnippet.exec(html)) !== null && snippets.length < 6) {
       const t = stripHtml(sm[1]);
       if (t.length > 50) snippets.push(t);
     }
-    // fallback: result__a titles + nearby text
     if (snippets.length < 2) {
       const reAlt = /class="result__a"[^>]*>([\s\S]*?)<\/a>/gi;
       while ((sm = reAlt.exec(html)) !== null && snippets.length < 6) {
@@ -69,13 +67,18 @@ async function fetchDDGInstant(query) {
   }
 }
 
-async function deepWebSearch(query) {
+async function deepWebSearch(query, options = {}) {
   const q = String(query || '').trim();
   if (!q) return { ok: false, response: 'Falta la consulta.' };
 
+  // Caché: misma pregunta → respuesta instantánea
+  if (!options.skipCache) {
+    const cached = searchCache.get(q);
+    if (cached) return cached;
+  }
+
   const parts = [];
 
-  // 1) Resumen estructurado (Wikipedia / DDG abstract)
   try {
     const sk = await smartKnowledge(q);
     if (sk.ok && sk.response) {
@@ -83,7 +86,6 @@ async function deepWebSearch(query) {
     }
   } catch {}
 
-  // 2) Instant answers
   try {
     const instant = await fetchDDGInstant(q);
     for (const p of instant) {
@@ -93,11 +95,9 @@ async function deepWebSearch(query) {
     }
   } catch {}
 
-  // 3) Snippets HTML de la web real
   try {
     const snippets = await fetchDDGSnippets(q);
     if (snippets.length) {
-      // Tomar los mejores y unir sin ruido
       const unique = [];
       for (const s of snippets) {
         if (!unique.some((u) => u.slice(0, 50) === s.slice(0, 50))) unique.push(s);
@@ -121,7 +121,6 @@ async function deepWebSearch(query) {
     };
   }
 
-  // Respuesta hablable: prioriza el primer bloque sólido
   let response = parts[0];
   if (parts.length > 1) {
     const extra = parts.slice(1).join(' ');
@@ -135,7 +134,13 @@ async function deepWebSearch(query) {
     response = last > 250 ? cut.slice(0, last + 1) : cut.replace(/\s+\S*$/, '') + '…';
   }
 
-  return { ok: true, response, source: 'deep-web', query: q };
+  const result = { ok: true, response, source: 'deep-web', query: q };
+  searchCache.set(q, result);
+  return result;
 }
 
-module.exports = { deepWebSearch, fetchDDGSnippets };
+module.exports = {
+  deepWebSearch,
+  fetchDDGSnippets,
+  searchCache,
+};
