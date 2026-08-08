@@ -1,5 +1,5 @@
 /**
- * Router ELYRA — conversación vocal + PC + búsquedas + fallbacks fuertes
+ * Router ELYRA — conversación vocal + PC + internet autónomo + fallbacks
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
@@ -51,9 +51,10 @@ function speakify(text) {
 
 function looksLikeKnowledgeQuestion(text) {
   const t = String(text || '').toLowerCase();
-  if (t.length < 8) return false;
-  if (/\b(abre|abrir|cierra|volumen|brillo|captura|chrome|excel|word|carpeta)\b/.test(t)) return false;
-  return /\b(qué|que|quién|quien|cómo|como|por qué|porque|cuándo|cuando|dónde|donde|explica|cuéntame|cuentame|historia|guerra|pasó|paso|significa|diferencia|quién inventó|quien invento)\b/i.test(
+  if (t.length < 6) return false;
+  if (/\b(abre|abrir|cierra|volumen|brillo|captura|chrome|excel|word|carpeta|minimiza|apaga|reinicia)\b/.test(t))
+    return false;
+  return /\b(qué|que|quién|quien|cómo|como|por qué|porque|cuándo|cuando|dónde|donde|explica|cuéntame|cuentame|historia|guerra|pasó|paso|significa|diferencia|quién inventó|quien invento|busca información|investiga|noticias|actualidad)\b/i.test(
     t,
   );
 }
@@ -89,7 +90,7 @@ async function routeChat({
     if (/present/i.test(text)) {
       return {
         response:
-          'Soy ELYRA. Asistente de voz de tu escritorio. Controlo el PC, busco información y te ayudo con el laboratorio. ¿En qué te ayudo?',
+          'Soy ELYRA. Asistente de voz de tu escritorio. Controlo el PC, busco en internet y te ayudo con el laboratorio. ¿En qué te ayudo?',
         intelligent: true,
         via: 'presence',
       };
@@ -104,6 +105,20 @@ async function routeChat({
 
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
   if (quick) return { ...quick, response: speakify(quick.response) };
+
+  // AUTONOMÍA WEB: preguntas de conocimiento → internet primero (sin esperar al LLM)
+  if (looksLikeKnowledgeQuestion(text) || looksLikeKnowledgeQuestion(fixed)) {
+    try {
+      const sk = await trySmartTopic(fixed, text);
+      if (sk && sk.response) {
+        return { ...sk, response: speakify(sk.response), via: sk.via || 'web-auto' };
+      }
+      const deep = await deepWebSearch(fixed);
+      if (deep.ok && deep.response) {
+        return { response: speakify(deep.response), intelligent: true, via: 'web-auto-deep' };
+      }
+    } catch {}
+  }
 
   try {
     const oc = getOpenClawConfig && getOpenClawConfig();
@@ -125,7 +140,7 @@ async function routeChat({
     }
     return {
       response:
-        'Aún no tengo clave de inteligencia configurada. Puedo controlar el PC y buscar en la web. Agrega una API key en Configuración para razonar más a fondo.',
+        'Puedo controlar el PC y buscar en internet. Para razonar más a fondo con un modelo fuerte, agrega una API key en Configuración.',
       intelligent: false,
     };
   }
@@ -158,8 +173,7 @@ async function routeChat({
       }
       return {
         response: speakify(
-          resp ||
-            'El modelo no respondió bien. Mientras, puedo controlar el PC y buscar en la web.',
+          resp || 'El modelo no respondió bien. Mientras, puedo controlar el PC y buscar en la web.',
         ),
         intelligent: false,
         via: 'error',
@@ -184,7 +198,7 @@ async function routeChat({
       if (deep.ok) return { response: speakify(deep.response), intelligent: true, via: 'deep-error' };
     }
     return {
-      response: 'Tuve un tropiezo con el modelo. Sigo lista para el sistema y búsquedas.',
+      response: 'Tuve un tropiezo con el modelo. Sigo lista para el sistema y búsquedas en internet.',
       intelligent: false,
     };
   }
@@ -211,8 +225,8 @@ async function trySmartTopic(fixed, text) {
   if (!topic && looksLikeKnowledgeQuestion(fixed)) {
     topic = String(fixed).replace(/[?.!]+$/, '').trim();
   }
-  if (!topic && text.split(/\s+/).length <= 6 && !/\b(abre|abrir|volumen|brillo|youtube)\b/.test(text)) {
-    if (/gemini|chatgpt|claude|python|openai|groq|llama|guerra|historia/.test(text)) topic = text;
+  if (!topic && text.split(/\s+/).length <= 8 && !/\b(abre|abrir|volumen|brillo|youtube)\b/.test(text)) {
+    if (/gemini|chatgpt|claude|python|openai|groq|llama|guerra|historia|ciencia/.test(text)) topic = text;
   }
   if (!topic || topic.length < 2) return null;
   const deep = await deepWebSearch(topic);
@@ -456,15 +470,6 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     return { response: r.result || 'Reinicio el equipo.', intelligent: false };
   }
 
-  const skEarly = await trySmartTopic(text, text);
-  if (
-    skEarly &&
-    (/\b(qué es|que es|quién|quien|ia de|inteligencia)\b/.test(text) ||
-      /^(gemini|chatgpt|claude)/.test(text))
-  ) {
-    return skEarly;
-  }
-
   const openMatch = text.match(
     /\b(?:abre|abrir|lanza|ejecuta|abreme|abrime)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
@@ -507,9 +512,9 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   if (/\b(qu[eé]\s+puedes\s+hacer|qu[eé]\s+sabes\s+hacer|tus\s+funciones|capacidades|ayuda\s+con\s+qu[eé]|c[oó]mo\s+me\s+ayudas)\b/i.test(text)) {
     return {
       response:
-        'Puedo controlar tu PC: abrir apps, carpetas, páginas, volumen, capturas y procesos. ' +
-        'Busco en Google o YouTube. Calculo, recuerdo cosas y te ayudo con el laboratorio de cacao, cadmio y plaguicidas. ' +
-        'Háblame normal, como a una persona. ¿Qué quieres hacer?',
+        'Puedo controlar tu PC: apps, carpetas, volumen, capturas y procesos. ' +
+        'Busco en internet por mi cuenta cuando me preguntas algo. ' +
+        'También te ayudo con el laboratorio de cacao, cadmio y plaguicidas. ¿Qué hacemos?',
       intelligent: true,
       via: 'capabilities',
     };
