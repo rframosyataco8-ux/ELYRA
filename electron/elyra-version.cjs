@@ -4,10 +4,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '0.3.0',
-  codename: 'ResilientLLM',
-  phase: '0.3',
-  label: 'ELYRA 0.3 — Resilient LLM',
+  platform: '0.4.0',
+  codename: 'StructuredMemory',
+  phase: '0.4',
+  label: 'ELYRA 0.4 — Structured Memory',
   releasedAt: '2026-08-08',
   capabilities: {
     conversation: true,
@@ -16,6 +16,7 @@ module.exports = {
     webSearch: true,
     localIntelligence: true,
     memoryBasic: true,
+    memoryStructured: true,
     tools: true,
     agent: true,
     toolPermissions: true,

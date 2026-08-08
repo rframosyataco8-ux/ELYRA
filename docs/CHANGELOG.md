@@ -1,35 +1,27 @@
 # ELYRA Changelog
 
-## [0.3.0] — 2026-08-08 — Resilient LLM
-
-### Added
-- `electron/llm-resilience.cjs` — detección unificada de errores (tools, auth, rate limit, red)
-- Defaults de modelos alineados voz+tools (Groq 70B, Gemini Flash, Claude Sonnet 4, etc.)
-- Lista `GROQ_MODELS` en UI providers
+## [0.4.0] — 2026-08-08 — Structured Memory
 
 ### Changed
-- `src/lib/providers.ts` — presets y `detectFromKey` con modelos más capaces por defecto
-- Plataforma **0.3.0** ResilientLLM
+- `memory-cognitive.cjs` v4: dominios (laboratorio, documentos, pc, general)
+- Mejor ranking de retrieval (cobertura + boost de dominio)
+- `buildContextSnippet` (API usada por agent-hooks)
+- `stats()` para introspección
+- Episodios y hechos etiquetados por dominio
 
-### Notes
-- El agente ya reintentaba sin tools ante 404; 0.3 centraliza criterios y defaults
-- Sin API key sigue activo local-intelligence + web
-
----
-
-## [0.2.0] — 2026-08-08 — Safe Tools
-
-- Permisos para power/kill/shell/papelera
-- Bloqueo de comandos destructivos
+### Storage
+- `~/.elyra/memory/cognitive.json`
 
 ---
 
-## [0.1.0] — 2026-08-08 — Foundation
+## [0.3.0] — Resilient LLM
 
-- Versionado, smoke, ARCHITECTURE, CHANGELOG, SEQUENCE
+- providers defaults, `llm-resilience.cjs`
 
----
+## [0.2.0] — Safe Tools
 
-## [2.0.0] — Product shell
+- tool-permissions
 
-Electron + React, voz, PC, multi-provider.
+## [0.1.0] — Foundation
+
+- version, smoke, docs

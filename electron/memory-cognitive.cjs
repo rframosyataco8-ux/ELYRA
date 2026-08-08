@@ -1,7 +1,8 @@
 /**
- * Memoria contextual dinámica — ELYRA
- * Persistencia local + recuperación por relevancia (sin servidor externo).
- * Preparado para evolucionar a embeddings vectoriales.
+ * Memoria cognitiva ELYRA 0.4
+ * Preferencias · hechos · episodios · archivos · dominios (laboratorio)
+ * Persistencia: ~/.elyra/memory/cognitive.json
+ * Retrieval léxico (preparado para embeddings en 0.5 RAG)
  */
 const fs = require('fs');
 const path = require('path');
@@ -17,23 +18,31 @@ function storePath() {
   return path.join(memoryDir(), 'cognitive.json');
 }
 
-function loadStore() {
-  try {
-    if (fs.existsSync(storePath())) {
-      return JSON.parse(fs.readFileSync(storePath(), 'utf-8'));
-    }
-  } catch {}
+function emptyStore() {
   return {
+    version: 4,
     preferences: [],
     facts: [],
     files_touched: [],
     episodes: [],
+    domains: {},
     updated_at: null,
   };
 }
 
+function loadStore() {
+  try {
+    if (fs.existsSync(storePath())) {
+      const raw = JSON.parse(fs.readFileSync(storePath(), 'utf-8'));
+      return Object.assign(emptyStore(), raw);
+    }
+  } catch {}
+  return emptyStore();
+}
+
 function saveStore(data) {
   data.updated_at = new Date().toISOString();
+  data.version = 4;
   fs.writeFileSync(storePath(), JSON.stringify(data, null, 2), 'utf-8');
 }
 
@@ -47,71 +56,120 @@ function tokenize(text) {
 }
 
 function score(queryTokens, docText) {
-  const docTokens = new Set(tokenize(docText));
-  if (!queryTokens.length || !docTokens.size) return 0;
+  const docTokens = tokenize(docText);
+  if (!queryTokens.length || !docTokens.length) return 0;
+  const set = new Set(docTokens);
   let hit = 0;
-  for (const t of queryTokens) if (docTokens.has(t)) hit++;
-  return hit / queryTokens.length;
+  for (const t of queryTokens) if (set.has(t)) hit++;
+  // Densidad + cobertura
+  return hit / queryTokens.length + Math.min(0.2, hit * 0.02);
+}
+
+function detectDomain(text) {
+  const t = String(text || '').toLowerCase();
+  if (/cadmio|cacao|afq|plaguicid|laboratorio|nirs|manteca|licor|sensorial/.test(t))
+    return 'laboratorio';
+  if (/excel|pdf|informe|documento|pptx|dashboard/.test(t)) return 'documentos';
+  if (/chrome|ventana|volumen|proceso|apaga|reinicia|captura/.test(t)) return 'pc';
+  return 'general';
+}
+
+function pushCapped(arr, entry, max) {
+  arr.push(entry);
+  if (arr.length > max) {
+    return arr.slice(-max);
+  }
+  return arr;
 }
 
 function addPreference(text) {
   const store = loadStore();
-  const entry = { id: Date.now().toString(36), text: String(text).slice(0, 500), at: new Date().toISOString() };
-  store.preferences.push(entry);
-  if (store.preferences.length > 80) store.preferences = store.preferences.slice(-80);
+  const entry = {
+    id: Date.now().toString(36),
+    text: String(text).slice(0, 500),
+    domain: detectDomain(text),
+    at: new Date().toISOString(),
+  };
+  store.preferences = pushCapped(store.preferences, entry, 100);
   saveStore(store);
   return entry;
 }
 
 function addFact(text) {
   const store = loadStore();
-  const entry = { id: Date.now().toString(36), text: String(text).slice(0, 800), at: new Date().toISOString() };
-  store.facts.push(entry);
-  if (store.facts.length > 120) store.facts = store.facts.slice(-120);
+  const entry = {
+    id: Date.now().toString(36),
+    text: String(text).slice(0, 800),
+    domain: detectDomain(text),
+    at: new Date().toISOString(),
+  };
+  store.facts = pushCapped(store.facts, entry, 150);
+  const dom = entry.domain;
+  if (!store.domains[dom]) store.domains[dom] = [];
+  store.domains[dom] = pushCapped(store.domains[dom], entry.text, 40);
   saveStore(store);
   return entry;
 }
 
 function noteFile(filePath, summary) {
   const store = loadStore();
-  store.files_touched.push({
-    path: filePath,
-    summary: String(summary || '').slice(0, 400),
-    at: new Date().toISOString(),
-  });
-  if (store.files_touched.length > 100) store.files_touched = store.files_touched.slice(-100);
+  store.files_touched = pushCapped(
+    store.files_touched,
+    {
+      path: filePath,
+      summary: String(summary || '').slice(0, 400),
+      at: new Date().toISOString(),
+    },
+    100,
+  );
   saveStore(store);
 }
 
 function addEpisode(user, assistant, toolsUsed) {
   const store = loadStore();
-  store.episodes.push({
-    user: String(user || '').slice(0, 400),
-    assistant: String(assistant || '').slice(0, 400),
-    tools: toolsUsed || [],
-    at: new Date().toISOString(),
-  });
-  if (store.episodes.length > 60) store.episodes = store.episodes.slice(-60);
+  store.episodes = pushCapped(
+    store.episodes,
+    {
+      user: String(user || '').slice(0, 400),
+      assistant: String(assistant || '').slice(0, 400),
+      tools: toolsUsed || [],
+      domain: detectDomain(user),
+      at: new Date().toISOString(),
+    },
+    80,
+  );
   saveStore(store);
 }
 
-/** Recuperación por relevancia para inyectar en el system prompt */
-function retrieveContext(query, limit = 8) {
+function retrieveContext(query, limit = 10) {
   const store = loadStore();
   const q = tokenize(query);
+  const domain = detectDomain(query);
   const candidates = [];
 
   for (const p of store.preferences || []) {
-    candidates.push({ type: 'preferencia', text: p.text, s: score(q, p.text) + 0.15 });
+    candidates.push({
+      type: 'preferencia',
+      text: p.text,
+      s: score(q, p.text) + 0.2 + (p.domain === domain ? 0.1 : 0),
+    });
   }
   for (const f of store.facts || []) {
-    candidates.push({ type: 'hecho', text: f.text, s: score(q, f.text) });
+    candidates.push({
+      type: 'hecho',
+      text: f.text,
+      s: score(q, f.text) + (f.domain === domain ? 0.12 : 0),
+    });
   }
-  for (const ep of (store.episodes || []).slice(-20)) {
+  for (const ep of (store.episodes || []).slice(-25)) {
     const blob = ep.user + ' ' + ep.assistant;
-    candidates.push({ type: 'episodio', text: blob.slice(0, 300), s: score(q, blob) * 0.8 });
+    candidates.push({
+      type: 'episodio',
+      text: blob.slice(0, 320),
+      s: score(q, blob) * 0.85 + (ep.domain === domain ? 0.08 : 0),
+    });
   }
-  for (const f of (store.files_touched || []).slice(-30)) {
+  for (const f of (store.files_touched || []).slice(-40)) {
     candidates.push({
       type: 'archivo',
       text: f.path + ': ' + f.summary,
@@ -119,8 +177,24 @@ function retrieveContext(query, limit = 8) {
     });
   }
 
+  // Boost dominio activo
+  const domainFacts = (store.domains && store.domains[domain]) || [];
+  for (const t of domainFacts.slice(-8)) {
+    candidates.push({ type: 'dominio:' + domain, text: t, s: 0.25 + score(q, t) });
+  }
+
   candidates.sort((a, b) => b.s - a.s);
-  const top = candidates.filter((c) => c.s > 0.05).slice(0, limit);
+  const seen = new Set();
+  const top = [];
+  for (const c of candidates) {
+    if (c.s < 0.04) continue;
+    const key = c.text.slice(0, 60);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    top.push(c);
+    if (top.length >= limit) break;
+  }
+
   if (!top.length && store.preferences.length) {
     return store.preferences
       .slice(-5)
@@ -130,10 +204,27 @@ function retrieveContext(query, limit = 8) {
   return top.map((c) => c.type + ': ' + c.text).join('\n');
 }
 
+/** Alias usado por agent-hooks */
+function buildContextSnippet(query) {
+  return retrieveContext(query, 10);
+}
+
 function buildMemoryBlock(query) {
   const ctx = retrieveContext(query);
   if (!ctx) return '';
   return '\n\n[MEMORIA CONTEXTUAL]\n' + ctx + '\n[/MEMORIA]';
+}
+
+function stats() {
+  const s = loadStore();
+  return {
+    preferences: (s.preferences || []).length,
+    facts: (s.facts || []).length,
+    episodes: (s.episodes || []).length,
+    files: (s.files_touched || []).length,
+    domains: Object.keys(s.domains || {}),
+    updated_at: s.updated_at,
+  };
 }
 
 module.exports = {
@@ -143,5 +234,8 @@ module.exports = {
   noteFile,
   addEpisode,
   retrieveContext,
+  buildContextSnippet,
   buildMemoryBlock,
+  detectDomain,
+  stats,
 };
