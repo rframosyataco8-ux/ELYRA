@@ -11,6 +11,7 @@ import { RegistroPrensaPanel } from '@/components/RegistroPrensaPanel';
 import { AfqPanel, type AfqView } from '@/components/AfqPanel';
 import { CronogramaPanel } from '@/components/CronogramaPanel';
 import { ThemeSettings } from '@/components/ThemeSettings';
+import { UserAdminPanel } from '@/components/UserAdminPanel';
 import type { LabUser } from '@/lib/users';
 import { canAccessPage } from '@/lib/users';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
@@ -361,10 +362,7 @@ export default function App() {
         onLogout={handleLogout}
       />
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
-        <header
-          className="h-11 flex items-center justify-between px-4 drag-region"
-          style={{ borderBottom: '1px solid var(--ely-header-border)' }}
-        >
+        <header className="h-11 flex items-center justify-between px-4 drag-region" style={{ borderBottom: '1px solid var(--ely-header-border)' }}>
           <div className="flex items-center gap-2 text-[12px] pl-1" style={{ color: 'var(--ely-text-muted)' }}>
             <span className="font-medium" style={{ color: 'var(--ely-text)' }}>ELYRA</span>
             {isDesktop && <span>· Escritorio</span>}
@@ -377,15 +375,7 @@ export default function App() {
           <div className="flex items-center gap-0.5 no-drag">
             {isDesktop && (
               <>
-                <button
-                  onClick={() => {
-                    setDeskMode(true); setContinuous(true); setWakeEnabled(true);
-                    window.elyra?.showFloatingCore?.(); window.elyra?.minimize?.();
-                  }}
-                  className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
-                  style={{ color: 'var(--ely-text-muted)' }}
-                  title="Minimizar"
-                ><Minus className="w-3.5 h-3.5" /></button>
+                <button onClick={() => { setDeskMode(true); setContinuous(true); setWakeEnabled(true); window.elyra?.showFloatingCore?.(); window.elyra?.minimize?.(); }} className="w-8 h-8 flex items-center justify-center rounded-full" style={{ color: 'var(--ely-text-muted)' }} title="Minimizar"><Minus className="w-3.5 h-3.5" /></button>
                 <button onClick={() => window.elyra?.maximize()} className="w-8 h-8 flex items-center justify-center rounded-full" style={{ color: 'var(--ely-text-muted)' }}><Square className="w-3 h-3" /></button>
                 <button onClick={() => window.elyra?.close()} className="w-8 h-8 flex items-center justify-center rounded-full hover:text-red-400" style={{ color: 'var(--ely-text-muted)' }}><X className="w-3.5 h-3.5" /></button>
               </>
@@ -437,6 +427,10 @@ export default function App() {
                 </div>
                 <ThemeSettings />
 
+                {isAdmin && currentUser && (
+                  <UserAdminPanel currentUserId={currentUser.id} />
+                )}
+
                 {isAdmin && (
                   <div className="hud-glass-strong p-5 space-y-4">
                     <div className="flex items-center justify-between">
@@ -487,7 +481,7 @@ export default function App() {
 
                 {!isAdmin && (
                   <div className="hud-glass p-4 text-[13px]" style={{ color: 'var(--ely-text-muted)' }}>
-                    La configuración de API keys solo está disponible para el administrador.
+                    La configuración de usuarios y API keys solo está disponible para el administrador.
                   </div>
                 )}
 
