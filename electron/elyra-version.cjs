@@ -4,10 +4,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '0.2.0',
-  codename: 'SafeTools',
-  phase: '0.2',
-  label: 'ELYRA 0.2 — Safe Tools',
+  platform: '0.3.0',
+  codename: 'ResilientLLM',
+  phase: '0.3',
+  label: 'ELYRA 0.3 — Resilient LLM',
   releasedAt: '2026-08-08',
   capabilities: {
     conversation: true,
@@ -19,6 +19,7 @@ module.exports = {
     tools: true,
     agent: true,
     toolPermissions: true,
+    llmResilience: true,
     rag: false,
     vision: false,
     multiAgent: false,
