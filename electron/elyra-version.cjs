@@ -1,15 +1,13 @@
 /**
- * ELYRA versioning — fuente única de verdad de versión de plataforma
+ * ELYRA versioning — fuente única de verdad
  */
 module.exports = {
   name: 'ELYRA',
-  /** Versión de producto (package.json alineada) */
   product: '2.0.0',
-  /** Versión de plataforma IA según roadmap de auditoría */
-  platform: '0.1.0',
-  codename: 'Foundation',
-  phase: '0.1',
-  label: 'ELYRA 0.1 — Foundation',
+  platform: '0.2.0',
+  codename: 'SafeTools',
+  phase: '0.2',
+  label: 'ELYRA 0.2 — Safe Tools',
   releasedAt: '2026-08-08',
   capabilities: {
     conversation: true,
@@ -20,6 +18,7 @@ module.exports = {
     memoryBasic: true,
     tools: true,
     agent: true,
+    toolPermissions: true,
     rag: false,
     vision: false,
     multiAgent: false,
