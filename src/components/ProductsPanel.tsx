@@ -21,9 +21,9 @@ export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPan
   const [category, setCategory] = useState<'cadmio' | 'reportes'>('cadmio');
 
   return (
-    <div className="flex-1 flex min-h-0 animate-fade-in">
+    <div className="flex-1 flex min-h-0 ely-page-enter">
       <div
-        className="w-48 shrink-0 flex flex-col"
+        className="w-48 shrink-0 flex flex-col animate-slide-right"
         style={{ borderRight: '1px solid var(--ely-border)' }}
       >
         <div className="px-4 py-4" style={{ borderBottom: '1px solid var(--ely-header-border)' }}>
@@ -59,14 +59,14 @@ export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPan
         {category === 'cadmio' && (
           <div className="flex-1 flex flex-col items-center justify-center px-6 py-8">
             <div className="w-full max-w-3xl">
-              <div className="flex items-center justify-center gap-2 mb-8">
+              <div className="flex items-center justify-center gap-2 mb-8 animate-fade-in">
                 <Package className="w-5 h-5" style={{ color: 'var(--ely-accent)' }} />
                 <h2 className="text-xl font-medium tracking-wide" style={{ color: 'var(--ely-text)' }}>
                   Productos
                 </h2>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-5 stagger-children">
                 {CADMIO_PRODUCTS.map((name) => (
                   <button key={name} type="button" onClick={() => onSelectProduct(name)} className="ely-product-card group">
                     <div className="ely-product-icon">
@@ -86,7 +86,7 @@ export function ProductsPanel({ onSelectProduct, onSelectReportes }: ProductsPan
         )}
 
         {category === 'reportes' && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3 px-6">
+          <div className="flex-1 flex flex-col items-center justify-center text-center space-y-3 px-6 animate-scale-in">
             <FileText className="w-10 h-10" style={{ color: 'var(--ely-text-dim)' }} />
             <h2 className="text-lg font-medium tracking-wide" style={{ color: 'var(--ely-text)' }}>
               Reportes
