@@ -14,20 +14,23 @@ import { ThemeSettings } from '@/components/ThemeSettings';
 import { UserAdminPanel } from '@/components/UserAdminPanel';
 import type { LabUser } from '@/lib/users';
 import { canAccessPage } from '@/lib/users';
-import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
+import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio, ExternalLink } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
 
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
+
 function detectFromKey(key: string) {
   const k = key.trim();
-  if (k.startsWith('gsk_')) return { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' };
-  if (k.startsWith('sk-ant-')) return { baseUrl: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022' };
-  if (k.startsWith('AIza')) {
-    return { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.0-flash' };
+  if (k.startsWith('gsk_')) return { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', provider: 'groq' };
+  if (k.startsWith('sk-ant-')) return { baseUrl: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic' };
+  /* Gemini AI Studio: AIza… o AQ.… */
+  if (k.startsWith('AIza') || k.startsWith('AQ.')) {
+    return { baseUrl: GEMINI_BASE, model: 'gemini-2.0-flash', provider: 'gemini' };
   }
-  if (k.startsWith('sk-or-')) return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' };
-  if (k.startsWith('xai-')) return { baseUrl: 'https://api.x.ai/v1', model: 'grok-2-latest' };
-  if (k.startsWith('sk-') && k.length > 20) return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' };
+  if (k.startsWith('sk-or-')) return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', provider: 'openrouter' };
+  if (k.startsWith('xai-')) return { baseUrl: 'https://api.x.ai/v1', model: 'grok-2-latest', provider: 'xai' };
+  if (k.startsWith('sk-') && k.length > 20) return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', provider: 'openai' };
   return null;
 }
 
@@ -61,6 +64,7 @@ export default function App() {
   const [cfgLoaded, setCfgLoaded] = useState(false);
   const [cfgTesting, setCfgTesting] = useState(false);
   const [cfgTestMsg, setCfgTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [detectedProvider, setDetectedProvider] = useState<string | null>(null);
 
   const speakRef = useRef<(text: string) => void | Promise<void>>(() => {});
   const startTimeRef = useRef(Date.now());
@@ -75,6 +79,10 @@ export default function App() {
   messagesRef.current = messages;
 
   const isAdmin = !!currentUser?.isAdmin;
+  const isGemini =
+    detectedProvider === 'gemini' ||
+    cfgBaseUrl.includes('generativelanguage') ||
+    cfgBaseUrl.includes('googleapis');
 
   const navigate = useCallback((p: AppPage) => {
     if (canAccessPage(currentUser, p)) setPage(p);
@@ -272,22 +280,35 @@ export default function App() {
     setCfgApiKey(value);
     setCfgTestMsg(null);
     const det = detectFromKey(value);
-    if (det) { setCfgBaseUrl(det.baseUrl); setCfgModel(det.model); }
+    if (det) {
+      setCfgBaseUrl(det.baseUrl);
+      setCfgModel(det.model);
+      setDetectedProvider(det.provider);
+    } else {
+      setDetectedProvider(null);
+    }
   };
 
   const handleSaveConfig = async () => {
     if (!isDesktop || !window.elyra || !isAdmin) return;
     setCfgSaving(true); setCfgSaved(false); setCfgTestMsg(null);
     try {
-      const result = await window.elyra.agentConfigSet({ apiKey: cfgApiKey.trim() || undefined, baseUrl: cfgBaseUrl.trim(), model: cfgModel.trim() });
+      const result = await window.elyra.agentConfigSet({
+        apiKey: cfgApiKey.trim() || undefined,
+        baseUrl: cfgBaseUrl.trim(),
+        model: cfgModel.trim(),
+      });
       setHasApiKey(result.hasKey);
       if (result.baseUrl) setCfgBaseUrl(result.baseUrl);
       if (result.model) setCfgModel(result.model);
       setCfgSaved(true);
       setTimeout(() => setCfgSaved(false), 2500);
       if (cfgApiKey.trim()) setCfgApiKey('');
-    } catch { setCfgTestMsg({ ok: false, text: 'No se pudo guardar.' }); }
-    finally { setCfgSaving(false); }
+    } catch {
+      setCfgTestMsg({ ok: false, text: 'No se pudo guardar.' });
+    } finally {
+      setCfgSaving(false);
+    }
   };
 
   const handleTestConfig = async () => {
@@ -295,17 +316,30 @@ export default function App() {
     setCfgTesting(true); setCfgTestMsg(null);
     try {
       if (cfgApiKey.trim()) {
-        await window.elyra.agentConfigSet({ apiKey: cfgApiKey.trim(), baseUrl: cfgBaseUrl.trim(), model: cfgModel.trim() });
+        await window.elyra.agentConfigSet({
+          apiKey: cfgApiKey.trim(),
+          baseUrl: cfgBaseUrl.trim(),
+          model: cfgModel.trim(),
+        });
         setCfgApiKey('');
       } else {
-        await window.elyra.agentConfigSet({ baseUrl: cfgBaseUrl.trim(), model: cfgModel.trim() });
+        await window.elyra.agentConfigSet({
+          baseUrl: cfgBaseUrl.trim(),
+          model: cfgModel.trim(),
+        });
       }
-      const test = await window.elyra.agentConfigTest({ baseUrl: cfgBaseUrl.trim(), model: cfgModel.trim() });
+      const test = await window.elyra.agentConfigTest({
+        baseUrl: cfgBaseUrl.trim(),
+        model: cfgModel.trim(),
+      });
       const c = await window.elyra.agentConfigGet();
       setHasApiKey(c.hasKey);
       setCfgTestMsg({ ok: test.ok, text: test.message });
-    } catch { setCfgTestMsg({ ok: false, text: 'Error al probar la conexión.' }); }
-    finally { setCfgTesting(false); }
+    } catch {
+      setCfgTestMsg({ ok: false, text: 'Error al probar la conexión.' });
+    } finally {
+      setCfgTesting(false);
+    }
   };
 
   const handleClearMemory = async () => {
@@ -320,11 +354,21 @@ export default function App() {
     return `${h}h ${m}m ${s % 60}s`;
   };
 
-  const statusLabel = thinking ? 'Procesando…' : transcribing ? 'Transcribiendo…' : speaking ? 'Hablando…' : listening ? 'Escuchando…' : wakeListening ? 'En espera' : 'Lista';
+  const statusLabel = thinking
+    ? 'Procesando…'
+    : transcribing
+      ? 'Transcribiendo…'
+      : speaking
+        ? 'Hablando…'
+        : listening
+          ? 'Escuchando…'
+          : wakeListening
+            ? 'En espera'
+            : 'Lista';
 
   const providers = [
+    { label: 'Gemini', url: GEMINI_BASE, model: 'gemini-2.0-flash' },
     { label: 'Groq (rápido)', url: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
-    { label: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-2.0-flash' },
     { label: 'Claude', url: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022' },
     { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
     { label: 'xAI Grok', url: 'https://api.x.ai/v1', model: 'grok-2-latest' },
@@ -332,7 +376,14 @@ export default function App() {
     { label: 'Ollama local', url: 'http://localhost:11434/v1', model: 'llama3.2' },
   ];
 
-  /* Barra de voz/texto: SOLO Inicio y Conversación */
+  const geminiModels = [
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
+    'gemini-flash-latest',
+  ];
+
   const showChatBar = page === 'inicio' || page === 'asistente';
 
   if (!authenticated) {
@@ -428,46 +479,207 @@ export default function App() {
                 {isAdmin && currentUser && <UserAdminPanel currentUserId={currentUser.id} />}
                 {isAdmin && (
                   <div className="hud-glass-strong p-5 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Proveedor de IA</h3>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
+                        Proveedor de IA
+                      </h3>
                       {hasApiKey ? (
-                        <span className="text-[11px] flex items-center gap-1" style={{ color: 'var(--ely-success)' }}><Check className="w-3 h-3" /> Conectada</span>
+                        <span className="text-[11px] flex items-center gap-1" style={{ color: 'var(--ely-success)' }}>
+                          <Check className="w-3 h-3" /> Conectada
+                        </span>
                       ) : (
-                        <span className="text-[11px]" style={{ color: 'var(--ely-warning)' }}>Sin clave</span>
+                        <span className="text-[11px]" style={{ color: 'var(--ely-warning)' }}>
+                          Sin clave
+                        </span>
                       )}
                     </div>
+
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Proveedor</label>
+                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
+                        Proveedor
+                      </label>
                       <div className="flex flex-wrap gap-1.5">
                         {providers.map((p) => {
                           const active = cfgBaseUrl === p.url || cfgBaseUrl.startsWith(p.url);
                           return (
-                            <button key={p.label} onClick={() => { setCfgBaseUrl(p.url); setCfgModel(p.model); setCfgTestMsg(null); }} className="text-[11px] px-2.5 py-1.5 rounded-full border transition-colors" style={{ background: active ? 'var(--ely-accent-soft)' : 'transparent', borderColor: active ? 'var(--ely-accent)' : 'var(--ely-border)', color: active ? 'var(--ely-accent)' : 'var(--ely-text-muted)' }}>{p.label}</button>
+                            <button
+                              key={p.label}
+                              type="button"
+                              onClick={() => {
+                                setCfgBaseUrl(p.url);
+                                setCfgModel(p.model);
+                                setCfgTestMsg(null);
+                                setDetectedProvider(p.label.toLowerCase().includes('gemini') ? 'gemini' : null);
+                              }}
+                              className="text-[11px] px-2.5 py-1.5 rounded-full border transition-colors"
+                              style={{
+                                background: active ? 'var(--ely-accent-soft)' : 'transparent',
+                                borderColor: active ? 'var(--ely-accent)' : 'var(--ely-border)',
+                                color: active ? 'var(--ely-accent)' : 'var(--ely-text-muted)',
+                              }}
+                            >
+                              {p.label}
+                            </button>
                           );
                         })}
                       </div>
                     </div>
+
+                    {isGemini && (
+                      <div
+                        className="rounded-xl px-3 py-2.5 text-[12px] space-y-1.5"
+                        style={{
+                          background: 'var(--ely-accent-soft)',
+                          border: '1px solid var(--ely-border)',
+                          color: 'var(--ely-text-muted)',
+                        }}
+                      >
+                        <p style={{ color: 'var(--ely-text)' }} className="font-medium text-[12px]">
+                          Google AI Studio · Gemini
+                        </p>
+                        <p>
+                          Pegue la clave de{' '}
+                          <a
+                            href="https://aistudio.google.com/apikey"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-0.5"
+                            style={{ color: 'var(--ely-accent)' }}
+                          >
+                            AI Studio <ExternalLink className="w-3 h-3" />
+                          </a>
+                          . Acepta claves <code className="text-[11px]">AIza…</code> y{' '}
+                          <code className="text-[11px]">AQ.…</code>
+                        </p>
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {geminiModels.map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setCfgModel(m)}
+                              className="text-[10px] px-2 py-1 rounded-full border"
+                              style={{
+                                background: cfgModel === m ? 'var(--ely-accent)' : 'transparent',
+                                borderColor: cfgModel === m ? 'var(--ely-accent)' : 'var(--ely-border)',
+                                color: cfgModel === m ? '#fff' : 'var(--ely-text-muted)',
+                              }}
+                            >
+                              {m}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>API Key</label>
-                      <input type="password" value={cfgApiKey} onChange={(e) => onApiKeyChange(e.target.value)} placeholder={hasApiKey ? '••••••••' : 'pegue su API key'} className="w-full rounded-xl px-3.5 py-2.5 text-sm outline-none" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
+                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        value={cfgApiKey}
+                        onChange={(e) => onApiKeyChange(e.target.value)}
+                        placeholder={hasApiKey ? '••••••••  (pegue una nueva para reemplazar)' : isGemini ? 'AIza… o AQ.…' : 'pegue su API key'}
+                        className="w-full rounded-xl px-3.5 py-2.5 text-sm outline-none"
+                        style={{
+                          background: 'var(--ely-input-bg)',
+                          border: '1px solid var(--ely-border)',
+                          color: 'var(--ely-text)',
+                        }}
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      {detectedProvider === 'gemini' && (
+                        <p className="text-[11px]" style={{ color: 'var(--ely-success)' }}>
+                          Clave Gemini detectada · URL y modelo configurados automáticamente
+                        </p>
+                      )}
                     </div>
+
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Base URL</label>
-                        <input value={cfgBaseUrl} onChange={(e) => setCfgBaseUrl(e.target.value)} className="w-full rounded-xl px-3 py-2 text-xs outline-none" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
+                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
+                          Base URL
+                        </label>
+                        <input
+                          value={cfgBaseUrl}
+                          onChange={(e) => setCfgBaseUrl(e.target.value)}
+                          className="w-full rounded-xl px-3 py-2 text-xs outline-none"
+                          style={{
+                            background: 'var(--ely-input-bg)',
+                            border: '1px solid var(--ely-border)',
+                            color: 'var(--ely-text)',
+                          }}
+                        />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Modelo</label>
-                        <input value={cfgModel} onChange={(e) => setCfgModel(e.target.value)} className="w-full rounded-xl px-3 py-2 text-xs outline-none" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
+                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
+                          Modelo
+                        </label>
+                        <input
+                          value={cfgModel}
+                          onChange={(e) => setCfgModel(e.target.value)}
+                          className="w-full rounded-xl px-3 py-2 text-xs outline-none"
+                          style={{
+                            background: 'var(--ely-input-bg)',
+                            border: '1px solid var(--ely-border)',
+                            color: 'var(--ely-text)',
+                          }}
+                        />
                       </div>
                     </div>
+
                     <div className="flex gap-2">
-                      <button onClick={handleSaveConfig} disabled={cfgSaving || !isDesktop} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40" style={{ background: 'var(--ely-accent)', color: '#fff' }}>{cfgSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : cfgSaved ? <><Check className="w-4 h-4" /> Guardado</> : <><Save className="w-4 h-4" /> Guardar</>}</button>
-                      <button onClick={handleTestConfig} disabled={cfgTesting || !isDesktop} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40" style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)', border: '1px solid var(--ely-border)' }}>{cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar</>}</button>
+                      <button
+                        type="button"
+                        onClick={handleSaveConfig}
+                        disabled={cfgSaving || !isDesktop}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40"
+                        style={{ background: 'var(--ely-accent)', color: '#fff' }}
+                      >
+                        {cfgSaving ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : cfgSaved ? (
+                          <><Check className="w-4 h-4" /> Guardado</>
+                        ) : (
+                          <><Save className="w-4 h-4" /> Guardar</>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleTestConfig}
+                        disabled={cfgTesting || !isDesktop}
+                        className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40"
+                        style={{
+                          background: 'var(--ely-accent-soft)',
+                          color: 'var(--ely-accent)',
+                          border: '1px solid var(--ely-border)',
+                        }}
+                      >
+                        {cfgTesting ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <><Wifi className="w-4 h-4" /> Probar</>
+                        )}
+                      </button>
                     </div>
+
                     {cfgTestMsg && (
-                      <div className="flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5" style={{ background: cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)', border: `1px solid ${cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.25)' : 'rgba(248, 81, 73, 0.25)'}`, color: cfgTestMsg.ok ? 'var(--ely-success)' : 'var(--ely-danger)' }}>
-                        {cfgTestMsg.ok ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                      <div
+                        className="flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5"
+                        style={{
+                          background: cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)',
+                          border: `1px solid ${
+                            cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.25)' : 'rgba(248, 81, 73, 0.25)'
+                          }`,
+                          color: cfgTestMsg.ok ? 'var(--ely-success)' : 'var(--ely-danger)',
+                        }}
+                      >
+                        {cfgTestMsg.ok ? (
+                          <Check className="w-4 h-4 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                        )}
                         <span>{cfgTestMsg.text}</span>
                       </div>
                     )}
@@ -480,45 +692,160 @@ export default function App() {
                 )}
                 <div className="hud-glass p-5 space-y-4">
                   <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Voz</h3>
-                  <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>Al minimizar, ELYRA queda a un lado y sigue escuchando. Ctrl+Shift+E oculta el sistema completo.</p>
+                  <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
+                    Al minimizar, ELYRA queda a un lado y sigue escuchando. Ctrl+Shift+E oculta el sistema completo.
+                  </p>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm flex items-center gap-2" style={{ color: 'var(--ely-text)' }}><Radio className="w-3.5 h-3.5" /> Activación por voz</span>
-                    <button onClick={() => setWakeEnabled((v) => !v)} className="relative w-11 h-6 rounded-full transition-colors" style={{ background: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-border)' }}><span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${wakeEnabled ? 'translate-x-5' : ''}`} /></button>
+                    <span className="text-sm flex items-center gap-2" style={{ color: 'var(--ely-text)' }}>
+                      <Radio className="w-3.5 h-3.5" /> Activación por voz
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setWakeEnabled((v) => !v)}
+                      className="relative w-11 h-6 rounded-full transition-colors"
+                      style={{ background: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-border)' }}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${
+                          wakeEnabled ? 'translate-x-5' : ''
+                        }`}
+                      />
+                    </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: 'var(--ely-text)' }}>Reescucha tras responder</span>
-                    <button onClick={() => setContinuous((v) => !v)} className="relative w-11 h-6 rounded-full transition-colors" style={{ background: continuous ? 'var(--ely-accent)' : 'var(--ely-border)' }}><span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${continuous ? 'translate-x-5' : ''}`} /></button>
+                    <span className="text-sm" style={{ color: 'var(--ely-text)' }}>
+                      Reescucha tras responder
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setContinuous((v) => !v)}
+                      className="relative w-11 h-6 rounded-full transition-colors"
+                      style={{ background: continuous ? 'var(--ely-accent)' : 'var(--ely-border)' }}
+                    >
+                      <span
+                        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${
+                          continuous ? 'translate-x-5' : ''
+                        }`}
+                      />
+                    </button>
                   </div>
                 </div>
                 <div className="hud-glass p-5 space-y-3">
                   <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Memoria y sesión</h3>
-                  <button onClick={handleClearMemory} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ely-danger)' }}><Trash2 className="w-3.5 h-3.5" /> Borrar memoria local</button>
-                  <button onClick={handleLogout} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ely-text-muted)' }}>Cerrar sesión</button>
+                  <button
+                    type="button"
+                    onClick={handleClearMemory}
+                    className="flex items-center gap-2 text-[13px]"
+                    style={{ color: 'var(--ely-danger)' }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Borrar memoria local
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 text-[13px]"
+                    style={{ color: 'var(--ely-text-muted)' }}
+                  >
+                    Cerrar sesión
+                  </button>
                 </div>
-                {!cfgLoaded && isDesktop && isAdmin && <p className="text-center text-xs" style={{ color: 'var(--ely-text-dim)' }}>Cargando…</p>}
+                {!cfgLoaded && isDesktop && isAdmin && (
+                  <p className="text-center text-xs" style={{ color: 'var(--ely-text-dim)' }}>
+                    Cargando…
+                  </p>
+                )}
               </div>
             )}
             {showChatBar && (
               <div className="w-full max-w-xl mx-auto mt-auto pt-4">
-                {error && <p className="text-xs text-center mb-2 px-2" style={{ color: 'var(--ely-danger)' }}>{error}</p>}
+                {error && (
+                  <p className="text-xs text-center mb-2 px-2" style={{ color: 'var(--ely-danger)' }}>
+                    {error}
+                  </p>
+                )}
                 <div className="flex items-center gap-2 input-hud px-3 py-2">
-                  <button onClick={handleToggleListen} disabled={thinking || transcribing} className="w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:opacity-40" style={{ background: listening ? 'rgba(248, 81, 73, 0.2)' : 'transparent', color: listening ? 'var(--ely-danger)' : 'var(--ely-text-muted)' }}>{transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}</button>
-                  <button onClick={() => setWakeEnabled((v) => !v)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-text-dim)', background: wakeEnabled ? 'var(--ely-accent-soft)' : 'transparent' }} title="Activación por voz"><Radio className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => setContinuous((v) => !v)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: continuous ? 'var(--ely-warning)' : 'var(--ely-text-dim)', background: continuous ? 'rgba(210, 153, 34, 0.15)' : 'transparent' }} title="Reescucha"><Ear className="w-3.5 h-3.5" /></button>
-                  <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} disabled={thinking} placeholder="Escriba o diga mi nombre…" className="flex-1 bg-transparent outline-none text-sm" style={{ color: 'var(--ely-text)' }} />
-                  <button onClick={handleSend} disabled={!inputValue.trim() || thinking} className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-30" style={{ color: 'var(--ely-accent)' }}>{thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
+                  <button
+                    type="button"
+                    onClick={handleToggleListen}
+                    disabled={thinking || transcribing}
+                    className="w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:opacity-40"
+                    style={{
+                      background: listening ? 'rgba(248, 81, 73, 0.2)' : 'transparent',
+                      color: listening ? 'var(--ely-danger)' : 'var(--ely-text-muted)',
+                    }}
+                  >
+                    {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWakeEnabled((v) => !v)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center"
+                    style={{
+                      color: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-text-dim)',
+                      background: wakeEnabled ? 'var(--ely-accent-soft)' : 'transparent',
+                    }}
+                    title="Activación por voz"
+                  >
+                    <Radio className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setContinuous((v) => !v)}
+                    className="w-8 h-8 rounded-full flex items-center justify-center"
+                    style={{
+                      color: continuous ? 'var(--ely-warning)' : 'var(--ely-text-dim)',
+                      background: continuous ? 'rgba(210, 153, 34, 0.15)' : 'transparent',
+                    }}
+                    title="Reescucha"
+                  >
+                    <Ear className="w-3.5 h-3.5" />
+                  </button>
+                  <input
+                    value={inputValue}
+                    onChange={(e) => setInputValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    disabled={thinking}
+                    placeholder="Escriba o diga mi nombre…"
+                    className="flex-1 bg-transparent outline-none text-sm"
+                    style={{ color: 'var(--ely-text)' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSend}
+                    disabled={!inputValue.trim() || thinking}
+                    className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-30"
+                    style={{ color: 'var(--ely-accent)' }}
+                  >
+                    {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
             )}
           </main>
-          {page === 'inicio' && (<div className="pr-5 py-5 hidden lg:flex"><SystemPanel /></div>)}
+          {page === 'inicio' && (
+            <div className="pr-5 py-5 hidden lg:flex">
+              <SystemPanel />
+            </div>
+          )}
         </div>
-        <footer className="h-9 flex items-center justify-between px-5 text-[11px]" style={{ borderTop: '1px solid var(--ely-header-border)', color: 'var(--ely-text-dim)' }}>
+        <footer
+          className="h-9 flex items-center justify-between px-5 text-[11px]"
+          style={{ borderTop: '1px solid var(--ely-header-border)', color: 'var(--ely-text-dim)' }}
+        >
           <span className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />Activo · {operator}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />
+              Activo · {operator}
+            </span>
             <span>{formatUptime(uptime)}</span>
           </span>
-          <span>{currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+          <span>
+            {currentTime.toLocaleTimeString('es-ES', {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+            })}
+          </span>
         </footer>
       </div>
     </div>
