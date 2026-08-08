@@ -45,71 +45,90 @@ export function SystemPanel() {
   ];
 
   return (
-    <div className="w-[272px] flex-shrink-0 flex flex-col gap-3.5">
-      <div className="hud-glass rounded-2xl p-4 animate-slide-up corner-brackets">
-        <div className="flex items-center gap-2 mb-3.5">
-          <div className="w-7 h-7 rounded-lg bg-sky-500/15 border border-sky-500/20 flex items-center justify-center">
-            <Cpu className="w-3.5 h-3.5 text-sky-400" />
+    <div className="w-[260px] flex-shrink-0 flex flex-col gap-3">
+      <div className="hud-glass p-4 animate-slide-up">
+        <div className="flex items-center gap-2.5 mb-3">
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center"
+            style={{ background: 'var(--ely-accent-soft)' }}
+          >
+            <Cpu className="w-4 h-4" style={{ color: 'var(--ely-accent)' }} />
           </div>
           <div>
-            <h3 className="text-sm text-sky-100/95 font-medium tracking-wide">Sistema</h3>
+            <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
+              Sistema
+            </h3>
             {hostname && (
-              <p className="text-[10px] text-sky-500/55 truncate max-w-[160px]">{hostname}</p>
+              <p className="text-[11px] truncate max-w-[160px]" style={{ color: 'var(--ely-text-muted)' }}>
+                {hostname}
+              </p>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-1.5 mb-4">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] animate-pulse" />
-          <span className="text-[11px] text-emerald-400/90">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />
+          <span className="text-[12px]" style={{ color: 'var(--ely-text-muted)' }}>
             {isDesktop ? 'Telemetría en vivo' : 'Simulación activa'}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3.5">
-          <CircularGauge label="CPU" value={stats.cpu} color="#38bdf8" />
+        <div className="grid grid-cols-2 gap-3">
+          <CircularGauge label="CPU" value={stats.cpu} color="#58a6ff" />
           <CircularGauge label="RAM" value={stats.ram} color="#a78bfa" />
-          <CircularGauge label="Disco" value={stats.disk} color="#34d399" />
-          <CircularGauge label="Red" value={stats.net} color="#60a5fa" />
+          <CircularGauge label="Disco" value={stats.disk} color="#3fb950" />
+          <CircularGauge label="Red" value={stats.net} color="#79b8ff" />
         </div>
       </div>
 
-      <div className="hud-glass rounded-2xl p-4 animate-slide-up" style={{ animationDelay: '80ms' }}>
+      <div className="hud-glass p-4 animate-slide-up" style={{ animationDelay: '60ms' }}>
         <div className="flex items-center gap-2 mb-3">
-          <Shield className="w-4 h-4 text-sky-400" />
-          <h3 className="text-sm text-sky-100/95 font-medium tracking-wide">Protección</h3>
+          <Shield className="w-4 h-4" style={{ color: 'var(--ely-accent)' }} />
+          <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
+            Protección
+          </h3>
         </div>
 
-        <div className="flex items-center gap-1.5 mb-3.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span className="text-[11px] text-emerald-400/90">Perímetro seguro</span>
+        <div className="flex items-center gap-1.5 mb-3">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />
+          <span className="text-[12px]" style={{ color: 'var(--ely-text-muted)' }}>
+            Perímetro seguro
+          </span>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {protections.map((p) => (
             <div
               key={p.label}
-              className="flex items-center justify-between py-2 px-2.5 rounded-xl bg-sky-500/5 border border-sky-500/10"
+              className="flex items-center justify-between py-2 px-2.5 rounded-xl"
+              style={{
+                background: 'var(--ely-bg-soft)',
+                border: '1px solid var(--ely-border)',
+              }}
             >
               <div className="flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-sky-400/75" />
-                <span className="text-[12px] text-sky-200/80">{p.label}</span>
+                <ShieldCheck className="w-3.5 h-3.5" style={{ color: 'var(--ely-accent)' }} />
+                <span className="text-[12px]" style={{ color: 'var(--ely-text)' }}>
+                  {p.label}
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]" />
-                <span className="text-[10px] text-emerald-400/85 font-medium">ON</span>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />
+                <span className="text-[10px] font-medium" style={{ color: 'var(--ely-success)' }}>
+                  ON
+                </span>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="hud-glass rounded-2xl p-3.5 animate-slide-up space-y-2" style={{ animationDelay: '140ms' }}>
-        <div className="flex items-center gap-2 text-[11px] text-sky-400/65">
+      <div className="hud-glass p-3.5 animate-slide-up space-y-2" style={{ animationDelay: '100ms' }}>
+        <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--ely-text-muted)' }}>
           <Keyboard className="w-3.5 h-3.5" />
           <span>Ctrl+Shift+E · Mostrar / Ocultar</span>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-sky-400/65">
+        <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--ely-text-muted)' }}>
           <HardDrive className="w-3.5 h-3.5" />
           <span>Ctrl+Espacio · Interrumpir voz</span>
         </div>
