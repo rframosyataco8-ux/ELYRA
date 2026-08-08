@@ -1,5 +1,5 @@
 /**
- * Router ELYRA / LUNA v10 — conversación vocal + PC + búsquedas + fallbacks fuertes
+ * Router ELYRA — conversación vocal + PC + búsquedas + fallbacks fuertes
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
@@ -38,7 +38,6 @@ function speakify(text) {
   t = t.replace(/\n{2,}/g, '. ');
   t = t.replace(/\n/g, ' ');
   t = t.replace(/\s+/g, ' ').trim();
-  // No mostrar JSON / errores técnicos al usuario
   if (/\{\s*"status"|Not found for account|tool_call/i.test(t)) {
     return 'El modelo tuvo un tropiezo. Puedo buscarlo en la web o controlar el PC.';
   }
@@ -90,7 +89,7 @@ async function routeChat({
     if (/present/i.test(text)) {
       return {
         response:
-          'Soy Luna. Asistente de voz de tu escritorio. Controlo el PC, busco información y te ayudo con el laboratorio. ¿En qué te ayudo?',
+          'Soy ELYRA. Asistente de voz de tu escritorio. Controlo el PC, busco información y te ayudo con el laboratorio. ¿En qué te ayudo?',
         intelligent: true,
         via: 'presence',
       };
@@ -136,7 +135,6 @@ async function routeChat({
     const resp = result?.response || '';
     const via = result?.via || 'llm';
 
-    // Si el agente falló o devolvió error técnico → conocimiento web
     if (
       result?.intelligent === false ||
       via === 'agent-error' ||
@@ -210,7 +208,6 @@ async function trySmartTopic(fixed, text) {
       break;
     }
   }
-  // Preguntas abiertas de historia / ciencia
   if (!topic && looksLikeKnowledgeQuestion(fixed)) {
     topic = String(fixed).replace(/[?.!]+$/, '').trim();
   }
