@@ -14,25 +14,17 @@ import { ThemeSettings } from '@/components/ThemeSettings';
 import { UserAdminPanel } from '@/components/UserAdminPanel';
 import type { LabUser } from '@/lib/users';
 import { canAccessPage } from '@/lib/users';
+import {
+  detectFromKey,
+  PROVIDER_PRESETS,
+  GEMINI_MODELS,
+  NVIDIA_MODELS,
+  isGeminiUrl,
+  isNvidiaUrl,
+} from '@/lib/providers';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio, ExternalLink } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
-
-const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
-
-function detectFromKey(key: string) {
-  const k = key.trim();
-  if (k.startsWith('gsk_')) return { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant', provider: 'groq' };
-  if (k.startsWith('sk-ant-')) return { baseUrl: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022', provider: 'anthropic' };
-  /* Gemini AI Studio: AIza… o AQ.… */
-  if (k.startsWith('AIza') || k.startsWith('AQ.')) {
-    return { baseUrl: GEMINI_BASE, model: 'gemini-2.0-flash', provider: 'gemini' };
-  }
-  if (k.startsWith('sk-or-')) return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', provider: 'openrouter' };
-  if (k.startsWith('xai-')) return { baseUrl: 'https://api.x.ai/v1', model: 'grok-2-latest', provider: 'xai' };
-  if (k.startsWith('sk-') && k.length > 20) return { baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini', provider: 'openai' };
-  return null;
-}
 
 function greetingFor(operator: string) {
   const h = new Date().getHours();
@@ -79,10 +71,8 @@ export default function App() {
   messagesRef.current = messages;
 
   const isAdmin = !!currentUser?.isAdmin;
-  const isGemini =
-    detectedProvider === 'gemini' ||
-    cfgBaseUrl.includes('generativelanguage') ||
-    cfgBaseUrl.includes('googleapis');
+  const isGemini = detectedProvider === 'gemini' || isGeminiUrl(cfgBaseUrl);
+  const isNvidia = detectedProvider === 'nvidia' || isNvidiaUrl(cfgBaseUrl);
 
   const navigate = useCallback((p: AppPage) => {
     if (canAccessPage(currentUser, p)) setPage(p);
@@ -366,25 +356,15 @@ export default function App() {
             ? 'En espera'
             : 'Lista';
 
-  const providers = [
-    { label: 'Gemini', url: GEMINI_BASE, model: 'gemini-2.0-flash' },
-    { label: 'Groq (rápido)', url: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
-    { label: 'Claude', url: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022' },
-    { label: 'OpenAI', url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-    { label: 'xAI Grok', url: 'https://api.x.ai/v1', model: 'grok-2-latest' },
-    { label: 'OpenRouter', url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
-    { label: 'Ollama local', url: 'http://localhost:11434/v1', model: 'llama3.2' },
-  ];
-
-  const geminiModels = [
-    'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-    'gemini-flash-latest',
-  ];
-
   const showChatBar = page === 'inicio' || page === 'asistente';
+
+  const keyPlaceholder = hasApiKey
+    ? '••••••••  (pegue una nueva para reemplazar)'
+    : isNvidia
+      ? 'nvapi-…'
+      : isGemini
+        ? 'AIza… o AQ.…'
+        : 'pegue su API key';
 
   if (!authenticated) {
     return (
@@ -480,36 +460,30 @@ export default function App() {
                 {isAdmin && (
                   <div className="hud-glass-strong p-5 space-y-4">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
-                        Proveedor de IA
-                      </h3>
+                      <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Proveedor de IA</h3>
                       {hasApiKey ? (
                         <span className="text-[11px] flex items-center gap-1" style={{ color: 'var(--ely-success)' }}>
                           <Check className="w-3 h-3" /> Conectada
                         </span>
                       ) : (
-                        <span className="text-[11px]" style={{ color: 'var(--ely-warning)' }}>
-                          Sin clave
-                        </span>
+                        <span className="text-[11px]" style={{ color: 'var(--ely-warning)' }}>Sin clave</span>
                       )}
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
-                        Proveedor
-                      </label>
+                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Proveedor</label>
                       <div className="flex flex-wrap gap-1.5">
-                        {providers.map((p) => {
+                        {PROVIDER_PRESETS.map((p) => {
                           const active = cfgBaseUrl === p.url || cfgBaseUrl.startsWith(p.url);
                           return (
                             <button
-                              key={p.label}
+                              key={p.id}
                               type="button"
                               onClick={() => {
                                 setCfgBaseUrl(p.url);
                                 setCfgModel(p.model);
                                 setCfgTestMsg(null);
-                                setDetectedProvider(p.label.toLowerCase().includes('gemini') ? 'gemini' : null);
+                                setDetectedProvider(p.id);
                               }}
                               className="text-[11px] px-2.5 py-1.5 rounded-full border transition-colors"
                               style={{
@@ -524,6 +498,51 @@ export default function App() {
                         })}
                       </div>
                     </div>
+
+                    {isNvidia && (
+                      <div
+                        className="rounded-xl px-3 py-2.5 text-[12px] space-y-1.5"
+                        style={{
+                          background: 'var(--ely-accent-soft)',
+                          border: '1px solid var(--ely-border)',
+                          color: 'var(--ely-text-muted)',
+                        }}
+                      >
+                        <p style={{ color: 'var(--ely-text)' }} className="font-medium text-[12px]">
+                          NVIDIA NIM · build.nvidia.com
+                        </p>
+                        <p>
+                          Pegue la clave <code className="text-[11px]">nvapi-…</code> de{' '}
+                          <a
+                            href="https://build.nvidia.com/settings/api-keys"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-0.5"
+                            style={{ color: 'var(--ely-accent)' }}
+                          >
+                            NVIDIA API Keys <ExternalLink className="w-3 h-3" />
+                          </a>
+                          . Endpoint: integrate.api.nvidia.com
+                        </p>
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {NVIDIA_MODELS.map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setCfgModel(m)}
+                              className="text-[10px] px-2 py-1 rounded-full border"
+                              style={{
+                                background: cfgModel === m ? 'var(--ely-accent)' : 'transparent',
+                                borderColor: cfgModel === m ? 'var(--ely-accent)' : 'var(--ely-border)',
+                                color: cfgModel === m ? '#fff' : 'var(--ely-text-muted)',
+                              }}
+                            >
+                              {m.split('/').pop()}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {isGemini && (
                       <div
@@ -548,11 +567,10 @@ export default function App() {
                           >
                             AI Studio <ExternalLink className="w-3 h-3" />
                           </a>
-                          . Acepta claves <code className="text-[11px]">AIza…</code> y{' '}
-                          <code className="text-[11px]">AQ.…</code>
+                          . Acepta <code className="text-[11px]">AIza…</code> y <code className="text-[11px]">AQ.…</code>
                         </p>
                         <div className="flex flex-wrap gap-1 pt-1">
-                          {geminiModels.map((m) => (
+                          {GEMINI_MODELS.map((m) => (
                             <button
                               key={m}
                               type="button"
@@ -572,14 +590,12 @@ export default function App() {
                     )}
 
                     <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
-                        API Key
-                      </label>
+                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>API Key</label>
                       <input
                         type="password"
                         value={cfgApiKey}
                         onChange={(e) => onApiKeyChange(e.target.value)}
-                        placeholder={hasApiKey ? '••••••••  (pegue una nueva para reemplazar)' : isGemini ? 'AIza… o AQ.…' : 'pegue su API key'}
+                        placeholder={keyPlaceholder}
                         className="w-full rounded-xl px-3.5 py-2.5 text-sm outline-none"
                         style={{
                           background: 'var(--ely-input-bg)',
@@ -589,6 +605,11 @@ export default function App() {
                         autoComplete="off"
                         spellCheck={false}
                       />
+                      {detectedProvider === 'nvidia' && (
+                        <p className="text-[11px]" style={{ color: 'var(--ely-success)' }}>
+                          Clave NVIDIA detectada · URL y modelo configurados automáticamente
+                        </p>
+                      )}
                       {detectedProvider === 'gemini' && (
                         <p className="text-[11px]" style={{ color: 'var(--ely-success)' }}>
                           Clave Gemini detectada · URL y modelo configurados automáticamente
@@ -598,9 +619,7 @@ export default function App() {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
-                          Base URL
-                        </label>
+                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Base URL</label>
                         <input
                           value={cfgBaseUrl}
                           onChange={(e) => setCfgBaseUrl(e.target.value)}
@@ -613,9 +632,7 @@ export default function App() {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
-                          Modelo
-                        </label>
+                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Modelo</label>
                         <input
                           value={cfgModel}
                           onChange={(e) => setCfgModel(e.target.value)}
@@ -637,13 +654,7 @@ export default function App() {
                         className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40"
                         style={{ background: 'var(--ely-accent)', color: '#fff' }}
                       >
-                        {cfgSaving ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : cfgSaved ? (
-                          <><Check className="w-4 h-4" /> Guardado</>
-                        ) : (
-                          <><Save className="w-4 h-4" /> Guardar</>
-                        )}
+                        {cfgSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : cfgSaved ? <><Check className="w-4 h-4" /> Guardado</> : <><Save className="w-4 h-4" /> Guardar</>}
                       </button>
                       <button
                         type="button"
@@ -656,11 +667,7 @@ export default function App() {
                           border: '1px solid var(--ely-border)',
                         }}
                       >
-                        {cfgTesting ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <><Wifi className="w-4 h-4" /> Probar</>
-                        )}
+                        {cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar</>}
                       </button>
                     </div>
 
@@ -669,17 +676,11 @@ export default function App() {
                         className="flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5"
                         style={{
                           background: cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)',
-                          border: `1px solid ${
-                            cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.25)' : 'rgba(248, 81, 73, 0.25)'
-                          }`,
+                          border: `1px solid ${cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.25)' : 'rgba(248, 81, 73, 0.25)'}`,
                           color: cfgTestMsg.ok ? 'var(--ely-success)' : 'var(--ely-danger)',
                         }}
                       >
-                        {cfgTestMsg.ok ? (
-                          <Check className="w-4 h-4 shrink-0 mt-0.5" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                        )}
+                        {cfgTestMsg.ok ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
                         <span>{cfgTestMsg.text}</span>
                       </div>
                     )}
@@ -699,123 +700,46 @@ export default function App() {
                     <span className="text-sm flex items-center gap-2" style={{ color: 'var(--ely-text)' }}>
                       <Radio className="w-3.5 h-3.5" /> Activación por voz
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setWakeEnabled((v) => !v)}
-                      className="relative w-11 h-6 rounded-full transition-colors"
-                      style={{ background: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-border)' }}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${
-                          wakeEnabled ? 'translate-x-5' : ''
-                        }`}
-                      />
+                    <button type="button" onClick={() => setWakeEnabled((v) => !v)} className="relative w-11 h-6 rounded-full transition-colors" style={{ background: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-border)' }}>
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${wakeEnabled ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm" style={{ color: 'var(--ely-text)' }}>
-                      Reescucha tras responder
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setContinuous((v) => !v)}
-                      className="relative w-11 h-6 rounded-full transition-colors"
-                      style={{ background: continuous ? 'var(--ely-accent)' : 'var(--ely-border)' }}
-                    >
-                      <span
-                        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${
-                          continuous ? 'translate-x-5' : ''
-                        }`}
-                      />
+                    <span className="text-sm" style={{ color: 'var(--ely-text)' }}>Reescucha tras responder</span>
+                    <button type="button" onClick={() => setContinuous((v) => !v)} className="relative w-11 h-6 rounded-full transition-colors" style={{ background: continuous ? 'var(--ely-accent)' : 'var(--ely-border)' }}>
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${continuous ? 'translate-x-5' : ''}`} />
                     </button>
                   </div>
                 </div>
                 <div className="hud-glass p-5 space-y-3">
                   <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Memoria y sesión</h3>
-                  <button
-                    type="button"
-                    onClick={handleClearMemory}
-                    className="flex items-center gap-2 text-[13px]"
-                    style={{ color: 'var(--ely-danger)' }}
-                  >
+                  <button type="button" onClick={handleClearMemory} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ely-danger)' }}>
                     <Trash2 className="w-3.5 h-3.5" /> Borrar memoria local
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="flex items-center gap-2 text-[13px]"
-                    style={{ color: 'var(--ely-text-muted)' }}
-                  >
+                  <button type="button" onClick={handleLogout} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ely-text-muted)' }}>
                     Cerrar sesión
                   </button>
                 </div>
                 {!cfgLoaded && isDesktop && isAdmin && (
-                  <p className="text-center text-xs" style={{ color: 'var(--ely-text-dim)' }}>
-                    Cargando…
-                  </p>
+                  <p className="text-center text-xs" style={{ color: 'var(--ely-text-dim)' }}>Cargando…</p>
                 )}
               </div>
             )}
             {showChatBar && (
               <div className="w-full max-w-xl mx-auto mt-auto pt-4">
-                {error && (
-                  <p className="text-xs text-center mb-2 px-2" style={{ color: 'var(--ely-danger)' }}>
-                    {error}
-                  </p>
-                )}
+                {error && <p className="text-xs text-center mb-2 px-2" style={{ color: 'var(--ely-danger)' }}>{error}</p>}
                 <div className="flex items-center gap-2 input-hud px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={handleToggleListen}
-                    disabled={thinking || transcribing}
-                    className="w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:opacity-40"
-                    style={{
-                      background: listening ? 'rgba(248, 81, 73, 0.2)' : 'transparent',
-                      color: listening ? 'var(--ely-danger)' : 'var(--ely-text-muted)',
-                    }}
-                  >
+                  <button type="button" onClick={handleToggleListen} disabled={thinking || transcribing} className="w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:opacity-40" style={{ background: listening ? 'rgba(248, 81, 73, 0.2)' : 'transparent', color: listening ? 'var(--ely-danger)' : 'var(--ely-text-muted)' }}>
                     {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setWakeEnabled((v) => !v)}
-                    className="w-8 h-8 rounded-full flex items-center justify-center"
-                    style={{
-                      color: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-text-dim)',
-                      background: wakeEnabled ? 'var(--ely-accent-soft)' : 'transparent',
-                    }}
-                    title="Activación por voz"
-                  >
+                  <button type="button" onClick={() => setWakeEnabled((v) => !v)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-text-dim)', background: wakeEnabled ? 'var(--ely-accent-soft)' : 'transparent' }} title="Activación por voz">
                     <Radio className="w-3.5 h-3.5" />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setContinuous((v) => !v)}
-                    className="w-8 h-8 rounded-full flex items-center justify-center"
-                    style={{
-                      color: continuous ? 'var(--ely-warning)' : 'var(--ely-text-dim)',
-                      background: continuous ? 'rgba(210, 153, 34, 0.15)' : 'transparent',
-                    }}
-                    title="Reescucha"
-                  >
+                  <button type="button" onClick={() => setContinuous((v) => !v)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: continuous ? 'var(--ely-warning)' : 'var(--ely-text-dim)', background: continuous ? 'rgba(210, 153, 34, 0.15)' : 'transparent' }} title="Reescucha">
                     <Ear className="w-3.5 h-3.5" />
                   </button>
-                  <input
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    disabled={thinking}
-                    placeholder="Escriba o diga mi nombre…"
-                    className="flex-1 bg-transparent outline-none text-sm"
-                    style={{ color: 'var(--ely-text)' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={!inputValue.trim() || thinking}
-                    className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-30"
-                    style={{ color: 'var(--ely-accent)' }}
-                  >
+                  <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} disabled={thinking} placeholder="Escriba o diga mi nombre…" className="flex-1 bg-transparent outline-none text-sm" style={{ color: 'var(--ely-text)' }} />
+                  <button type="button" onClick={handleSend} disabled={!inputValue.trim() || thinking} className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-30" style={{ color: 'var(--ely-accent)' }}>
                     {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>
                 </div>
@@ -823,15 +747,10 @@ export default function App() {
             )}
           </main>
           {page === 'inicio' && (
-            <div className="pr-5 py-5 hidden lg:flex">
-              <SystemPanel />
-            </div>
+            <div className="pr-5 py-5 hidden lg:flex"><SystemPanel /></div>
           )}
         </div>
-        <footer
-          className="h-9 flex items-center justify-between px-5 text-[11px]"
-          style={{ borderTop: '1px solid var(--ely-header-border)', color: 'var(--ely-text-dim)' }}
-        >
+        <footer className="h-9 flex items-center justify-between px-5 text-[11px]" style={{ borderTop: '1px solid var(--ely-header-border)', color: 'var(--ely-text-dim)' }}>
           <span className="flex items-center gap-3">
             <span className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />
@@ -839,13 +758,7 @@ export default function App() {
             </span>
             <span>{formatUptime(uptime)}</span>
           </span>
-          <span>
-            {currentTime.toLocaleTimeString('es-ES', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            })}
-          </span>
+          <span>{currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
         </footer>
       </div>
     </div>
