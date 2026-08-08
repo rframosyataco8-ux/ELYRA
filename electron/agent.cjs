@@ -1,5 +1,6 @@
 /**
  * ELYRA Agent v15 — Razonamiento + conversación natural + dominio lab
+ * Proveedores: Groq, Gemini, NVIDIA NIM, Claude, OpenAI, xAI, OpenRouter, Ollama
  */
 const fs = require('fs');
 const path = require('path');
@@ -15,6 +16,9 @@ const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
 const GEMINI_MODEL = 'gemini-2.0-flash';
+
+const NVIDIA_BASE = 'https://integrate.api.nvidia.com/v1';
+const NVIDIA_MODEL = 'meta/llama-3.1-8b-instruct';
 
 const COMPLEX_RE =
   /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas)\b/i;
@@ -50,13 +54,13 @@ function detectProviderFromKey(apiKey) {
       provider: 'anthropic',
     };
   }
-  /* Gemini: AIza… (clásica) o AQ.… (Google AI Studio reciente) */
+  /* Gemini: AIza… o AQ.… */
   if (k.startsWith('AIza') || k.startsWith('AQ.')) {
-    return {
-      baseUrl: GEMINI_BASE,
-      model: GEMINI_MODEL,
-      provider: 'gemini',
-    };
+    return { baseUrl: GEMINI_BASE, model: GEMINI_MODEL, provider: 'gemini' };
+  }
+  /* NVIDIA NIM / build.nvidia.com */
+  if (k.startsWith('nvapi-')) {
+    return { baseUrl: NVIDIA_BASE, model: NVIDIA_MODEL, provider: 'nvidia' };
   }
   if (k.startsWith('sk-or-') || k.startsWith('sk-or-v1-')) {
     return { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini', provider: 'openrouter' };
@@ -75,6 +79,7 @@ function inferProvider(config) {
   const u = (config.baseUrl || '').toLowerCase();
   if (u.includes('anthropic')) return 'anthropic';
   if (u.includes('generativelanguage') || u.includes('googleapis')) return 'gemini';
+  if (u.includes('integrate.api.nvidia') || u.includes('nvidia.com')) return 'nvidia';
   if (u.includes('groq')) return 'groq';
   if (u.includes('openrouter')) return 'openrouter';
   if (u.includes('x.ai')) return 'xai';
@@ -120,9 +125,8 @@ function isComplexQuery(text) {
 
 function selectModel(config, userText) {
   const provider = inferProvider(config);
-  if (provider === 'gemini') {
-    return config.model || GEMINI_MODEL;
-  }
+  if (provider === 'gemini') return config.model || GEMINI_MODEL;
+  if (provider === 'nvidia') return config.model || NVIDIA_MODEL;
   if (config.model && config.model !== MODEL_FAST) return config.model;
   if (isComplexQuery(userText)) return MODEL_SMART;
   return config.model || MODEL_FAST;
@@ -133,16 +137,30 @@ function llmHeaders(config) {
   const provider = inferProvider(config);
   const headers = { 'Content-Type': 'application/json' };
   if (provider === 'gemini') {
-    /* Compatible OpenAI + nativo AI Studio */
     headers.Authorization = 'Bearer ' + key;
     headers['x-goog-api-key'] = key;
   } else if (provider === 'anthropic') {
     headers['x-api-key'] = key;
     headers['anthropic-version'] = '2023-06-01';
   } else {
+    /* OpenAI-compatible: Groq, NVIDIA NIM, OpenAI, xAI, OpenRouter, Ollama */
     headers.Authorization = 'Bearer ' + key;
   }
   return headers;
+}
+
+function providerLabel(provider) {
+  const map = {
+    gemini: 'Gemini',
+    nvidia: 'NVIDIA NIM',
+    groq: 'Groq',
+    anthropic: 'Claude',
+    openai: 'OpenAI',
+    xai: 'xAI',
+    openrouter: 'OpenRouter',
+    ollama: 'Ollama',
+  };
+  return map[provider] || provider;
 }
 
 function fallbackResponse(userText) {
@@ -192,8 +210,12 @@ async function testApiConnection(partial) {
     const config = { ...getConfig(), ...(partial || {}) };
     if (!config.apiKey) return { ok: false, message: 'Falta la API key.' };
     const provider = inferProvider(config);
-    const model =
-      config.model || (provider === 'gemini' ? GEMINI_MODEL : MODEL_FAST);
+    let model = config.model;
+    if (!model) {
+      if (provider === 'gemini') model = GEMINI_MODEL;
+      else if (provider === 'nvidia') model = NVIDIA_MODEL;
+      else model = MODEL_FAST;
+    }
     const result = await callLLM(
       [
         { role: 'system', content: 'Responde solo: ok' },
@@ -204,11 +226,7 @@ async function testApiConnection(partial) {
     );
     return {
       ok: true,
-      message:
-        'Conexión correcta · ' +
-        (provider === 'gemini' ? 'Gemini' : provider) +
-        ' · ' +
-        model,
+      message: 'Conexión correcta · ' + providerLabel(provider) + ' · ' + model,
       model,
       baseUrl: config.baseUrl,
       provider,
@@ -223,7 +241,6 @@ async function testApiConnection(partial) {
   }
 }
 
-/** Firma compatible con chat-router: runAgent(message, history, helpers) */
 async function runAgent(message, history, helpers) {
   const config = getConfig();
   const cleanedUser = normalizeUserIntent(message);
@@ -246,6 +263,7 @@ async function runAgent(message, history, helpers) {
 
   let model = selectModel(config, cleanedUser);
   const tools = TOOL_DEFINITIONS || [];
+  const provider = inferProvider(config);
   const wantsTools =
     /\b(abre|abrir|busca|buscar|pon|reproduce|archivo|excel|pdf|captura|volumen|carpeta|google|youtube|recuerda|analiza|guarda|escribe|crea|genera)\b/i.test(
       cleanedUser,
@@ -280,7 +298,12 @@ async function runAgent(message, history, helpers) {
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        if (steps === 1 && model !== MODEL_FAST && inferProvider(config) !== 'gemini') {
+        if (
+          steps === 1 &&
+          provider !== 'gemini' &&
+          provider !== 'nvidia' &&
+          model !== MODEL_FAST
+        ) {
           model = MODEL_FAST;
           continue;
         }
@@ -327,7 +350,8 @@ async function runAgent(message, history, helpers) {
       if (
         steps < maxSteps &&
         !usedTools &&
-        inferProvider(config) !== 'gemini' &&
+        provider !== 'gemini' &&
+        provider !== 'nvidia' &&
         model !== MODEL_SMART &&
         (!reply || reply.length < 12 || /no puedo|no sé|no se|as an ai|como ia/i.test(reply))
       ) {
@@ -379,4 +403,6 @@ module.exports = {
   MODEL_CHAIN: MODEL_CHAIN_GROQ,
   GEMINI_BASE,
   GEMINI_MODEL,
+  NVIDIA_BASE,
+  NVIDIA_MODEL,
 };
