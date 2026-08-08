@@ -1,7 +1,6 @@
 /**
- * ELYRA TTS — voz neural natural (estilo conversación humana).
- * Primary: es-MX-DaliaNeural (Microsoft Edge neural, muy cercana a ChatGPT/Luna en español).
- * Fallback chain si falla: es-ES-XimenaNeural, es-MX-RenataNeural
+ * ELYRA TTS — voz neural conversacional (casi humana).
+ * Primary: es-MX-DaliaNeural (Microsoft Edge neural).
  */
 const path = require('path');
 const fs = require('fs');
@@ -10,13 +9,17 @@ const { promisify } = require('util');
 const { exec, execSync } = require('child_process');
 const execAsync = promisify(exec);
 
-// Voz femenina neural de alta calidad (español México)
 const VOICE = 'es-MX-DaliaNeural';
-const VOICE_FALLBACKS = ['es-ES-XimenaNeural', 'es-MX-RenataNeural', 'es-ES-ElviraNeural'];
+const VOICE_FALLBACKS = [
+  'es-MX-RenataNeural',
+  'es-ES-XimenaNeural',
+  'es-MX-CarlotaNeural',
+  'es-ES-ElviraNeural',
+];
 
-// Ritmo conversacional: un poco más lento = más natural al oído
-const DEFAULT_RATE = '-4%';
-const DEFAULT_PITCH = '+0Hz';
+/* Un poco más lenta y cálida = más natural */
+const DEFAULT_RATE = '-6%';
+const DEFAULT_PITCH = '+1Hz';
 
 let edgeTtsAvailable = null;
 
@@ -53,7 +56,7 @@ function cleanForSpeech(text) {
   t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
   if (/rate limit|429|tokens per day|TPD/i.test(t)) {
-    return 'He alcanzado el límite temporal del modelo. Espera un momento e inténtalo de nuevo, o prueba con una frase más corta.';
+    return 'He alcanzado un límite temporal. Espera un momento e inténtalo de nuevo.';
   }
   if (/LLM\s*\d{3}|Error del modelo/i.test(t) && t.length > 120) {
     return 'Hubo un problema al conectar con la inteligencia. Inténtalo de nuevo en unos segundos.';
@@ -69,13 +72,14 @@ function cleanForSpeech(text) {
   t = t.replace(/\{[\s\S]*\}/g, ' ');
   t = t.replace(/org_[a-zA-Z0-9]+/g, ' ');
   t = t.replace(/gsk_[a-zA-Z0-9]+/g, ' ');
+  t = t.replace(/nvapi-[a-zA-Z0-9]+/g, ' ');
 
   t = t.replace(/\s+/g, ' ').trim();
 
-  if (t.length > 900) {
-    t = t.slice(0, 900);
+  if (t.length > 1100) {
+    t = t.slice(0, 1100);
     const last = t.lastIndexOf('.');
-    if (last > 300) t = t.slice(0, last + 1);
+    if (last > 400) t = t.slice(0, last + 1);
     else t += '.';
   }
 
@@ -83,23 +87,28 @@ function cleanForSpeech(text) {
 }
 
 /**
- * Puntuación y pausas más humanas para que la voz neural
- * respire como en una conversación real (estilo ChatGPT).
+ * Hace el texto más hablable: pausas, respiración, menos robótico.
  */
 function humanizePunctuation(text) {
   let t = text;
   t = t.replace(/([.,;:!?])([A-Za-zÁÉÍÓÚáéíóúñÑ])/g, '$1 $2');
   t = t.replace(/\.{2,}/g, '.');
-  // Comas extra en listas largas ayudan a pausas naturales
   t = t.replace(/\s+y\s+/gi, ', y ');
   t = t.replace(/,\s*,/g, ',');
-  // Evitar frases interminables sin pausa
-  t = t.replace(/([^.!?]{120,}?)\s+(y|pero|aunque|además|también)\s+/gi, '$1. $2 ');
+  // Frases largas → punto natural
+  t = t.replace(/([^.!?]{90,}?)\s+(y|pero|aunque|además|también|entonces|así que)\s+/gi, '$1. $2 ');
+  // Evitar mayúsculas agresivas
+  t = t.replace(/\b([A-ZÁÉÍÓÚÑ]{4,})\b/g, (m) => m.charAt(0) + m.slice(1).toLowerCase());
+  // Números simples a palabras cortas
+  t = t.replace(/\b100%\b/g, 'cien por ciento');
+  t = t.replace(/\bOK\b/gi, 'de acuerdo');
   return t.replace(/\s+/g, ' ').trim();
 }
 
 async function synthesizeOnce(bin, voice, rate, pitch, safeText, outFile) {
-  const cmd = `${bin} --voice "${voice}" --rate="${rate}" --pitch="${pitch}" --text ${JSON.stringify(safeText)} --write-media "${outFile}"`;
+  const cmd =
+    `${bin} --voice "${voice}" --rate="${rate}" --pitch="${pitch}" ` +
+    `--text ${JSON.stringify(safeText)} --write-media "${outFile}"`;
   await execAsync(cmd, { timeout: 90000, maxBuffer: 20 * 1024 * 1024 });
   if (!fs.existsSync(outFile)) throw new Error('No se generó el audio');
 }
