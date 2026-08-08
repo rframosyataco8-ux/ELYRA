@@ -34,6 +34,7 @@ interface Props {
 type FormState = {
   displayName: string;
   role: RoleId;
+  roleLabel: string;
   pages: AppPage[];
   isAdmin: boolean;
   active: boolean;
@@ -41,7 +42,8 @@ type FormState = {
 
 const emptyForm = (): FormState => ({
   displayName: '',
-  role: 'pendiente',
+  role: 'custom',
+  roleLabel: '',
   pages: [],
   isAdmin: false,
   active: true,
@@ -75,6 +77,7 @@ export function UserAdminPanel({ currentUserId }: Props) {
     setForm({
       displayName: u.displayName,
       role: u.role,
+      roleLabel: u.roleLabel,
       pages: [...u.pages],
       isAdmin: u.isAdmin,
       active: u.active !== false,
@@ -89,8 +92,9 @@ export function UserAdminPanel({ currentUserId }: Props) {
     setForm((f) => ({
       ...f,
       role,
+      roleLabel: role === 'custom' ? f.roleLabel || '' : preset?.label || f.roleLabel,
       pages: preset && role !== 'custom' ? [...preset.pages] : f.pages,
-      isAdmin: preset?.isAdmin ?? f.isAdmin,
+      isAdmin: role === 'admin' ? true : role === 'custom' ? f.isAdmin : (preset?.isAdmin ?? false),
     }));
   };
 
@@ -102,27 +106,41 @@ export function UserAdminPanel({ currentUserId }: Props) {
     }));
   };
 
+  const resolvedLabel = () => {
+    if (form.isAdmin) return 'Administrador';
+    if (form.role === 'custom') {
+      const custom = form.roleLabel.trim();
+      if (custom) return custom;
+      if (form.pages.length === 0) return 'Personalizado';
+      return form.pages
+        .map((p) => LAB_PAGE_OPTIONS.find((o) => o.id === p)?.label || p)
+        .join(' · ');
+    }
+    return ROLE_PRESETS.find((r) => r.id === form.role)?.label || form.roleLabel || 'Usuario';
+  };
+
   const save = () => {
     setError('');
     try {
+      const roleLabel = resolvedLabel();
       if (mode === 'create') {
         createUser({
           displayName: form.displayName,
-          role: form.role,
+          role: form.isAdmin ? 'admin' : form.role,
           pages: form.isAdmin ? undefined : form.pages,
           isAdmin: form.isAdmin,
           active: form.active,
-          roleLabel: ROLE_PRESETS.find((r) => r.id === form.role)?.label,
+          roleLabel,
         });
         flash('Usuario creado · contraseña temporal 123456');
       } else if (mode === 'edit' && editingId) {
         updateUser(editingId, {
           displayName: form.displayName,
-          role: form.role,
+          role: form.isAdmin ? 'admin' : form.role,
           pages: form.pages,
           isAdmin: form.isAdmin,
           active: form.active,
-          roleLabel: ROLE_PRESETS.find((r) => r.id === form.role)?.label,
+          roleLabel,
         });
         flash('Usuario actualizado');
       }
@@ -173,11 +191,7 @@ export function UserAdminPanel({ currentUserId }: Props) {
           </h3>
         </div>
         {mode === 'list' ? (
-          <button
-            type="button"
-            onClick={openCreate}
-            className="ely-btn-primary text-[12px] !py-2 !px-3"
-          >
+          <button type="button" onClick={openCreate} className="ely-btn-primary text-[12px] !py-2 !px-3">
             <UserPlus className="w-3.5 h-3.5" /> Nuevo usuario
           </button>
         ) : (
@@ -193,9 +207,9 @@ export function UserAdminPanel({ currentUserId }: Props) {
       </div>
 
       <p className="text-[12px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
-        Cree, edite o recupere accesos del personal de laboratorio. Los usuarios nuevos reciben la
-        contraseña temporal <strong style={{ color: 'var(--ely-text)' }}>{DEFAULT_PIN}</strong> y
-        deberán cambiarla al entrar.
+        Roles predefinidos o <strong style={{ color: 'var(--ely-text)' }}>personalizados</strong> con
+        módulos a medida. Contraseña temporal:{' '}
+        <strong style={{ color: 'var(--ely-text)' }}>{DEFAULT_PIN}</strong>.
       </p>
 
       {okMsg && (
@@ -224,7 +238,10 @@ export function UserAdminPanel({ currentUserId }: Props) {
       )}
 
       {(mode === 'create' || mode === 'edit') && (
-        <div className="space-y-3 rounded-xl p-4" style={{ background: 'var(--ely-bg-soft)', border: '1px solid var(--ely-border)' }}>
+        <div
+          className="space-y-3 rounded-xl p-4"
+          style={{ background: 'var(--ely-bg-soft)', border: '1px solid var(--ely-border)' }}
+        >
           <p className="text-[13px] font-medium" style={{ color: 'var(--ely-text)' }}>
             {mode === 'create' ? 'Nuevo usuario' : 'Editar usuario'}
           </p>
@@ -248,7 +265,7 @@ export function UserAdminPanel({ currentUserId }: Props) {
 
           <div className="space-y-1.5">
             <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
-              Rol predefinido
+              Tipo de rol
             </label>
             <div className="flex flex-wrap gap-1.5">
               {ROLE_PRESETS.map((r) => (
@@ -268,6 +285,28 @@ export function UserAdminPanel({ currentUserId }: Props) {
               ))}
             </div>
           </div>
+
+          {form.role === 'custom' && !form.isAdmin && (
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
+                Nombre del rol personalizado
+              </label>
+              <input
+                value={form.roleLabel}
+                onChange={(e) => setForm((f) => ({ ...f, roleLabel: e.target.value }))}
+                className="w-full rounded-xl px-3 py-2.5 text-sm outline-none"
+                style={{
+                  background: 'var(--ely-input-bg)',
+                  border: '1px solid var(--ely-border)',
+                  color: 'var(--ely-text)',
+                }}
+                placeholder="Ej. Supervisión calidad, Turno noche…"
+              />
+              <p className="text-[11px]" style={{ color: 'var(--ely-text-dim)' }}>
+                Si lo deja vacío, se generará a partir de los módulos elegidos.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>
@@ -309,6 +348,13 @@ export function UserAdminPanel({ currentUserId }: Props) {
                 El administrador tiene acceso a todos los módulos.
               </p>
             )}
+          </div>
+
+          <div
+            className="rounded-lg px-3 py-2 text-[12px]"
+            style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
+          >
+            Vista previa del rol: <strong>{resolvedLabel()}</strong>
           </div>
 
           <div className="flex flex-wrap gap-4 pt-1">
@@ -378,6 +424,14 @@ export function UserAdminPanel({ currentUserId }: Props) {
                           Admin
                         </span>
                       )}
+                      {u.role === 'custom' && !u.isAdmin && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded-full"
+                          style={{ background: 'var(--ely-nav-hover)', color: 'var(--ely-text-muted)' }}
+                        >
+                          Personalizado
+                        </span>
+                      )}
                       {isSelf && (
                         <span className="text-[10px]" style={{ color: 'var(--ely-text-dim)' }}>
                           (usted)
@@ -391,74 +445,32 @@ export function UserAdminPanel({ currentUserId }: Props) {
                     </div>
                     <p className="text-[11px] truncate" style={{ color: 'var(--ely-text-muted)' }}>
                       {u.roleLabel}
-                      {meta.mustChange || meta.isDefault
-                        ? ' · debe cambiar contraseña'
-                        : ''}
+                      {meta.mustChange || meta.isDefault ? ' · debe cambiar contraseña' : ''}
                     </p>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1 flex-wrap justify-end">
-                  <button
-                    type="button"
-                    title="Editar"
-                    onClick={() => openEdit(u)}
-                    className="w-8 h-8 rounded-full flex items-center justify-center"
-                    style={{ color: 'var(--ely-text-muted)' }}
-                  >
+                  <button type="button" title="Editar" onClick={() => openEdit(u)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: 'var(--ely-text-muted)' }}>
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
-                  <button
-                    type="button"
-                    title={`Restablecer a ${DEFAULT_PIN}`}
-                    onClick={() => doReset(u.id)}
-                    className="w-8 h-8 rounded-full flex items-center justify-center"
-                    style={{ color: 'var(--ely-text-muted)' }}
-                  >
+                  <button type="button" title={`Restablecer a ${DEFAULT_PIN}`} onClick={() => doReset(u.id)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: 'var(--ely-text-muted)' }}>
                     <KeyRound className="w-3.5 h-3.5" />
                   </button>
-                  <button
-                    type="button"
-                    title={u.active === false ? 'Activar' : 'Desactivar'}
-                    onClick={() => toggleActive(u)}
-                    disabled={isSelf}
-                    className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30"
-                    style={{ color: 'var(--ely-text-muted)' }}
-                  >
-                    {u.active === false ? (
-                      <UserCheck className="w-3.5 h-3.5" />
-                    ) : (
-                      <UserX className="w-3.5 h-3.5" />
-                    )}
+                  <button type="button" title={u.active === false ? 'Activar' : 'Desactivar'} onClick={() => toggleActive(u)} disabled={isSelf} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ color: 'var(--ely-text-muted)' }}>
+                    {u.active === false ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
                   </button>
                   {confirmDelete === u.id ? (
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => doDelete(u.id)}
-                        className="text-[11px] px-2 py-1 rounded-full"
-                        style={{ background: 'rgba(248,81,73,0.15)', color: 'var(--ely-danger)' }}
-                      >
+                      <button type="button" onClick={() => doDelete(u.id)} className="text-[11px] px-2 py-1 rounded-full" style={{ background: 'rgba(248,81,73,0.15)', color: 'var(--ely-danger)' }}>
                         Confirmar
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDelete(null)}
-                        className="text-[11px] px-2 py-1"
-                        style={{ color: 'var(--ely-text-muted)' }}
-                      >
+                      <button type="button" onClick={() => setConfirmDelete(null)} className="text-[11px] px-2 py-1" style={{ color: 'var(--ely-text-muted)' }}>
                         No
                       </button>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      title="Eliminar"
-                      onClick={() => setConfirmDelete(u.id)}
-                      disabled={isSelf}
-                      className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30"
-                      style={{ color: 'var(--ely-danger)' }}
-                    >
+                    <button type="button" title="Eliminar" onClick={() => setConfirmDelete(u.id)} disabled={isSelf} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ color: 'var(--ely-danger)' }}>
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
@@ -467,12 +479,7 @@ export function UserAdminPanel({ currentUserId }: Props) {
             );
           })}
 
-          <button
-            type="button"
-            onClick={refresh}
-            className="text-[11px] flex items-center gap-1.5 mx-auto pt-1"
-            style={{ color: 'var(--ely-text-dim)' }}
-          >
+          <button type="button" onClick={refresh} className="text-[11px] flex items-center gap-1.5 mx-auto pt-1" style={{ color: 'var(--ely-text-dim)' }}>
             <RefreshCw className="w-3 h-3" /> Actualizar lista
           </button>
         </div>
