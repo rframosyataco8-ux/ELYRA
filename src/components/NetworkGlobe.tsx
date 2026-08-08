@@ -15,10 +15,17 @@ interface NetworkGlobeProps {
   amplitude?: number;
 }
 
-/** Interpolación suave (evita saltos visuales) */
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
+
+/** Soft Google-blue palette (less neon, easier on eyes) */
+const C = {
+  core: '88, 166, 255',
+  mid: '121, 184, 255',
+  soft: '160, 200, 255',
+  white: '230, 237, 243',
+};
 
 export function NetworkGlobe({
   speaking,
@@ -54,7 +61,7 @@ export function NetworkGlobe({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const points: Point3D[] = [];
-    const count = 220;
+    const count = 180;
     const golden = Math.PI * (3 - Math.sqrt(5));
     for (let i = 0; i < count; i++) {
       const y = 1 - (i / (count - 1)) * 2;
@@ -106,45 +113,44 @@ export function NetworkGlobe({
       const amp = sm.amp;
       const listen = sm.listenGlow;
 
-      rotRef.current.y += 0.0035 + act * 0.009 + amp * 0.006;
-      rotRef.current.x = 0.2 + Math.sin(t * 0.35) * 0.028 + listen * 0.02;
+      rotRef.current.y += 0.0028 + act * 0.007 + amp * 0.005;
+      rotRef.current.x = 0.2 + Math.sin(t * 0.3) * 0.022 + listen * 0.015;
 
       ctx.clearRect(0, 0, size, size);
 
-      const atmosA = 0.07 + act * 0.14 + amp * 0.18 + listen * 0.08;
+      // Soft atmosphere
+      const atmosA = 0.05 + act * 0.1 + amp * 0.12 + listen * 0.06;
       const outer = ctx.createRadialGradient(
         size / 2,
         size / 2,
         size * 0.04,
         size / 2,
         size / 2,
-        size * 0.52,
+        size * 0.5,
       );
-      outer.addColorStop(0, `rgba(125, 211, 252, ${atmosA * 0.9})`);
-      outer.addColorStop(0.22, `rgba(56, 189, 248, ${atmosA * 0.55})`);
-      outer.addColorStop(0.5, `rgba(14, 165, 233, ${atmosA * 0.22})`);
-      outer.addColorStop(0.78, `rgba(6, 80, 160, ${atmosA * 0.08})`);
+      outer.addColorStop(0, `rgba(${C.mid}, ${atmosA * 0.7})`);
+      outer.addColorStop(0.25, `rgba(${C.core}, ${atmosA * 0.4})`);
+      outer.addColorStop(0.55, `rgba(${C.core}, ${atmosA * 0.12})`);
       outer.addColorStop(1, 'transparent');
       ctx.fillStyle = outer;
       ctx.fillRect(0, 0, size, size);
 
       if (listen > 0.02) {
-        const haloR = size * (0.38 + Math.sin(t * 2.2) * 0.012) + amp * size * 0.02;
+        const haloR = size * (0.36 + Math.sin(t * 1.8) * 0.01) + amp * size * 0.015;
         const halo = ctx.createRadialGradient(
           size / 2,
           size / 2,
           haloR * 0.7,
           size / 2,
           size / 2,
-          haloR * 1.15,
+          haloR * 1.12,
         );
         halo.addColorStop(0, 'transparent');
-        halo.addColorStop(0.55, `rgba(56, 189, 248, ${0.04 * listen})`);
-        halo.addColorStop(0.85, `rgba(125, 211, 252, ${0.12 * listen + amp * 0.08})`);
+        halo.addColorStop(0.7, `rgba(${C.core}, ${0.06 * listen})`);
         halo.addColorStop(1, 'transparent');
         ctx.fillStyle = halo;
         ctx.beginPath();
-        ctx.arc(size / 2, size / 2, haloR * 1.15, 0, Math.PI * 2);
+        ctx.arc(size / 2, size / 2, haloR * 1.12, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -153,41 +159,31 @@ export function NetworkGlobe({
       );
       projected.sort((a, b) => a.depth - b.depth);
 
-      for (let r = 0; r < 4; r++) {
+      // Soft orbital rings
+      for (let r = 0; r < 3; r++) {
         const ringR =
-          size * (0.255 + r * 0.055) +
-          Math.sin(t * 1.2 + r * 0.9) * (2 + act * 4) +
-          amp * 3;
+          size * (0.26 + r * 0.055) +
+          Math.sin(t * 1.0 + r * 0.9) * (1.5 + act * 3) +
+          amp * 2;
         ctx.beginPath();
         ctx.ellipse(
           size / 2,
           size / 2,
           ringR,
-          ringR * (0.17 + r * 0.022),
-          Math.sin(t * 0.32 + r * 0.65) * (0.45 + act * 0.15),
+          ringR * (0.16 + r * 0.02),
+          Math.sin(t * 0.28 + r * 0.6) * (0.4 + act * 0.12),
           0,
           Math.PI * 2,
         );
-        ctx.strokeStyle = `rgba(56, 189, 248, ${0.11 - r * 0.02 + act * 0.1 + amp * 0.06})`;
-        ctx.lineWidth = 1 + act * 0.4;
+        ctx.strokeStyle = `rgba(${C.core}, ${0.08 - r * 0.015 + act * 0.07 + amp * 0.04})`;
+        ctx.lineWidth = 1;
         ctx.stroke();
       }
 
-      if (act > 0.05) {
-        for (let i = 0; i < 6; i++) {
-          const ang = (i / 6) * Math.PI * 2 + t * (0.12 + listen * 0.08);
-          const r1 = size * (0.31 + amp * 0.02);
-          ctx.beginPath();
-          ctx.arc(size / 2, size / 2, r1, ang, ang + 0.28 + amp * 0.08);
-          ctx.strokeStyle = `rgba(125, 211, 252, ${(0.1 + amp * 0.18) * act})`;
-          ctx.lineWidth = 1.15;
-          ctx.stroke();
-        }
-      }
-
-      const maxDist = 0.38 + act * 0.12;
+      // Links
+      const maxDist = 0.36 + act * 0.1;
       const n = pointsRef.current.length;
-      const maxLinks = act > 0.5 ? 4 : 3;
+      const maxLinks = act > 0.5 ? 3 : 2;
       for (let i = 0; i < n; i++) {
         let links = 0;
         for (let j = i + 1; j < n && links < maxLinks; j++) {
@@ -197,16 +193,16 @@ export function NetworkGlobe({
           const dy = a.oy - b.oy;
           const dz = a.oz - b.oz;
           const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          if (dist < maxDist && dist > 0.09) {
+          if (dist < maxDist && dist > 0.1) {
             const pa = projected[i];
             const pb = projected[j];
-            if (pa.depth > -0.55 && pb.depth > -0.55) {
-              const alpha = (0.09 + act * 0.2 + amp * 0.08) * (1 - dist / maxDist);
+            if (pa.depth > -0.5 && pb.depth > -0.5) {
+              const alpha = (0.06 + act * 0.14 + amp * 0.05) * (1 - dist / maxDist);
               ctx.beginPath();
               ctx.moveTo(pa.sx, pa.sy);
               ctx.lineTo(pb.sx, pb.sy);
-              ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
-              ctx.lineWidth = 0.75 + act * 0.25;
+              ctx.strokeStyle = `rgba(${C.core}, ${alpha})`;
+              ctx.lineWidth = 0.7;
               ctx.stroke();
               links++;
             }
@@ -214,88 +210,62 @@ export function NetworkGlobe({
         }
       }
 
+      // Points
       for (let i = 0; i < projected.length; i++) {
         const p = projected[i];
         const base = pointsRef.current[i];
         const pulse =
-          0.72 +
-          0.28 * Math.sin(t * 2.1 + base.pulse) +
-          amp * 0.22 * Math.sin(t * 5 + base.pulse);
-        const depthFactor = Math.max(0.12, (p.depth + 1) / 2);
-        const r = (1.4 + act * 0.85) * p.scale * pulse * (1 + amp * 0.35);
-
-        const spark = Math.sin(t * 3.1 + base.pulse * 2);
-        if (act > 0.3 && spark > 0.92) {
-          ctx.beginPath();
-          ctx.arc(p.sx, p.sy, r * 2.8, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(56, 189, 248, ${0.1 + amp * 0.08})`;
-          ctx.fill();
-        }
+          0.75 +
+          0.25 * Math.sin(t * 1.8 + base.pulse) +
+          amp * 0.15 * Math.sin(t * 4 + base.pulse);
+        const depthFactor = Math.max(0.15, (p.depth + 1) / 2);
+        const r = (1.2 + act * 0.6) * p.scale * pulse * (1 + amp * 0.25);
 
         ctx.beginPath();
         ctx.arc(p.sx, p.sy, r, 0, Math.PI * 2);
-        const bright = 0.25 + depthFactor * 0.7;
-        ctx.fillStyle = `rgba(${Math.round(120 + depthFactor * 40)}, ${Math.round(210 + depthFactor * 20)}, 252, ${bright})`;
+        const bright = 0.2 + depthFactor * 0.55;
+        ctx.fillStyle = `rgba(${C.soft}, ${bright})`;
         ctx.fill();
       }
 
-      const coreR = 16 + amp * 14 + sm.coreBoost * 8 + Math.sin(t * 2.5) * (1.5 + act * 2);
+      // Soft core
+      const coreR = 14 + amp * 10 + sm.coreBoost * 6 + Math.sin(t * 2.2) * (1 + act * 1.5);
       const core = ctx.createRadialGradient(
         size / 2,
         size / 2,
         0,
         size / 2,
         size / 2,
-        coreR * 3.2,
+        coreR * 2.8,
       );
-      core.addColorStop(0, `rgba(255, 255, 255, ${0.92 + amp * 0.06})`);
-      core.addColorStop(0.12, `rgba(224, 242, 254, ${0.75 + amp * 0.15})`);
-      core.addColorStop(0.28, `rgba(125, 211, 252, ${0.55 + amp * 0.25})`);
-      core.addColorStop(0.48, `rgba(56, 189, 248, ${0.35 + act * 0.2 + amp * 0.15})`);
-      core.addColorStop(0.7, `rgba(14, 165, 233, ${0.12 + act * 0.1})`);
+      core.addColorStop(0, `rgba(${C.white}, ${0.85 + amp * 0.08})`);
+      core.addColorStop(0.15, `rgba(${C.soft}, ${0.55 + amp * 0.12})`);
+      core.addColorStop(0.4, `rgba(${C.core}, ${0.28 + act * 0.15 + amp * 0.1})`);
+      core.addColorStop(0.7, `rgba(${C.core}, ${0.08 + act * 0.06})`);
       core.addColorStop(1, 'transparent');
       ctx.fillStyle = core;
       ctx.beginPath();
-      ctx.arc(size / 2, size / 2, coreR * 3.2, 0, Math.PI * 2);
+      ctx.arc(size / 2, size / 2, coreR * 2.8, 0, Math.PI * 2);
       ctx.fill();
 
-      if (act > 0.08) {
-        const pulseR = coreR * 1.75 + Math.sin(t * 3.6) * (4 + amp * 5);
+      if (act > 0.1) {
+        const pulseR = coreR * 1.6 + Math.sin(t * 3) * (3 + amp * 4);
         ctx.beginPath();
         ctx.arc(size / 2, size / 2, pulseR, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(125, 211, 252, ${(0.18 + amp * 0.28) * act})`;
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-
-        const pulseR2 = coreR * 2.15 + Math.sin(t * 2.8 + 1.2) * (3 + amp * 4);
-        ctx.beginPath();
-        ctx.arc(size / 2, size / 2, pulseR2, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(56, 189, 248, ${(0.08 + amp * 0.15) * act})`;
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(${C.mid}, ${(0.12 + amp * 0.18) * act})`;
+        ctx.lineWidth = 1.2;
         ctx.stroke();
       }
 
+      // Bottom rings
       const ringY = size * 0.82;
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 3; i++) {
         const rr =
-          30 + i * 24 + Math.sin(t * 1.9 + i * 0.8) * (1.2 + act * 4) + amp * 2;
+          28 + i * 22 + Math.sin(t * 1.6 + i * 0.8) * (1 + act * 3) + amp * 1.5;
         ctx.beginPath();
-        ctx.ellipse(size / 2, ringY, rr, rr * 0.11, 0, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(56, 189, 248, ${0.18 - i * 0.035 + act * 0.08 + amp * 0.04})`;
-        ctx.lineWidth = 1.15;
-        ctx.stroke();
-      }
-
-      if (listen > 0.05) {
-        const scanX = size / 2 + Math.sin(t * 1.6) * 40;
-        const scan = ctx.createLinearGradient(scanX - 30, ringY, scanX + 30, ringY);
-        scan.addColorStop(0, 'transparent');
-        scan.addColorStop(0.5, `rgba(125, 211, 252, ${0.15 * listen})`);
-        scan.addColorStop(1, 'transparent');
-        ctx.strokeStyle = scan as unknown as string;
-        ctx.beginPath();
-        ctx.ellipse(size / 2, ringY, 78, 78 * 0.11, 0, 0, Math.PI * 2);
-        ctx.lineWidth = 2;
+        ctx.ellipse(size / 2, ringY, rr, rr * 0.1, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(${C.core}, ${0.12 - i * 0.03 + act * 0.06})`;
+        ctx.lineWidth = 1;
         ctx.stroke();
       }
 
@@ -309,11 +279,10 @@ export function NetworkGlobe({
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
       <div
-        className="absolute inset-0 rounded-full animate-breathe"
+        className="absolute inset-0 rounded-full"
         style={{
-          background:
-            'radial-gradient(circle, rgba(14,165,233,0.14) 0%, rgba(56,189,248,0.05) 38%, transparent 70%)',
-          filter: 'blur(28px)',
+          background: `radial-gradient(circle, rgba(${C.core}, 0.08) 0%, rgba(${C.core}, 0.03) 40%, transparent 70%)`,
+          filter: 'blur(24px)',
         }}
       />
       <canvas ref={canvasRef} className="block relative z-10" />
