@@ -1,7 +1,7 @@
 /**
  * ELYRA / LUNA TTS — voz neural máxima naturalidad (edge-tts)
- * Calibrado para perfil Luna: cálida, adulta joven, conversacional, no locutora.
- * Preferencia: tts_speak.py → CLI edge-tts
+ * LUNA V2: prosodia dinámica + énfasis contextual + pausas naturales
+ * Perfil: cálida, adulta joven, conversacional, no locutora.
  */
 const path = require('path');
 const fs = require('fs');
@@ -11,7 +11,7 @@ const { exec, execSync, spawn } = require('child_process');
 const execAsync = promisify(exec);
 
 // ─── Perfil Luna (ADN vocal) ───────────────────────────────────────────────
-const EDGE_VOICE = 'es-MX-DaliaNeural'; // cálida, clara, latina
+const EDGE_VOICE = 'es-MX-DaliaNeural';
 const EDGE_FALLBACKS = [
   'es-MX-RenataNeural',
   'es-MX-CarlotaNeural',
@@ -20,10 +20,18 @@ const EDGE_FALLBACKS = [
   'es-ES-ElviraNeural',
 ];
 
-/* Calibración Luna: un poco más lenta, tono medio-cálido, energía moderada-baja */
-const DEFAULT_RATE = '-10%';   // ≈ 145-155 wpm percibido
-const DEFAULT_PITCH = '+1Hz';  // medio, ligeramente cálido
+const DEFAULT_RATE = '-10%';
+const DEFAULT_PITCH = '+1Hz';
 const DEFAULT_VOLUME = '+0%';
+
+// Tasas según tipo de respuesta (edge-tts solo acepta un rate global por llamada)
+const RATE_BY_TYPE = {
+  confirm: '-6%',      // un poco más ágil
+  short: '-8%',
+  explain: '-12%',     // más pausada
+  warning: '-11%',
+  default: '-10%',
+};
 
 let edgeTtsAvailable = null;
 
@@ -71,25 +79,13 @@ function checkEdgeTts() {
   return edgeTtsAvailable;
 }
 
-// ─── TEXT_NORMALIZER (capa crítica para naturalidad) ───────────────────────
+// ─── TEXT_NORMALIZER ───────────────────────────────────────────────────────
 
 const UNITS = {
-  kg: 'kilogramos',
-  g: 'gramos',
-  mg: 'miligramos',
-  t: 'toneladas',
-  l: 'litros',
-  ml: 'mililitros',
-  m: 'metros',
-  cm: 'centímetros',
-  mm: 'milímetros',
-  km: 'kilómetros',
-  '%': 'por ciento',
-  '°c': 'grados',
-  '°c.': 'grados',
-  gb: 'gigas',
-  mb: 'megas',
-  kb: 'kilos',
+  kg: 'kilogramos', g: 'gramos', mg: 'miligramos', t: 'toneladas',
+  l: 'litros', ml: 'mililitros', m: 'metros', cm: 'centímetros',
+  mm: 'milímetros', km: 'kilómetros', '%': 'por ciento',
+  '°c': 'grados', gb: 'gigas', mb: 'megas', kb: 'kilos',
 };
 
 const ONES = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
@@ -124,18 +120,14 @@ function numberToSpanish(n) {
     const mil = m === 1 ? 'mil' : numberToSpanish(m) + ' mil';
     return r === 0 ? mil : mil + ' ' + numberToSpanish(r);
   }
-  // para números grandes devolvemos el original (evita errores)
   return String(n);
 }
 
 function normalizeNumbers(text) {
-  // porcentajes: 23.5% → veintitrés punto cinco por ciento
-  text = text.replace(/(\d+)[.,](\d+)\s*%/g, (_, a, b) => {
-    return numberToSpanish(a) + ' punto ' + numberToSpanish(b) + ' por ciento';
-  });
+  text = text.replace(/(\d+)[.,](\d+)\s*%/g, (_, a, b) =>
+    numberToSpanish(a) + ' punto ' + numberToSpanish(b) + ' por ciento');
   text = text.replace(/(\d+)\s*%/g, (_, n) => numberToSpanish(n) + ' por ciento');
 
-  // unidades: 15 kg → quince kilogramos
   text = text.replace(/(\d+)[.,](\d+)\s*(kg|g|mg|t|l|ml|m|cm|mm|km|gb|mb|kb)\b/gi, (_, a, b, u) => {
     const unit = UNITS[u.toLowerCase()] || u;
     return numberToSpanish(a) + ' punto ' + numberToSpanish(b) + ' ' + unit;
@@ -145,12 +137,9 @@ function normalizeNumbers(text) {
     return numberToSpanish(n) + ' ' + unit;
   });
 
-  // grados
   text = text.replace(/(\d+)\s*°\s*C\b/gi, (_, n) => numberToSpanish(n) + ' grados');
 
-  // números enteros simples (1-999) en contexto hablado (evitar años y códigos largos)
   text = text.replace(/\b(\d{1,3})\b/g, (match, n, offset, full) => {
-    // no tocar si parece año (19xx / 20xx) o parte de código
     const before = full.slice(Math.max(0, offset - 2), offset);
     const after = full.slice(offset + match.length, offset + match.length + 2);
     if (/\d/.test(before) || /\d/.test(after)) return match;
@@ -188,7 +177,6 @@ function cleanForSpeech(text) {
   if (!text) return '';
   let t = String(text);
 
-  // Errores de sistema → mensajes hablables
   if (/rate limit|429|tokens per day|TPD/i.test(t)) {
     return 'He alcanzado un límite temporal. Espera un momento e inténtalo de nuevo.';
   }
@@ -196,7 +184,6 @@ function cleanForSpeech(text) {
     return 'Hubo un problema al conectar con la inteligencia. Inténtalo de nuevo en unos segundos.';
   }
 
-  // Quitar markdown y código
   t = t.replace(/```[\s\S]*?```/g, ' ');
   t = t.replace(/`([^`]+)`/g, '$1');
   t = t.replace(/\*\*?([^*]+)\*\*?/g, '$1');
@@ -206,7 +193,6 @@ function cleanForSpeech(text) {
   t = t.replace(/^[-•*]\s+/gm, '');
   t = t.replace(/\|\s*/g, ', ');
 
-  // URLs, rutas, símbolos técnicos
   t = t.replace(/https?:\/\/[^\s]+/g, ' un enlace ');
   t = t.replace(/[A-Za-z]:\\[^\s\]"']+/g, ' la carpeta ');
   t = t.replace(/\\+/g, ' ');
@@ -219,11 +205,9 @@ function cleanForSpeech(text) {
   t = t.replace(/gsk_[a-zA-Z0-9]+/g, ' ');
   t = t.replace(/nvapi-[a-zA-Z0-9_-]+/g, ' ');
 
-  // Normalización lingüística
   t = normalizeAbbreviations(t);
   t = normalizeNumbers(t);
 
-  // Frases de sistema más naturales
   t = t.replace(/\bListo\.?\b/gi, 'Listo.');
   t = t.replace(/\bHecho\.?\b/gi, 'Hecho.');
   t = t.replace(/\bCorrecto\.?\b/gi, 'Correcto.');
@@ -239,29 +223,94 @@ function cleanForSpeech(text) {
   return t;
 }
 
-function humanizePunctuation(text) {
+// ─── PROSODY_ENGINE + EMPHASIS (LUNA V2) ────────────────────────────────────
+
+function detectResponseType(text) {
+  const t = text.toLowerCase().trim();
+  if (t.length < 45 && /^(listo|hecho|perfecto|de acuerdo|vale|sí|correcto|ok|ya está|abierto|cerrado)/i.test(t)) {
+    return 'confirm';
+  }
+  if (t.length < 70) return 'short';
+  if (/cuidado|atención|error|falló|no pude|problema|advertencia|importante/i.test(t)) {
+    return 'warning';
+  }
+  if (t.length > 160 || /porque|explico|detalles|paso a paso|primero|después/i.test(t)) {
+    return 'explain';
+  }
+  return 'default';
+}
+
+function applyEmphasis(text) {
+  // Énfasis sutil: rodear números y palabras clave con micro-pausas
+  // edge-tts interpreta "..." y comas como pausas naturales
   let t = text;
+
+  // Números ya convertidos a texto → ligera pausa antes
+  t = t.replace(
+    /\b(cero|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|veinte|treinta|cuarenta|cincuenta|cien|mil|kilogramos|gramos|por ciento|grados)\b/gi,
+    (m) => ' ' + m + ' ',
+  );
+
+  // Palabras de importancia contextual
+  const important = [
+    'error', 'falló', 'importante', 'cuidado', 'atención',
+    'listo', 'hecho', 'completo', 'encontré', 'superan',
+  ];
+  for (const w of important) {
+    const re = new RegExp('\\b(' + w + ')\\b', 'gi');
+    t = t.replace(re, (m) => m); // se mantiene, la pausa la da el contexto
+  }
+
+  return t.replace(/\s+/g, ' ').trim();
+}
+
+function applyProsody(text) {
+  let t = text;
+
+  // Espaciado correcto alrededor de puntuación
   t = t.replace(/([.,;:!?])([A-Za-zÁÉÍÓÚáéíóúñÑ0-9])/g, '$1 $2');
-  t = t.replace(/\.{2,}/g, '.');
+  t = t.replace(/\.{2,}/g, '...');
   t = t.replace(/!{2,}/g, '!');
   t = t.replace(/\?{2,}/g, '?');
   t = t.replace(/\s+y\s+/gi, ', y ');
   t = t.replace(/,\s*,/g, ',');
 
-  // Cortar frases largas antes de conectores (mejora prosodia percibida)
+  // Cortar frases largas antes de conectores (crea pausas naturales)
   t = t.replace(
-    /([^.!?]{60,}?)\s+(y|pero|aunque|además|también|entonces|así que|porque|cuando|donde)\s+/gi,
+    /([^.!?]{55,}?)\s+(y|pero|aunque|además|también|entonces|así que|porque|cuando|donde|mientras)\s+/gi,
     '$1. $2 ',
   );
+
+  // Dos puntos y punto y coma → pausa de frase
   t = t.replace(/:\s*/g, '. ');
   t = t.replace(/;/g, '.');
 
-  // Evitar gritos en mayúsculas
+  // Evitar gritos
   t = t.replace(/\b([A-ZÁÉÍÓÚÑ]{5,})\b/g, (m) => m.charAt(0) + m.slice(1).toLowerCase());
+
+  // Micro-pausas conversacionales después de confirmaciones cortas
+  t = t.replace(/^(Listo|Hecho|Perfecto|Vale|De acuerdo)\.\s*/i, '$1. ');
+
+  // Separar ideas cuando hay más de una oración densa
+  t = t.replace(/\.\s+([A-ZÁÉÍÓÚÑ])/g, '. $1');
 
   t = t.replace(/\s+/g, ' ').trim();
   if (t && !/[.!?…]$/.test(t)) t += '.';
+
   return t;
+}
+
+function prepareForSpeech(rawText) {
+  let t = cleanForSpeech(rawText);
+  if (!t) return { text: '', type: 'default', rate: DEFAULT_RATE };
+
+  t = applyEmphasis(t);
+  t = applyProsody(t);
+
+  const type = detectResponseType(t);
+  const rate = RATE_BY_TYPE[type] || DEFAULT_RATE;
+
+  return { text: t, type, rate };
 }
 
 // ─── Síntesis ──────────────────────────────────────────────────────────────
@@ -291,25 +340,17 @@ function runPythonTts(text, outFile, cfg) {
 
     const args = [
       script,
-      '--text',
-      text,
-      '--out',
-      outFile,
-      '--voice',
-      cfg.edgeVoice || EDGE_VOICE,
-      '--rate',
-      cfg.rate || DEFAULT_RATE,
-      '--pitch',
-      cfg.pitch || DEFAULT_PITCH,
-      '--volume',
-      cfg.volume || DEFAULT_VOLUME,
+      '--text', text,
+      '--out', outFile,
+      '--voice', cfg.edgeVoice || EDGE_VOICE,
+      '--rate', cfg.rate || DEFAULT_RATE,
+      '--pitch', cfg.pitch || DEFAULT_PITCH,
+      '--volume', cfg.volume || DEFAULT_VOLUME,
     ];
 
     const child = spawn(py, args, { windowsHide: true });
     let err = '';
-    child.stderr.on('data', (d) => {
-      err += d.toString();
-    });
+    child.stderr.on('data', (d) => { err += d.toString(); });
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0 && fs.existsSync(outFile) && fs.statSync(outFile).size > 64) {
@@ -348,42 +389,37 @@ async function synthesizeEdgeCli(text, cfg) {
     try {
       await synthesizeOnceCli(bin, voice, rate, pitch, volume, text, outFile);
       const buf = fs.readFileSync(outFile);
-      try {
-        fs.unlinkSync(outFile);
-      } catch {}
+      try { fs.unlinkSync(outFile); } catch {}
       return 'data:audio/mpeg;base64,' + buf.toString('base64');
     } catch (e) {
       lastErr = e;
-      try {
-        if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
-      } catch {}
+      try { if (fs.existsSync(outFile)) fs.unlinkSync(outFile); } catch {}
     }
   }
   throw lastErr || new Error('Fallo TTS');
 }
 
 async function synthesizeToBase64(text, options = {}) {
-  const cfg = { ...readTtsConfig(), ...options };
-  const safeText = humanizePunctuation(cleanForSpeech(text));
-  if (!safeText) throw new Error('Texto vacío tras limpiar');
+  const prepared = prepareForSpeech(text);
+  if (!prepared.text) throw new Error('Texto vacío tras limpiar');
+
+  const cfg = {
+    ...readTtsConfig(),
+    ...options,
+    rate: options.rate || prepared.rate, // usa rate contextual de V2
+  };
 
   const tmpDir = os.tmpdir();
   const outFile = path.join(tmpDir, 'elyra-tts-py-' + Date.now() + '.mp3');
 
-  // 1) Python helper (mejor chunking)
   try {
-    await runPythonTts(safeText, outFile, cfg);
+    await runPythonTts(prepared.text, outFile, cfg);
     const buf = fs.readFileSync(outFile);
-    try {
-      fs.unlinkSync(outFile);
-    } catch {}
+    try { fs.unlinkSync(outFile); } catch {}
     return 'data:audio/mpeg;base64,' + buf.toString('base64');
   } catch (e) {
-    try {
-      if (fs.existsSync(outFile)) fs.unlinkSync(outFile);
-    } catch {}
-    // 2) CLI fallback
-    return synthesizeEdgeCli(safeText, cfg);
+    try { if (fs.existsSync(outFile)) fs.unlinkSync(outFile); } catch {}
+    return synthesizeEdgeCli(prepared.text, cfg);
   }
 }
 
@@ -399,7 +435,7 @@ function ttsStatus() {
     rate: cfg.rate,
     pitch: cfg.pitch,
     volume: cfg.volume,
-    profile: 'luna-v1',
+    profile: 'luna-v2',
   };
 }
 
@@ -407,7 +443,8 @@ module.exports = {
   synthesizeToBase64,
   checkEdgeTts,
   cleanForSpeech,
-  humanizePunctuation,
+  humanizePunctuation: applyProsody,
+  prepareForSpeech,
   normalizeNumbers,
   ttsStatus,
   VOICE: EDGE_VOICE,

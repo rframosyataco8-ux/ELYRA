@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """
 ELYRA / LUNA TTS helper — síntesis neural natural (edge-tts).
-Calibrado para perfil Luna: cálida, conversacional, no locutora.
-
-Uso:
-  python tts_speak.py --text "Hola" --out out.mp3
-  python tts_speak.py --text "Hola" --out out.mp3 --voice es-MX-DaliaNeural --rate -10% --pitch +1Hz
+LUNA V2: chunks más cortos + mejor ritmo conversacional.
 """
 import argparse
 import asyncio
@@ -50,12 +46,11 @@ def humanize(text: str) -> str:
     if not t:
         return ""
     t = re.sub(r"([.,;:!?])([A-Za-zÁÉÍÓÚáéíóúñÑ0-9])", r"\1 \2", t)
-    t = re.sub(r"\.{2,}", ".", t)
+    t = re.sub(r"\.{2,}", "...", t)
     t = re.sub(r"\s+y\s+", ", y ", t, flags=re.I)
     t = re.sub(r",\s*,", ",", t)
-    # Cortar frases largas antes de conectores (mejora prosodia)
     t = re.sub(
-        r"([^.!?]{60,}?)\s+(y|pero|aunque|además|también|entonces|así que|porque|cuando)\s+",
+        r"([^.!?]{55,}?)\s+(y|pero|aunque|además|también|entonces|así que|porque|cuando)\s+",
         r"\1. \2 ",
         t,
         flags=re.I,
@@ -68,9 +63,9 @@ def humanize(text: str) -> str:
     return t
 
 
-def split_chunks(text: str, max_len: int = 150):
-    """Chunks más cortos → mejor ritmo conversacional."""
-    parts = re.split(r"(?<=[.!?])\s+", text)
+def split_chunks(text: str, max_len: int = 130):
+    """Chunks más cortos = mejor ritmo y menos monotonía."""
+    parts = re.split(r"(?<=[.!?…])\s+", text)
     parts = [p.strip() for p in parts if p.strip()]
     if not parts:
         return [text]
