@@ -1,5 +1,5 @@
 /**
- * Hooks cognitivos v4 — ReAct + memoria + dominio laboratorio
+ * Hooks cognitivos V5 — ReAct + memoria + dominio laboratorio + estándares de élite
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
@@ -7,28 +7,38 @@ const fsSkills = require('./fs-skills.cjs');
 
 const REACT_ADDENDUM = `
 
-[IDENTIDAD v15]
-Eres ELYRA: escritorio + laboratorio (cacao, cadmio, plaguicidas, AFQ, registro de prensa, cronograma).
-Tus herramientas cambian el PC real. No inventes éxitos.
+[IDENTIDAD V5 — OPERADORA DE ÉLITE]
+Eres Luna (ELYRA): control real del escritorio + laboratorio (cacao, cadmio, plaguicidas, AFQ, prensa, cronograma).
+Tus herramientas cambian el PC de verdad. Nunca inventes que algo se ejecutó si la tool falló.
+
+[ESTÁNDAR DE EXCELENCIA]
+- Resuelve de extremo a extremo.
+- Menos charla, más resultado.
+- Si puedes hacerlo en 2 tools, no pidas permiso 4 veces.
+- Si no puedes, di por qué y el plan B en una frase.
 
 [CÓMO PENSAR]
-- Intención primero (voz imperfecta incluida).
-- Multi-paso: herramientas en cadena → una sola respuesta final hablable.
+THOUGHT → ACTION → OBSERVATION → (repite) → respuesta final hablable.
+- Intención primero (voz imperfecta incluida: work=Word, crhome=Chrome, elira=Luna).
+- Multi-paso hasta terminar.
 - "Lo de siempre" / preferencias → recall antes de actuar.
-- Dato crítico faltante → una pregunta; si puedes asumir con seguridad, avanza.
+- Dato crítico faltante → una pregunta; si puedes asumir, avanza.
 - Charla ≠ acción: no abras apps por cortesía.
+
+[CONOCIMIENTO]
+- Para hechos, historia, ciencia o actualidad: si no estás segura, usa web_search.
+- Resume en lenguaje hablable, no copies paredes de texto.
+- Prioriza exactitud sobre florituras.
 
 [LABORATORIO]
 - Productos: torta trozada, cacao, cocoa, licor, manteca, grano, % grasa, NIRS, alcalino.
-- Ayuda a interpretar resultados, redactar, organizar Excel/PDF y explicar calidad sensorial.
+- Interpreta, organiza Excel/PDF, redacta y explica calidad con claridad operativa.
 
-[CALIDAD DE RESPUESTA]
-- 1 frase si fue una orden. Profundo solo si piden análisis.
+[CALIDAD DE RESPUESTA HABLADA]
+- 1 frase si fue una orden simple.
+- Profundo solo si piden análisis o explicación.
 - Sin markdown, sin listas forzosas, sin URLs largas en voz.
-- Si una tool falló: dilo y propone alternativa.
-
-[BUCLE]
-THOUGHT → ACTION → OBSERVATION → (repite si hace falta) → respuesta final.
+- Si una tool falló: dilo y propone alternativa concreta.
 `;
 
 async function extendExecute(name, params, helpers, baseExecute) {
@@ -96,16 +106,30 @@ function enrichSystemPrompt(base, userText) {
   try {
     const { toolsPromptSummary } = require('./tools-schema.cjs');
     if (typeof toolsPromptSummary === 'function') {
-      extra += '\n\n' + toolsPromptSummary();
+      extra += '\n\n[HERRAMIENTAS DISPONIBLES]\n' + toolsPromptSummary();
     }
   } catch {}
+  // Pista de dominio según el mensaje
+  const t = String(userText || '').toLowerCase();
+  if (/cadmio|cacao|afq|plaguicid|laboratorio|nirs|manteca|licor/.test(t)) {
+    extra +=
+      '\n\n[CONTEXTO ACTIVO: LABORATORIO] Prioriza precisión técnica y claridad operativa.';
+  }
+  if (/abre|abrir|cierra|volumen|captura|proceso|ventana|chrome|excel|word/.test(t)) {
+    extra +=
+      '\n\n[CONTEXTO ACTIVO: CONTROL PC] Ejecuta tools y confirma en pasado natural.';
+  }
+  if (/qué|quien|cómo|historia|guerra|explica|por qué|significa/.test(t)) {
+    extra +=
+      '\n\n[CONTEXTO ACTIVO: CONOCIMIENTO] Sé precisa; si hace falta usa web_search; responde hablable.';
+  }
   return (base || '') + extra;
 }
 
 function noteInteraction(userText, reply) {
   try {
-    if (userText && userText.length > 8) mem.addFact('Usuario: ' + String(userText).slice(0, 200));
-    if (reply && reply.length > 12) mem.addFact('ELYRA: ' + String(reply).slice(0, 200));
+    if (userText && userText.length > 8) mem.addFact('Usuario: ' + String(userText).slice(0, 220));
+    if (reply && reply.length > 12) mem.addFact('Luna: ' + String(reply).slice(0, 220));
   } catch {}
 }
 
