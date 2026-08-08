@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
-ELYRA TTS helper — síntesis neural natural (edge-tts).
+ELYRA / LUNA TTS helper — síntesis neural natural (edge-tts).
+Calibrado para perfil Luna: cálida, conversacional, no locutora.
+
 Uso:
   python tts_speak.py --text "Hola" --out out.mp3
-  python tts_speak.py --text "Hola" --out out.mp3 --voice es-MX-DaliaNeural --rate -8% --pitch +2Hz
+  python tts_speak.py --text "Hola" --out out.mp3 --voice es-MX-DaliaNeural --rate -10% --pitch +1Hz
 """
 import argparse
 import asyncio
@@ -51,9 +53,9 @@ def humanize(text: str) -> str:
     t = re.sub(r"\.{2,}", ".", t)
     t = re.sub(r"\s+y\s+", ", y ", t, flags=re.I)
     t = re.sub(r",\s*,", ",", t)
-    # Cortar frases largas antes de conectores
+    # Cortar frases largas antes de conectores (mejora prosodia)
     t = re.sub(
-        r"([^.!?]{70,}?)\s+(y|pero|aunque|además|también|entonces|así que|porque|cuando)\s+",
+        r"([^.!?]{60,}?)\s+(y|pero|aunque|además|también|entonces|así que|porque|cuando)\s+",
         r"\1. \2 ",
         t,
         flags=re.I,
@@ -66,7 +68,8 @@ def humanize(text: str) -> str:
     return t
 
 
-def split_chunks(text: str, max_len: int = 160):
+def split_chunks(text: str, max_len: int = 150):
+    """Chunks más cortos → mejor ritmo conversacional."""
     parts = re.split(r"(?<=[.!?])\s+", text)
     parts = [p.strip() for p in parts if p.strip()]
     if not parts:
@@ -99,7 +102,6 @@ async def synthesize(text: str, out_path: str, voice: str, rate: str, pitch: str
         sys.exit(3)
 
     chunks = split_chunks(spoken)
-    # Una sola pasada si cabe; si no, concatena MP3 crudos
     if len(chunks) == 1:
         communicate = edge_tts.Communicate(chunks[0], voice, rate=rate, pitch=pitch, volume=volume)
         await communicate.save(out_path)
@@ -133,8 +135,8 @@ def main():
     parser.add_argument("--text", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--voice", default="es-MX-DaliaNeural")
-    parser.add_argument("--rate", default="-8%")
-    parser.add_argument("--pitch", default="+2Hz")
+    parser.add_argument("--rate", default="-10%")
+    parser.add_argument("--pitch", default="+1Hz")
     parser.add_argument("--volume", default="+0%")
     args = parser.parse_args()
     try:

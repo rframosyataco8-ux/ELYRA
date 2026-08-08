@@ -1,7 +1,7 @@
 /**
- * ELYRA TTS — voz neural máxima naturalidad (sin ElevenLabs)
- * Preferencia: tts_speak.py (edge-tts) → CLI edge-tts → error claro
- * Voz: es-MX-DaliaNeural calibrada para conversación latina.
+ * ELYRA / LUNA TTS — voz neural máxima naturalidad (edge-tts)
+ * Calibrado para perfil Luna: cálida, adulta joven, conversacional, no locutora.
+ * Preferencia: tts_speak.py → CLI edge-tts
  */
 const path = require('path');
 const fs = require('fs');
@@ -10,7 +10,8 @@ const { promisify } = require('util');
 const { exec, execSync, spawn } = require('child_process');
 const execAsync = promisify(exec);
 
-const EDGE_VOICE = 'es-MX-DaliaNeural';
+// ─── Perfil Luna (ADN vocal) ───────────────────────────────────────────────
+const EDGE_VOICE = 'es-MX-DaliaNeural'; // cálida, clara, latina
 const EDGE_FALLBACKS = [
   'es-MX-RenataNeural',
   'es-MX-CarlotaNeural',
@@ -19,9 +20,9 @@ const EDGE_FALLBACKS = [
   'es-ES-ElviraNeural',
 ];
 
-/* Calibración fina: un poco más lenta, tono cálido */
-const DEFAULT_RATE = '-8%';
-const DEFAULT_PITCH = '+2Hz';
+/* Calibración Luna: un poco más lenta, tono medio-cálido, energía moderada-baja */
+const DEFAULT_RATE = '-10%';   // ≈ 145-155 wpm percibido
+const DEFAULT_PITCH = '+1Hz';  // medio, ligeramente cálido
 const DEFAULT_VOLUME = '+0%';
 
 let edgeTtsAvailable = null;
@@ -70,10 +71,132 @@ function checkEdgeTts() {
   return edgeTtsAvailable;
 }
 
+// ─── TEXT_NORMALIZER (capa crítica para naturalidad) ───────────────────────
+
+const UNITS = {
+  kg: 'kilogramos',
+  g: 'gramos',
+  mg: 'miligramos',
+  t: 'toneladas',
+  l: 'litros',
+  ml: 'mililitros',
+  m: 'metros',
+  cm: 'centímetros',
+  mm: 'milímetros',
+  km: 'kilómetros',
+  '%': 'por ciento',
+  '°c': 'grados',
+  '°c.': 'grados',
+  gb: 'gigas',
+  mb: 'megas',
+  kb: 'kilos',
+};
+
+const ONES = ['', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
+  'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve'];
+const TENS = ['', '', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta', 'ochenta', 'noventa'];
+const HUNDREDS = ['', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos',
+  'seiscientos', 'setecientos', 'ochocientos', 'novecientos'];
+
+function numberToSpanish(n) {
+  n = Math.floor(Number(n));
+  if (isNaN(n)) return String(n);
+  if (n === 0) return 'cero';
+  if (n === 100) return 'cien';
+  if (n < 0) return 'menos ' + numberToSpanish(-n);
+  if (n < 20) return ONES[n];
+  if (n < 100) {
+    const t = Math.floor(n / 10);
+    const o = n % 10;
+    if (o === 0) return TENS[t];
+    if (t === 2) return 'veinti' + ONES[o];
+    return TENS[t] + ' y ' + ONES[o];
+  }
+  if (n < 1000) {
+    const h = Math.floor(n / 100);
+    const r = n % 100;
+    if (r === 0) return HUNDREDS[h];
+    return HUNDREDS[h] + ' ' + numberToSpanish(r);
+  }
+  if (n < 1000000) {
+    const m = Math.floor(n / 1000);
+    const r = n % 1000;
+    const mil = m === 1 ? 'mil' : numberToSpanish(m) + ' mil';
+    return r === 0 ? mil : mil + ' ' + numberToSpanish(r);
+  }
+  // para números grandes devolvemos el original (evita errores)
+  return String(n);
+}
+
+function normalizeNumbers(text) {
+  // porcentajes: 23.5% → veintitrés punto cinco por ciento
+  text = text.replace(/(\d+)[.,](\d+)\s*%/g, (_, a, b) => {
+    return numberToSpanish(a) + ' punto ' + numberToSpanish(b) + ' por ciento';
+  });
+  text = text.replace(/(\d+)\s*%/g, (_, n) => numberToSpanish(n) + ' por ciento');
+
+  // unidades: 15 kg → quince kilogramos
+  text = text.replace(/(\d+)[.,](\d+)\s*(kg|g|mg|t|l|ml|m|cm|mm|km|gb|mb|kb)\b/gi, (_, a, b, u) => {
+    const unit = UNITS[u.toLowerCase()] || u;
+    return numberToSpanish(a) + ' punto ' + numberToSpanish(b) + ' ' + unit;
+  });
+  text = text.replace(/(\d+)\s*(kg|g|mg|t|l|ml|m|cm|mm|km|gb|mb|kb)\b/gi, (_, n, u) => {
+    const unit = UNITS[u.toLowerCase()] || u;
+    return numberToSpanish(n) + ' ' + unit;
+  });
+
+  // grados
+  text = text.replace(/(\d+)\s*°\s*C\b/gi, (_, n) => numberToSpanish(n) + ' grados');
+
+  // números enteros simples (1-999) en contexto hablado (evitar años y códigos largos)
+  text = text.replace(/\b(\d{1,3})\b/g, (match, n, offset, full) => {
+    // no tocar si parece año (19xx / 20xx) o parte de código
+    const before = full.slice(Math.max(0, offset - 2), offset);
+    const after = full.slice(offset + match.length, offset + match.length + 2);
+    if (/\d/.test(before) || /\d/.test(after)) return match;
+    if (n.length === 4 && (n.startsWith('19') || n.startsWith('20'))) return match;
+    const num = parseInt(n, 10);
+    if (num >= 0 && num <= 999) return numberToSpanish(num);
+    return match;
+  });
+
+  return text;
+}
+
+function normalizeAbbreviations(text) {
+  const map = [
+    [/\bOK\b/gi, 'de acuerdo'],
+    [/\bPDF\b/g, 'pe de efe'],
+    [/\bURL\b/g, 'enlace'],
+    [/\bAPI\b/g, 'a pe i'],
+    [/\bCPU\b/g, 'procesador'],
+    [/\bRAM\b/g, 'memoria'],
+    [/\bGB\b/g, 'gigas'],
+    [/\bMB\b/g, 'megas'],
+    [/\bUSB\b/g, 'u ese be'],
+    [/\bHTML\b/g, 'hache te eme ele'],
+    [/\bCSV\b/g, 'ce ese uve'],
+    [/\bJSON\b/g, 'yeison'],
+    [/\bAI\b/g, 'inteligencia artificial'],
+    [/\bIA\b/g, 'inteligencia artificial'],
+  ];
+  for (const [re, rep] of map) text = text.replace(re, rep);
+  return text;
+}
+
 function cleanForSpeech(text) {
   if (!text) return '';
   let t = String(text);
 
+  // Errores de sistema → mensajes hablables
+  if (/rate limit|429|tokens per day|TPD/i.test(t)) {
+    return 'He alcanzado un límite temporal. Espera un momento e inténtalo de nuevo.';
+  }
+  if (/LLM\s*\d{3}|Error del modelo/i.test(t) && t.length > 120) {
+    return 'Hubo un problema al conectar con la inteligencia. Inténtalo de nuevo en unos segundos.';
+  }
+
+  // Quitar markdown y código
   t = t.replace(/```[\s\S]*?```/g, ' ');
   t = t.replace(/`([^`]+)`/g, '$1');
   t = t.replace(/\*\*?([^*]+)\*\*?/g, '$1');
@@ -83,13 +206,7 @@ function cleanForSpeech(text) {
   t = t.replace(/^[-•*]\s+/gm, '');
   t = t.replace(/\|\s*/g, ', ');
 
-  if (/rate limit|429|tokens per day|TPD/i.test(t)) {
-    return 'He alcanzado un límite temporal. Espera un momento e inténtalo de nuevo.';
-  }
-  if (/LLM\s*\d{3}|Error del modelo/i.test(t) && t.length > 120) {
-    return 'Hubo un problema al conectar con la inteligencia. Inténtalo de nuevo en unos segundos.';
-  }
-
+  // URLs, rutas, símbolos técnicos
   t = t.replace(/https?:\/\/[^\s]+/g, ' un enlace ');
   t = t.replace(/[A-Za-z]:\\[^\s\]"']+/g, ' la carpeta ');
   t = t.replace(/\\+/g, ' ');
@@ -102,18 +219,11 @@ function cleanForSpeech(text) {
   t = t.replace(/gsk_[a-zA-Z0-9]+/g, ' ');
   t = t.replace(/nvapi-[a-zA-Z0-9_-]+/g, ' ');
 
-  t = t.replace(/\bOK\b/gi, 'de acuerdo');
-  t = t.replace(/\bPDF\b/g, 'pe de efe');
-  t = t.replace(/\bURL\b/g, 'enlace');
-  t = t.replace(/\bAPI\b/g, 'a pe i');
-  t = t.replace(/\bCPU\b/g, 'procesador');
-  t = t.replace(/\bRAM\b/g, 'memoria');
-  t = t.replace(/\bGB\b/g, 'gigas');
-  t = t.replace(/\bMB\b/g, 'megas');
-  t = t.replace(/\b(\d+)\s*%/g, '$1 por ciento');
-  t = t.replace(/\b(\d+)\s*°\s*C\b/gi, '$1 grados');
+  // Normalización lingüística
+  t = normalizeAbbreviations(t);
+  t = normalizeNumbers(t);
 
-  // Frases de sistema más hablables
+  // Frases de sistema más naturales
   t = t.replace(/\bListo\.?\b/gi, 'Listo.');
   t = t.replace(/\bHecho\.?\b/gi, 'Hecho.');
   t = t.replace(/\bCorrecto\.?\b/gi, 'Correcto.');
@@ -137,18 +247,24 @@ function humanizePunctuation(text) {
   t = t.replace(/\?{2,}/g, '?');
   t = t.replace(/\s+y\s+/gi, ', y ');
   t = t.replace(/,\s*,/g, ',');
+
+  // Cortar frases largas antes de conectores (mejora prosodia percibida)
   t = t.replace(
-    /([^.!?]{65,}?)\s+(y|pero|aunque|además|también|entonces|así que|porque|cuando|donde)\s+/gi,
+    /([^.!?]{60,}?)\s+(y|pero|aunque|además|también|entonces|así que|porque|cuando|donde)\s+/gi,
     '$1. $2 ',
   );
   t = t.replace(/:\s*/g, '. ');
   t = t.replace(/;/g, '.');
+
+  // Evitar gritos en mayúsculas
   t = t.replace(/\b([A-ZÁÉÍÓÚÑ]{5,})\b/g, (m) => m.charAt(0) + m.slice(1).toLowerCase());
-  t = t.replace(/\b100\b/g, 'cien');
+
   t = t.replace(/\s+/g, ' ').trim();
   if (t && !/[.!?…]$/.test(t)) t += '.';
   return t;
 }
+
+// ─── Síntesis ──────────────────────────────────────────────────────────────
 
 function resolveBin(mode) {
   if (mode === 'python') return 'python -m edge_tts';
@@ -254,7 +370,7 @@ async function synthesizeToBase64(text, options = {}) {
   const tmpDir = os.tmpdir();
   const outFile = path.join(tmpDir, 'elyra-tts-py-' + Date.now() + '.mp3');
 
-  // 1) Python helper (mejor prosodia / chunks)
+  // 1) Python helper (mejor chunking)
   try {
     await runPythonTts(safeText, outFile, cfg);
     const buf = fs.readFileSync(outFile);
@@ -283,6 +399,7 @@ function ttsStatus() {
     rate: cfg.rate,
     pitch: cfg.pitch,
     volume: cfg.volume,
+    profile: 'luna-v1',
   };
 }
 
@@ -291,6 +408,7 @@ module.exports = {
   checkEdgeTts,
   cleanForSpeech,
   humanizePunctuation,
+  normalizeNumbers,
   ttsStatus,
   VOICE: EDGE_VOICE,
   DEFAULT_RATE,
