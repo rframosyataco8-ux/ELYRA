@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-ELYRA STT helper — graba desde el micrófono y transcribe con Groq Whisper.
-Uso: python stt_listen.py <api_key> [segundos=5]
-Imprime JSON: {"ok": true, "text": "..."} o {"ok": false, "error": "..."}
+ELYRA STT helper — graba micrófono y transcribe con Groq Whisper.
+Uso: python stt_listen.py <api_key> [segundos=6]
 """
 import json
 import sys
@@ -16,21 +15,20 @@ def fail(msg):
 
 def main():
     if len(sys.argv) < 2:
-        fail("Falta API key")
+        fail("Falta API key Groq (gsk_…)")
     api_key = sys.argv[1].strip()
-    seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 5.0
-    seconds = max(2.0, min(seconds, 12.0))
+    if not api_key.startswith("gsk_") and not api_key.startswith("sk-"):
+        fail("La clave de voz debe ser Groq (gsk_…) o OpenAI (sk-…)")
+    seconds = float(sys.argv[2]) if len(sys.argv) > 2 else 6.0
+    seconds = max(2.5, min(seconds, 15.0))
 
     try:
         import sounddevice as sd
         import numpy as np
     except ImportError:
-        fail("Instala dependencias: pip install sounddevice numpy")
+        fail("Instala: pip install sounddevice numpy")
 
-    try:
-        import urllib.request
-    except ImportError:
-        fail("urllib no disponible")
+    import urllib.request
 
     sample_rate = 16000
     channels = 1
@@ -46,9 +44,8 @@ def main():
     except Exception as e:
         fail(f"No pude grabar el micrófono: {e}")
 
-    # RMS simple: si casi silencio, avisar
     rms = float(np.sqrt(np.mean(audio.astype(np.float64) ** 2)))
-    if rms < 30:
+    if rms < 18:
         fail("No detecté voz. Habla más cerca del micrófono.")
 
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -66,6 +63,17 @@ def main():
         with open(tmp_path, "rb") as f:
             file_data = f.read()
 
+        prompt = (
+            "Conversación en español con ELYRA. "
+            "Palabras: abre, word, excel, chrome, volumen, captura, cadmio, plaguicidas."
+        )
+        model = "whisper-large-v3-turbo" if api_key.startswith("gsk_") else "whisper-1"
+        endpoint = (
+            "https://api.groq.com/openai/v1/audio/transcriptions"
+            if api_key.startswith("gsk_")
+            else "https://api.openai.com/v1/audio/transcriptions"
+        )
+
         body = (
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
@@ -73,18 +81,21 @@ def main():
         ).encode("utf-8") + file_data + (
             f"\r\n--{boundary}\r\n"
             f'Content-Disposition: form-data; name="model"\r\n\r\n'
-            f"whisper-large-v3\r\n"
+            f"{model}\r\n"
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="language"\r\n\r\n'
             f"es\r\n"
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="response_format"\r\n\r\n'
             f"json\r\n"
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="prompt"\r\n\r\n'
+            f"{prompt}\r\n"
             f"--{boundary}--\r\n"
         ).encode("utf-8")
 
         req = urllib.request.Request(
-            "https://api.groq.com/openai/v1/audio/transcriptions",
+            endpoint,
             data=body,
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -96,7 +107,7 @@ def main():
             data = json.loads(resp.read().decode("utf-8"))
             text = (data.get("text") or "").strip()
             if not text:
-                fail("No entendí lo que dijiste.")
+                fail("No entendí lo que dijiste. Intenta de nuevo un poco más claro.")
             print(json.dumps({"ok": True, "text": text}, ensure_ascii=False))
     except Exception as e:
         fail(str(e))
