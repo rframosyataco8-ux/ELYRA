@@ -1,5 +1,6 @@
 /**
  * ELYRA Tool Schemas — Function Calling (OpenAI-compatible)
+ * Control autónomo completo del PC + laboratorio
  */
 const FS_EXTRA = require('./tools-fs-extra.cjs');
 
@@ -195,7 +196,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_app',
-      description: 'Abre aplicación del PC.',
+      description: 'Abre cualquier aplicación del PC (Word, Chrome, Excel, Spotify, etc.).',
       parameters: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -231,11 +232,35 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Comando shell no destructivo.',
+      description:
+        'Ejecuta un comando de shell/CMD/PowerShell en el PC del usuario y devuelve la salida. Úsalo para automatizar cualquier tarea de sistema.',
       parameters: {
         type: 'object',
         properties: { command: { type: 'string' } },
         required: ['command'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'input',
+      description:
+        'Control de teclado y mouse: type, click, dblclick, rightclick, move, enter, escape, tab, backspace, hotkey. Para click/move pasa x,y. Para hotkey usa keys (ej. ctrl+s, alt+f4, ctrl+shift+esc).',
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            description:
+              'type|click|dblclick|rightclick|move|enter|escape|tab|backspace|hotkey',
+          },
+          text: { type: 'string', description: 'Texto a escribir (action=type)' },
+          x: { type: 'string', description: 'Coordenada X pantalla' },
+          y: { type: 'string', description: 'Coordenada Y pantalla' },
+          keys: { type: 'string', description: 'Combinación ej. ctrl+c, alt+tab, win' },
+        },
+        required: ['action'],
       },
     },
   },
@@ -365,7 +390,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'screenshot',
-      description: 'Captura de pantalla.',
+      description: 'Captura de pantalla completa.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -381,7 +406,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'kill_process',
-      description: 'Cierra proceso.',
+      description: 'Cierra un proceso por nombre.',
       parameters: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -393,11 +418,19 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'windows',
-      description: 'minimize_all | lock | screen_off',
+      description:
+        'Control de ventanas: minimize_all, lock, screen_off, list, focus (requiere title), close (requiere title).',
       parameters: {
         type: 'object',
         properties: {
-          action: { type: 'string', enum: ['minimize_all', 'lock', 'screen_off'] },
+          action: {
+            type: 'string',
+            enum: ['minimize_all', 'lock', 'screen_off', 'list', 'focus', 'close'],
+          },
+          title: {
+            type: 'string',
+            description: 'Título o nombre de proceso de la ventana (focus/close)',
+          },
         },
         required: ['action'],
       },
@@ -422,7 +455,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_settings',
-      description: 'Ajustes Windows.',
+      description: 'Ajustes Windows (display, sound, network, bluetooth, update, etc.).',
       parameters: {
         type: 'object',
         properties: { page: { type: 'string' } },
