@@ -1,16 +1,14 @@
 /**
- * Conocimiento inteligente V5 — Wikipedia + DDG + desambiguación + respuestas hablables
+ * Conocimiento inteligente ELYRA — Wikipedia + DDG + desambiguación inteligente
  */
 
 const AI_ALIASES = {
   gemini: 'Google Gemini',
   'google gemini': 'Google Gemini',
-  'ia de gemini': 'Google Gemini',
   chatgpt: 'ChatGPT',
   'chat gpt': 'ChatGPT',
   openai: 'OpenAI',
   claude: 'Claude (language model)',
-  'claude ai': 'Claude (language model)',
   groq: 'Groq',
   llama: 'Llama (language model)',
   copilot: 'Microsoft Copilot',
@@ -22,6 +20,10 @@ const AI_ALIASES = {
   'segunda guerra mundial': 'Segunda Guerra Mundial',
   'primera guerra mundial': 'Primera Guerra Mundial',
   'guerra mundial': 'Segunda Guerra Mundial',
+  fotosintesis: 'Fotosíntesis',
+  'fotosíntesis': 'Fotosíntesis',
+  internet: 'Internet',
+  'inteligencia artificial': 'Inteligencia artificial',
 };
 
 function normalizeQuery(q) {
@@ -44,9 +46,9 @@ function resolvePreferredTitle(query) {
     if (/claude/.test(n)) return 'Claude (language model)';
     if (/gpt|chatgpt/.test(n)) return 'ChatGPT';
   }
-  // Historia frecuente
   if (/segunda guerra|ii guerra|ww2|world war ii/.test(n)) return 'Segunda Guerra Mundial';
   if (/primera guerra|i guerra|ww1|world war i/.test(n)) return 'Primera Guerra Mundial';
+  if (/fotosint/.test(n)) return 'Fotosíntesis';
   return query.trim();
 }
 
@@ -57,7 +59,7 @@ async function fetchWikiSummary(title, lang = 'es') {
     '.wikipedia.org/api/rest_v1/page/summary/' +
     encodeURIComponent(title);
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'LUNA-ELYRA/5.0 (desktop-assistant)' } });
+    const res = await fetch(url, { headers: { 'User-Agent': 'ELYRA/5.2 (desktop-assistant)' } });
     if (!res.ok) return null;
     const data = await res.json();
     if (data.type === 'disambiguation') return { disambiguation: true, extract: data.extract || '' };
@@ -80,12 +82,12 @@ async function fetchWikiSearch(query, lang = 'es') {
       lang +
       '.wikipedia.org/w/api.php?action=opensearch&search=' +
       encodeURIComponent(query) +
-      '&limit=3&namespace=0&format=json';
-    const res = await fetch(url, { headers: { 'User-Agent': 'LUNA-ELYRA/5.0' } });
+      '&limit=5&namespace=0&format=json';
+    const res = await fetch(url, { headers: { 'User-Agent': 'ELYRA/5.2' } });
     if (!res.ok) return null;
     const data = await res.json();
     const titles = data?.[1] || [];
-    return titles[0] || null;
+    return titles;
   } catch {
     return null;
   }
@@ -97,7 +99,7 @@ async function fetchDDG(query) {
       'https://api.duckduckgo.com/?q=' +
         encodeURIComponent(query) +
         '&format=json&no_html=1&skip_disambig=1',
-      { headers: { 'User-Agent': 'LUNA-ELYRA/5.0' } },
+      { headers: { 'User-Agent': 'ELYRA/5.2' } },
     );
     if (!res.ok) return null;
     const data = await res.json();
@@ -111,8 +113,10 @@ async function fetchDDG(query) {
 
 function toSpokenSummary(text) {
   let t = String(text || '').replace(/\s+/g, ' ').trim();
-  if (t.length > 650) {
-    const cut = t.slice(0, 650);
+  // Quitar restos de listas wiki feas
+  t = t.replace(/\s*\(\s*escuchar\s*\)/gi, '');
+  if (t.length > 680) {
+    const cut = t.slice(0, 680);
     const last = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf(';'));
     t = last > 220 ? cut.slice(0, last + 1) : cut.replace(/\s+\S*$/, '') + '…';
   }
@@ -125,12 +129,12 @@ async function smartKnowledge(query) {
 
   const preferred = resolvePreferredTitle(raw);
 
-  // 1) Wikipedia título preferido
+  // 1) Título preferido ES → EN
   for (const lang of ['es', 'en']) {
     let page = await fetchWikiSummary(preferred, lang);
     if (page && page.disambiguation) {
-      const alt = await fetchWikiSearch(preferred, lang);
-      if (alt) page = await fetchWikiSummary(alt, lang);
+      const titles = await fetchWikiSearch(preferred, lang);
+      if (titles && titles[0]) page = await fetchWikiSummary(titles[0], lang);
     }
     if (page && !page.disambiguation && page.extract) {
       return {
@@ -142,24 +146,26 @@ async function smartKnowledge(query) {
     }
   }
 
-  // 2) Búsqueda wiki por query original
+  // 2) OpenSearch con query original
   for (const lang of ['es', 'en']) {
-    const found = await fetchWikiSearch(raw, lang);
-    if (found) {
-      const page = await fetchWikiSummary(found, lang);
-      if (page && !page.disambiguation && page.extract) {
-        return {
-          ok: true,
-          response: toSpokenSummary(page.extract),
-          source: 'wikipedia-search:' + lang,
-          title: page.title,
-        };
+    const titles = await fetchWikiSearch(raw, lang);
+    if (titles && titles.length) {
+      for (const title of titles.slice(0, 3)) {
+        const page = await fetchWikiSummary(title, lang);
+        if (page && !page.disambiguation && page.extract && page.extract.length > 80) {
+          return {
+            ok: true,
+            response: toSpokenSummary(page.extract),
+            source: 'wikipedia-search:' + lang,
+            title: page.title,
+          };
+        }
       }
     }
   }
 
   // 3) DuckDuckGo
-  const ddg = await fetchDDG(preferred) || (await fetchDDG(raw));
+  const ddg = (await fetchDDG(preferred)) || (await fetchDDG(raw));
   if (ddg && ddg.length > 40) {
     return {
       ok: true,
