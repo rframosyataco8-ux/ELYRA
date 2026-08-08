@@ -37,8 +37,6 @@ function greetingFor(operator: string) {
   return `${saludo}, ${operator}. Lista.`;
 }
 
-const LAB_PAGES: AppPage[] = ['productos', 'registro-prensa', 'afq', 'cronograma'];
-
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<LabUser | null>(null);
@@ -334,7 +332,8 @@ export default function App() {
     { label: 'Ollama local', url: 'http://localhost:11434/v1', model: 'llama3.2' },
   ];
 
-  const hideChatBar = LAB_PAGES.includes(page);
+  /* Barra de voz/texto: SOLO Inicio y Conversación */
+  const showChatBar = page === 'inicio' || page === 'asistente';
 
   if (!authenticated) {
     return (
@@ -368,8 +367,8 @@ export default function App() {
             {isDesktop && <span>· Escritorio</span>}
             {currentUser && <span>· {currentUser.roleLabel}</span>}
             {deskMode && <span style={{ color: 'var(--ely-warning)' }}>· Modo escritorio</span>}
-            {((wakeEnabled && wakeListening) || continuous) && <span>· Escucha activa</span>}
-            {naturalTts && <span>· Voz neural</span>}
+            {showChatBar && ((wakeEnabled && wakeListening) || continuous) && <span>· Escucha activa</span>}
+            {naturalTts && showChatBar && <span>· Voz neural</span>}
             {isAdmin && hasApiKey && <span style={{ color: 'var(--ely-accent)' }}>· IA activa</span>}
           </div>
           <div className="flex items-center gap-0.5 no-drag">
@@ -426,11 +425,7 @@ export default function App() {
                   <h2 className="text-lg font-medium" style={{ color: 'var(--ely-text)' }}>Configuración</h2>
                 </div>
                 <ThemeSettings />
-
-                {isAdmin && currentUser && (
-                  <UserAdminPanel currentUserId={currentUser.id} />
-                )}
-
+                {isAdmin && currentUser && <UserAdminPanel currentUserId={currentUser.id} />}
                 {isAdmin && (
                   <div className="hud-glass-strong p-5 space-y-4">
                     <div className="flex items-center justify-between">
@@ -478,13 +473,11 @@ export default function App() {
                     )}
                   </div>
                 )}
-
                 {!isAdmin && (
                   <div className="hud-glass p-4 text-[13px]" style={{ color: 'var(--ely-text-muted)' }}>
                     La configuración de usuarios y API keys solo está disponible para el administrador.
                   </div>
                 )}
-
                 <div className="hud-glass p-5 space-y-4">
                   <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Voz</h3>
                   <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>Al minimizar, ELYRA queda a un lado y sigue escuchando. Ctrl+Shift+E oculta el sistema completo.</p>
@@ -505,7 +498,7 @@ export default function App() {
                 {!cfgLoaded && isDesktop && isAdmin && <p className="text-center text-xs" style={{ color: 'var(--ely-text-dim)' }}>Cargando…</p>}
               </div>
             )}
-            {!hideChatBar && (
+            {showChatBar && (
               <div className="w-full max-w-xl mx-auto mt-auto pt-4">
                 {error && <p className="text-xs text-center mb-2 px-2" style={{ color: 'var(--ely-danger)' }}>{error}</p>}
                 <div className="flex items-center gap-2 input-hud px-3 py-2">
