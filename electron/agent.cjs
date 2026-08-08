@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v15 — Razonamiento + conversación natural + dominio lab
+ * ELYRA Agent v16 — Operador autónomo PC + laboratorio
  * Proveedores: Groq, Gemini, NVIDIA NIM, Claude, OpenAI, xAI, OpenRouter, Ollama
  */
 const fs = require('fs');
@@ -21,7 +21,7 @@ const NVIDIA_BASE = 'https://integrate.api.nvidia.com/v1';
 const NVIDIA_MODEL = 'nvidia/llama-3.1-nemotron-70b-instruct';
 
 const COMPLEX_RE =
-  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas)\b/i;
+  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas|ejecuta|comando|powershell|proceso|ventana|mouse|clic|click|teclado)\b/i;
 
 const SYSTEM_PROMPT = require('./agent-prompt.cjs');
 
@@ -165,9 +165,9 @@ function fallbackResponse(userText) {
   if (/hola|buenos|buenas/.test(t)) return 'Hola. Estoy lista. ¿En qué te ayudo?';
   if (/gracias/.test(t)) return 'Con gusto.';
   if (/qui[eé]n eres|que eres|qu[eé] eres/.test(t)) {
-    return 'Soy ELYRA, tu asistente de escritorio y de laboratorio. Puedo controlar el PC y ayudarte con cacao, cadmio y AFQ.';
+    return 'Soy ELYRA, operadora de tu PC y del laboratorio. Puedo controlar Windows y apoyarte con cacao, cadmio y AFQ.';
   }
-  return 'Puedo abrir apps, buscar en la web, calcular, manejar archivos y apoyar el laboratorio. Dime qué necesitas y lo hago.';
+  return 'Puedo abrir apps, usar teclado y mouse, ejecutar comandos, manejar archivos y apoyar el laboratorio. Dime qué necesitas.';
 }
 
 function normalizeUserIntent(text) {
@@ -238,6 +238,16 @@ async function testApiConnection(partial) {
   }
 }
 
+function runOneTool(name, args, helpers) {
+  const tool = { name, params: args || {} };
+  if (hooks.extendExecute) {
+    return hooks.extendExecute(name, args, helpers, (n, p, h) =>
+      executeTool({ name: n, params: p || {} }, h),
+    );
+  }
+  return executeTool(tool, helpers);
+}
+
 async function runAgent(message, history, helpers) {
   const config = getConfig();
   const cleanedUser = normalizeUserIntent(message);
@@ -262,14 +272,14 @@ async function runAgent(message, history, helpers) {
   const tools = TOOL_DEFINITIONS || [];
   const provider = inferProvider(config);
   const wantsTools =
-    /\b(abre|abrir|busca|buscar|pon|reproduce|archivo|excel|pdf|captura|volumen|carpeta|google|youtube|recuerda|analiza|guarda|escribe|crea|genera)\b/i.test(
+    /\b(abre|abrir|cierra|cerrar|busca|buscar|pon|reproduce|archivo|excel|pdf|captura|volumen|carpeta|google|youtube|recuerda|analiza|guarda|escribe|crea|genera|ejecuta|comando|powershell|proceso|ventana|minimiza|bloquea|clic|click|tecla|hotkey|mouse|copia|pega|apaga|reinicia|lista|muestra|mata|kill|shell|cmd|instala|descarga)\b/i.test(
       cleanedUser,
     );
 
   try {
     let reply = '';
     let steps = 0;
-    const maxSteps = 10;
+    const maxSteps = 16;
     let currentMessages = messages.slice();
     let usedTools = false;
 
@@ -278,12 +288,12 @@ async function runAgent(message, history, helpers) {
       const body = {
         model,
         messages: currentMessages,
-        temperature: wantsTools || steps > 1 ? 0.25 : 0.4,
-        max_tokens: 1600,
+        temperature: wantsTools || steps > 1 ? 0.2 : 0.35,
+        max_tokens: 1800,
       };
       if (tools.length) {
         body.tools = tools;
-        body.tool_choice = 'auto';
+        body.tool_choice = wantsTools && steps === 1 ? 'auto' : 'auto';
       }
 
       const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
@@ -311,7 +321,7 @@ async function runAgent(message, history, helpers) {
       const choice = data.choices?.[0]?.message || {};
       const toolCalls = choice.tool_calls || [];
 
-      if (toolCalls.length && helpers && executeTool) {
+      if (toolCalls.length && helpers) {
         usedTools = true;
         currentMessages.push(choice);
         for (const tc of toolCalls) {
@@ -324,20 +334,14 @@ async function runAgent(message, history, helpers) {
           }
           let toolResult;
           try {
-            if (hooks.extendExecute) {
-              toolResult = await hooks.extendExecute(name, args, helpers, (n, p, h) =>
-                executeTool(n, p, h),
-              );
-            } else {
-              toolResult = await executeTool(name, args, helpers);
-            }
+            toolResult = await runOneTool(name, args, helpers);
           } catch (err) {
             toolResult = { ok: false, error: err.message || String(err) };
           }
           currentMessages.push({
             role: 'tool',
             tool_call_id: tc.id,
-            content: JSON.stringify(toolResult).slice(0, 6000),
+            content: JSON.stringify(toolResult).slice(0, 8000),
           });
         }
         continue;
@@ -350,7 +354,7 @@ async function runAgent(message, history, helpers) {
         provider !== 'gemini' &&
         provider !== 'nvidia' &&
         model !== MODEL_SMART &&
-        (!reply || reply.length < 12 || /no puedo|no sé|no se|as an ai|como ia/i.test(reply))
+        (!reply || reply.length < 12 || /no puedo|no sé|no se|as an ai|como ia|no tengo acceso/i.test(reply))
       ) {
         model = MODEL_SMART;
         currentMessages = messages.slice();
@@ -371,7 +375,7 @@ async function runAgent(message, history, helpers) {
       if (hooks.noteInteraction) hooks.noteInteraction(cleanedUser, reply);
     } catch {}
 
-    return { response: reply, intelligent: true, via: 'agent-v15', model, steps, usedTools };
+    return { response: reply, intelligent: true, via: 'agent-v16', model, steps, usedTools };
   } catch (err) {
     return {
       response:
