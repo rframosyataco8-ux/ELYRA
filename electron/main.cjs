@@ -23,6 +23,7 @@ const { transcribeBuffer } = require('./stt.cjs');
 const { chatOpenClaw, pingOpenClaw, getOpenClawConfig } = require('./openclaw-bridge.cjs');
 const { routeChat } = require('./chat-router.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
+const { checkShellCommand } = require('./tool-permissions.cjs');
 
 let mainWindow = null;
 let floatingCore = null;
@@ -262,8 +263,8 @@ async function openFolderHelper(folder) {
 
 async function runCommandHelper(command) {
   try {
-    const blocked = [/rm\s+-rf\s+\//, /format\s+/i, /del\s+\/s/i, /mkfs/i];
-    if (blocked.some((re) => re.test(command))) return { ok: false, result: 'Comando bloqueado.' };
+    const blocked = checkShellCommand(command);
+    if (!blocked.ok) return blocked;
     const { stdout, stderr } = await execAsync(command, {
       timeout: 20000,
       maxBuffer: 512 * 1024,
@@ -446,10 +447,11 @@ ipcMain.handle('openclaw-status', async () => {
 
 ipcMain.handle('agent-chat', async (_e, { message, history }) => {
   ensureDefaultConfig();
+  const helpers = Object.assign({}, agentHelpers, { userText: String(message || '') });
   return routeChat({
     message,
     history,
-    helpers: agentHelpers,
+    helpers,
     runAgent,
     getConfig,
     fallbackResponse,
@@ -555,6 +557,13 @@ ipcMain.on('window-close', () => {
 
 app.whenReady().then(() => {
   ensureDefaultConfig();
+  try {
+    const smoke = require('./smoke-integrity.cjs').runSmokeIntegrity();
+    if (!smoke.ok) console.warn('[ELYRA] smoke integrity failures:', smoke.failures);
+    else console.log('[ELYRA]', smoke.version && smoke.version.label, 'modules ok:', smoke.passed);
+  } catch (e) {
+    console.warn('[ELYRA] smoke skipped', e.message);
+  }
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(['media', 'microphone', 'audioCapture'].includes(permission));
   });
