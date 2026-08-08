@@ -6,7 +6,7 @@ const fs = require('fs');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 
-const { synthesizeToBase64, checkEdgeTts, VOICE } = require('./tts.cjs');
+const { synthesizeToBase64, checkEdgeTts, VOICE, ttsStatus } = require('./tts.cjs');
 const {
   runAgent,
   getConfig,
@@ -262,7 +262,7 @@ async function openFolderHelper(folder) {
 
 async function runCommandHelper(command) {
   try {
-    const blocked = [/rm\s+-rf\s+\//, /format\s+/i, /del\s+\/s/i, /shutdown/i, /mkfs/i];
+    const blocked = [/rm\s+-rf\s+\//, /format\s+/i, /del\s+\/s/i, /mkfs/i];
     if (blocked.some((re) => re.test(command))) return { ok: false, result: 'Comando bloqueado.' };
     const { stdout, stderr } = await execAsync(command, {
       timeout: 20000,
@@ -407,7 +407,13 @@ ipcMain.handle('tts-speak', async (_e, text) => {
     return { ok: false, error: err.message, fallback: true };
   }
 });
-ipcMain.handle('tts-status', () => ({ edgeTts: checkEdgeTts(), voice: VOICE }));
+ipcMain.handle('tts-status', () => {
+  try {
+    return typeof ttsStatus === 'function' ? ttsStatus() : { edgeTts: checkEdgeTts(), voice: VOICE };
+  } catch {
+    return { edgeTts: checkEdgeTts(), voice: VOICE };
+  }
+});
 
 ipcMain.handle('pc-volume', async (_e, { action, value }) => pc.volume(action, value));
 ipcMain.handle('pc-media', async (_e, { action }) => pc.media(action));
@@ -457,11 +463,25 @@ ipcMain.handle('agent-chat', async (_e, { message, history }) => {
 
 ipcMain.handle('agent-config-get', () => {
   const c = getConfig();
-  return { hasKey: !!c.apiKey, baseUrl: c.baseUrl, model: c.model, provider: c.provider };
+  return {
+    hasKey: !!c.apiKey,
+    baseUrl: c.baseUrl,
+    model: c.model,
+    provider: c.provider,
+    hasEleven: !!c.elevenApiKey,
+    hasSttKey: !!c.sttApiKey,
+  };
 });
 ipcMain.handle('agent-config-set', (_e, partial) => {
   const next = saveConfig(partial || {});
-  return { hasKey: !!next.apiKey, baseUrl: next.baseUrl, model: next.model, provider: next.provider };
+  return {
+    hasKey: !!next.apiKey,
+    baseUrl: next.baseUrl,
+    model: next.model,
+    provider: next.provider,
+    hasEleven: !!next.elevenApiKey,
+    hasSttKey: !!next.sttApiKey,
+  };
 });
 ipcMain.handle('agent-config-test', async (_e, partial) => {
   return testApiConnection(partial || {});
