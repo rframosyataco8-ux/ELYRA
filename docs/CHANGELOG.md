@@ -1,27 +1,34 @@
 # ELYRA Changelog
 
+## [0.2.0] — 2026-08-08 — Safe Tools
+
+### Added
+- `electron/tool-permissions.cjs` — autorización de acciones destructivas
+- Confirmación verbal para apagar/reiniciar, matar procesos, vaciar papelera y shell agresivo
+- Bloqueo de comandos shell peligrosos (`rm -rf /`, format, diskpart, etc.)
+- Protección de procesos críticos del sistema
+
+### Changed
+- `tool-executor.cjs` aplica `authorizeTool` antes de ejecutar
+- Plataforma marcada como **0.2.0** (SafeTools)
+
+### Security
+- El usuario debe decir «confirma» (o equivalente) para acciones irreversibles
+
+---
+
 ## [0.1.0] — 2026-08-08 — Foundation
 
 ### Added
-- `electron/elyra-version.cjs` — platform version 0.1.0
-- `electron/smoke-integrity.cjs` — critical module load checks
-- `docs/ARCHITECTURE.md` — real architecture description
-- `docs/CHANGELOG.md` — this file
+- `electron/elyra-version.cjs`
+- `electron/smoke-integrity.cjs`
+- `docs/ARCHITECTURE.md`, `CHANGELOG.md`, `DEVELOPMENT.md`, `SEQUENCE.md`
 
-### Context from prior main work (pre-0.1)
-- Identity fixed to **ELYRA** (not Luna)
-- Autonomous web search + query rewrite + ranking
-- Search cache (`~/.elyra/search-cache.json`)
-- Local intelligence path without API key (rules + web + optional Ollama)
-- Agent retry without tools on function-calling 404
-- TTS prosody / normalization improvements
-- Barge-in and voice recovery improvements
-
-### Not in 0.1
-- Formal RAG, vision, multi-agent, training pipeline, automated test suite
+### Context (pre-0.1 on main)
+- Identidad ELYRA, web autónoma, caché, local-intelligence, retry sin tools, voz mejorada
 
 ---
 
 ## [2.0.0] — Product shell
 
-Electron + React holographic UI, voice, PC control, multi-provider LLM config.
+Electron + React UI, voz, PC control, multi-provider LLM.
