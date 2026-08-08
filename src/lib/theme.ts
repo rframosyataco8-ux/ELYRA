@@ -1,10 +1,10 @@
 export type ThemeId = 'dark' | 'light' | 'system' | 'transparent';
 
 export const THEME_OPTIONS: { id: ThemeId; label: string; hint: string }[] = [
-  { id: 'dark', label: 'Oscuro', hint: 'Carbón suave · ideal de noche' },
-  { id: 'light', label: 'Claro', hint: 'Estilo Google Workspace' },
-  { id: 'system', label: 'Sistema', hint: 'Sigue Windows automático' },
-  { id: 'transparent', label: 'Cristal', hint: 'Vidrio suave · blur' },
+  { id: 'dark', label: 'Oscuro', hint: 'Carbón profundo · azul suave · baja fatiga' },
+  { id: 'light', label: 'Claro', hint: 'Google Material · limpio y luminoso' },
+  { id: 'system', label: 'Sistema', hint: 'Sigue el tema de Windows automáticamente' },
+  { id: 'transparent', label: 'Cristal', hint: 'Vidrio esmerilado · blur premium' },
 ];
 
 const STORAGE_KEY = 'elyra-theme';
