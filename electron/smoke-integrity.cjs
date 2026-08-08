@@ -1,6 +1,5 @@
 /**
- * Smoke de integridad ELYRA — comprueba que módulos críticos cargan
- * No ejecuta acciones destructivas ni llama a APIs de pago.
+ * Smoke de integridad ELYRA
  */
 function tryRequire(rel) {
   try {
@@ -30,6 +29,9 @@ function runSmokeIntegrity() {
     './local-math.cjs',
     './memory-cognitive.cjs',
     './intent-compound.cjs',
+    './rag-local.cjs',
+    './tool-permissions.cjs',
+    './llm-resilience.cjs',
   ];
 
   const results = critical.map(tryRequire);

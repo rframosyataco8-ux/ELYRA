@@ -1,27 +1,22 @@
 # ELYRA Changelog
 
-## [0.4.0] — 2026-08-08 — Structured Memory
+## [0.5.0] — 2026-08-08 — Local RAG
 
-### Changed
-- `memory-cognitive.cjs` v4: dominios (laboratorio, documentos, pc, general)
-- Mejor ranking de retrieval (cobertura + boost de dominio)
-- `buildContextSnippet` (API usada por agent-hooks)
-- `stats()` para introspección
-- Episodios y hechos etiquetados por dominio
+### Added
+- `electron/rag-local.cjs` — índice local de documentos
+- Tools: `rag_search`, `reindex_docs`
+- Inyección de fragmentos en el system prompt cuando la pregunta es sobre documentos
+- `docs/RAG.md`
 
 ### Storage
-- `~/.elyra/memory/cognitive.json`
+- `~/.elyra/rag/index.json`
+
+### Explicit non-goal
+- Base de datos global del sistema → **después de 1.0**, cuando el usuario lo autorice
 
 ---
 
+## [0.4.0] — Structured Memory
 ## [0.3.0] — Resilient LLM
-
-- providers defaults, `llm-resilience.cjs`
-
 ## [0.2.0] — Safe Tools
-
-- tool-permissions
-
 ## [0.1.0] — Foundation
-
-- version, smoke, docs
