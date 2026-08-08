@@ -3,47 +3,47 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════
-   ELYRA Design System v2 + Advanced Motion
-   Google Material + premium tech · clean · spacious · easy on eyes
+   ELYRA Design System v3
+   Material 3 + Fluent · spacious · low eye strain · coherent
    ═══════════════════════════════════════════════════════════ */
 
-/* ─────────── DARK — charcoal with soft blue ─────────── */
+/* ─────────── DARK — graphite + soft azure ─────────── */
 :root,
 [data-theme='dark'] {
-  --ely-bg: #0d1117;
-  --ely-bg-elevated: #151b23;
-  --ely-bg-soft: #1c2330;
-  --ely-surface: #151b23;
-  --ely-surface-strong: #1c2330;
-  --ely-border: rgba(255, 255, 255, 0.07);
-  --ely-border-strong: rgba(255, 255, 255, 0.13);
-  --ely-text: #e6edf3;
-  --ely-text-muted: #8b949e;
-  --ely-text-dim: #6e7681;
-  --ely-accent: #58a6ff;
-  --ely-accent-hover: #79b8ff;
-  --ely-accent-soft: rgba(88, 166, 255, 0.11);
-  --ely-accent-mid: rgba(88, 166, 255, 0.18);
+  --ely-bg: #0b0f14;
+  --ely-bg-elevated: #12181f;
+  --ely-bg-soft: #181f28;
+  --ely-surface: #141a22;
+  --ely-surface-strong: #1a222d;
+  --ely-border: rgba(255, 255, 255, 0.06);
+  --ely-border-strong: rgba(255, 255, 255, 0.12);
+  --ely-text: #e8eef4;
+  --ely-text-muted: #8b95a3;
+  --ely-text-dim: #636d7a;
+  --ely-accent: #5b9fff;
+  --ely-accent-hover: #7db1ff;
+  --ely-accent-soft: rgba(91, 159, 255, 0.12);
+  --ely-accent-mid: rgba(91, 159, 255, 0.2);
   --ely-glow: transparent;
-  --ely-scrollbar: rgba(139, 148, 158, 0.32);
-  --ely-input-bg: #0d1117;
+  --ely-scrollbar: rgba(139, 149, 163, 0.28);
+  --ely-input-bg: #0e1319;
   --ely-danger: #f85149;
   --ely-success: #3fb950;
   --ely-warning: #d29922;
   --ely-blur: 0px;
   --ely-radius: 12px;
   --ely-radius-lg: 16px;
-  --ely-radius-xl: 20px;
-  --ely-nav-hover: rgba(255, 255, 255, 0.055);
-  --ely-nav-active: rgba(88, 166, 255, 0.13);
-  --ely-header-border: rgba(255, 255, 255, 0.055);
-  --ely-card: #151b23;
-  --ely-card-hover: rgba(88, 166, 255, 0.07);
-  --ely-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.2);
-  --ely-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
-  --ely-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.35);
-  --ely-track: rgba(255, 255, 255, 0.08);
-  --ely-overlay: rgba(13, 17, 23, 0.6);
+  --ely-radius-xl: 22px;
+  --ely-nav-hover: rgba(255, 255, 255, 0.045);
+  --ely-nav-active: rgba(91, 159, 255, 0.14);
+  --ely-header-border: rgba(255, 255, 255, 0.05);
+  --ely-card: #141a22;
+  --ely-card-hover: rgba(91, 159, 255, 0.08);
+  --ely-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 16px rgba(0, 0, 0, 0.28);
+  --ely-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --ely-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --ely-track: rgba(255, 255, 255, 0.07);
+  --ely-overlay: rgba(11, 15, 20, 0.65);
   --ely-ease: cubic-bezier(0.2, 0, 0, 1);
   --ely-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ely-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -51,24 +51,24 @@
   --ely-duration-slow: 0.45s;
 }
 
-/* ─────────── LIGHT — Google Workspace ─────────── */
+/* ─────────── LIGHT — Material / Workspace ─────────── */
 [data-theme='light'] {
-  --ely-bg: #f6f8fc;
+  --ely-bg: #f0f3f8;
   --ely-bg-elevated: #ffffff;
-  --ely-bg-soft: #eef1f6;
+  --ely-bg-soft: #e6ebf3;
   --ely-surface: #ffffff;
   --ely-surface-strong: #ffffff;
-  --ely-border: rgba(60, 64, 67, 0.1);
-  --ely-border-strong: rgba(60, 64, 67, 0.18);
-  --ely-text: #1f1f1f;
-  --ely-text-muted: #5f6368;
-  --ely-text-dim: #80868b;
+  --ely-border: rgba(15, 23, 42, 0.08);
+  --ely-border-strong: rgba(15, 23, 42, 0.14);
+  --ely-text: #0f172a;
+  --ely-text-muted: #475569;
+  --ely-text-dim: #94a3b8;
   --ely-accent: #0b57d0;
   --ely-accent-hover: #0842a0;
-  --ely-accent-soft: rgba(11, 87, 208, 0.08);
-  --ely-accent-mid: rgba(11, 87, 208, 0.14);
+  --ely-accent-soft: rgba(11, 87, 208, 0.09);
+  --ely-accent-mid: rgba(11, 87, 208, 0.15);
   --ely-glow: transparent;
-  --ely-scrollbar: rgba(95, 99, 104, 0.28);
+  --ely-scrollbar: rgba(100, 116, 139, 0.3);
   --ely-input-bg: #ffffff;
   --ely-danger: #c5221f;
   --ely-success: #137333;
@@ -76,17 +76,17 @@
   --ely-blur: 0px;
   --ely-radius: 12px;
   --ely-radius-lg: 16px;
-  --ely-radius-xl: 20px;
-  --ely-nav-hover: rgba(60, 64, 67, 0.06);
+  --ely-radius-xl: 22px;
+  --ely-nav-hover: rgba(15, 23, 42, 0.05);
   --ely-nav-active: rgba(11, 87, 208, 0.1);
-  --ely-header-border: rgba(60, 64, 67, 0.09);
+  --ely-header-border: rgba(15, 23, 42, 0.07);
   --ely-card: #ffffff;
-  --ely-card-hover: rgba(11, 87, 208, 0.04);
-  --ely-shadow: 0 1px 2px rgba(60, 64, 67, 0.06), 0 1px 3px rgba(60, 64, 67, 0.08);
-  --ely-shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.05);
-  --ely-shadow-lg: 0 4px 16px rgba(60, 64, 67, 0.1);
-  --ely-track: rgba(60, 64, 67, 0.1);
-  --ely-overlay: rgba(246, 248, 252, 0.7);
+  --ely-card-hover: rgba(11, 87, 208, 0.05);
+  --ely-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 2px 8px rgba(15, 23, 42, 0.06);
+  --ely-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --ely-shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.1);
+  --ely-track: rgba(15, 23, 42, 0.08);
+  --ely-overlay: rgba(240, 243, 248, 0.75);
   --ely-ease: cubic-bezier(0.2, 0, 0, 1);
   --ely-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ely-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -94,42 +94,42 @@
   --ely-duration-slow: 0.45s;
 }
 
-/* ─────────── CRISTAL — refined glass ─────────── */
+/* ─────────── CRISTAL — glass morphism ─────────── */
 [data-theme='transparent'] {
   --ely-bg: transparent;
-  --ely-bg-elevated: rgba(255, 255, 255, 0.09);
-  --ely-bg-soft: rgba(255, 255, 255, 0.05);
-  --ely-surface: rgba(255, 255, 255, 0.1);
-  --ely-surface-strong: rgba(255, 255, 255, 0.15);
-  --ely-border: rgba(255, 255, 255, 0.13);
-  --ely-border-strong: rgba(255, 255, 255, 0.22);
-  --ely-text: #f1f3f4;
-  --ely-text-muted: rgba(241, 243, 244, 0.75);
-  --ely-text-dim: rgba(241, 243, 244, 0.5);
-  --ely-accent: #8ab4f8;
-  --ely-accent-hover: #aecbfa;
-  --ely-accent-soft: rgba(138, 180, 248, 0.14);
-  --ely-accent-mid: rgba(138, 180, 248, 0.22);
+  --ely-bg-elevated: rgba(255, 255, 255, 0.1);
+  --ely-bg-soft: rgba(255, 255, 255, 0.055);
+  --ely-surface: rgba(255, 255, 255, 0.11);
+  --ely-surface-strong: rgba(255, 255, 255, 0.16);
+  --ely-border: rgba(255, 255, 255, 0.14);
+  --ely-border-strong: rgba(255, 255, 255, 0.24);
+  --ely-text: #f4f7fb;
+  --ely-text-muted: rgba(244, 247, 251, 0.72);
+  --ely-text-dim: rgba(244, 247, 251, 0.48);
+  --ely-accent: #9ec1ff;
+  --ely-accent-hover: #c2d8ff;
+  --ely-accent-soft: rgba(158, 193, 255, 0.16);
+  --ely-accent-mid: rgba(158, 193, 255, 0.26);
   --ely-glow: transparent;
-  --ely-scrollbar: rgba(138, 180, 248, 0.28);
-  --ely-input-bg: rgba(255, 255, 255, 0.08);
+  --ely-scrollbar: rgba(158, 193, 255, 0.3);
+  --ely-input-bg: rgba(255, 255, 255, 0.09);
   --ely-danger: #f28b82;
   --ely-success: #81c995;
   --ely-warning: #fdd663;
-  --ely-blur: 28px;
+  --ely-blur: 32px;
   --ely-radius: 14px;
   --ely-radius-lg: 18px;
-  --ely-radius-xl: 22px;
-  --ely-nav-hover: rgba(255, 255, 255, 0.08);
-  --ely-nav-active: rgba(138, 180, 248, 0.18);
+  --ely-radius-xl: 24px;
+  --ely-nav-hover: rgba(255, 255, 255, 0.09);
+  --ely-nav-active: rgba(158, 193, 255, 0.2);
   --ely-header-border: rgba(255, 255, 255, 0.1);
-  --ely-card: rgba(255, 255, 255, 0.08);
-  --ely-card-hover: rgba(138, 180, 248, 0.12);
-  --ely-shadow: 0 4px 20px rgba(0, 0, 0, 0.22);
-  --ely-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.15);
-  --ely-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.3);
+  --ely-card: rgba(255, 255, 255, 0.09);
+  --ely-card-hover: rgba(158, 193, 255, 0.14);
+  --ely-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  --ely-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.18);
+  --ely-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.35);
   --ely-track: rgba(255, 255, 255, 0.12);
-  --ely-overlay: rgba(0, 0, 0, 0.25);
+  --ely-overlay: rgba(0, 0, 0, 0.28);
   --ely-ease: cubic-bezier(0.2, 0, 0, 1);
   --ely-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ely-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -144,21 +144,21 @@
     margin: 0;
     background: var(--ely-bg);
     color: var(--ely-text);
-    font-family: 'Google Sans', 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family: 'Segoe UI Variable', 'Segoe UI', 'Google Sans', 'Inter', system-ui, -apple-system, sans-serif;
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     transition:
-      background-color 0.35s var(--ely-ease),
-      color 0.3s var(--ely-ease);
+      background-color 0.4s var(--ely-ease),
+      color 0.35s var(--ely-ease);
     letter-spacing: -0.011em;
     line-height: 1.5;
   }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
     background: var(--ely-scrollbar);
-    border-radius: 3px;
+    border-radius: 99px;
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--ely-text-dim);
@@ -177,30 +177,32 @@
   color: var(--ely-text);
   min-height: 100%;
   position: relative;
-  transition: background 0.35s var(--ely-ease);
+  transition: background 0.4s var(--ely-ease);
 }
 
 [data-theme='light'] .ely-app {
   background:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(11, 87, 208, 0.04), transparent 55%),
+    radial-gradient(ellipse 90% 55% at 50% -15%, rgba(11, 87, 208, 0.06), transparent 55%),
+    radial-gradient(ellipse 50% 30% at 100% 100%, rgba(11, 87, 208, 0.03), transparent 50%),
     var(--ely-bg);
 }
 
 [data-theme='dark'] .ely-app {
   background:
-    radial-gradient(ellipse 70% 40% at 50% -5%, rgba(88, 166, 255, 0.04), transparent 50%),
+    radial-gradient(ellipse 80% 45% at 50% -8%, rgba(91, 159, 255, 0.055), transparent 52%),
+    radial-gradient(ellipse 40% 25% at 0% 100%, rgba(91, 159, 255, 0.03), transparent 50%),
     var(--ely-bg);
 }
 
 [data-theme='transparent'] .ely-app {
   background: linear-gradient(
-    155deg,
-    rgba(255, 255, 255, 0.07) 0%,
-    rgba(20, 28, 45, 0.18) 45%,
-    rgba(10, 14, 28, 0.12) 100%
+    160deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(22, 30, 48, 0.2) 40%,
+    rgba(12, 16, 30, 0.14) 100%
   );
-  backdrop-filter: blur(var(--ely-blur)) saturate(1.25);
-  -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.25);
+  backdrop-filter: blur(var(--ely-blur)) saturate(1.3);
+  -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.3);
 }
 
 /* ─── Surfaces ─── */
@@ -261,7 +263,7 @@
   background: var(--ely-accent-mid);
 }
 
-/* Nav — Google-style pills */
+/* Nav — pill style */
 .ely-nav-item {
   width: 100%;
   display: flex;
@@ -306,7 +308,7 @@
     border: 1px solid var(--ely-border);
     border-radius: var(--ely-radius-lg);
     box-shadow: var(--ely-shadow-sm);
-    transition: background 0.3s var(--ely-ease), border-color 0.3s ease, box-shadow 0.3s ease;
+    transition: background 0.35s var(--ely-ease), border-color 0.35s ease, box-shadow 0.35s ease;
   }
 
   .hud-glass-strong {
@@ -314,19 +316,19 @@
     border: 1px solid var(--ely-border);
     border-radius: var(--ely-radius-lg);
     box-shadow: var(--ely-shadow);
-    transition: background 0.3s var(--ely-ease), border-color 0.3s ease;
+    transition: background 0.35s var(--ely-ease), border-color 0.35s ease;
   }
 
   [data-theme='transparent'] .hud-glass {
     background: var(--ely-surface);
-    backdrop-filter: blur(22px) saturate(1.2);
-    -webkit-backdrop-filter: blur(22px) saturate(1.2);
+    backdrop-filter: blur(24px) saturate(1.25);
+    -webkit-backdrop-filter: blur(24px) saturate(1.25);
   }
 
   [data-theme='transparent'] .hud-glass-strong {
     background: var(--ely-surface-strong);
-    backdrop-filter: blur(30px) saturate(1.3);
-    -webkit-backdrop-filter: blur(30px) saturate(1.3);
+    backdrop-filter: blur(32px) saturate(1.35);
+    -webkit-backdrop-filter: blur(32px) saturate(1.35);
   }
 
   .hud-glow {
@@ -339,16 +341,26 @@
     color: var(--ely-text);
   }
 
+  /* Barra de chat / voz — solo Inicio y Conversación */
   .input-hud {
-    background: var(--ely-input-bg);
+    background: var(--ely-surface);
     border: 1px solid var(--ely-border);
-    border-radius: 28px;
+    border-radius: 9999px;
     box-shadow: var(--ely-shadow-sm);
-    transition: border-color 0.2s var(--ely-ease), box-shadow 0.2s var(--ely-ease), transform 0.15s ease;
+    transition:
+      border-color 0.2s var(--ely-ease),
+      box-shadow 0.2s var(--ely-ease),
+      background 0.25s ease;
   }
   .input-hud:focus-within {
     border-color: var(--ely-accent);
-    box-shadow: 0 0 0 3px var(--ely-accent-soft);
+    box-shadow: 0 0 0 3px var(--ely-accent-soft), var(--ely-shadow-sm);
+  }
+  [data-theme='light'] .input-hud {
+    background: #ffffff;
+  }
+  [data-theme='dark'] .input-hud {
+    background: var(--ely-bg-elevated);
   }
 
   .status-chip {
@@ -370,7 +382,7 @@
     border: 1.5px solid var(--ely-border);
     background: var(--ely-surface);
     border-radius: 14px;
-    padding: 16px 12px;
+    padding: 14px 12px;
     text-align: center;
     cursor: pointer;
     transition:
@@ -385,6 +397,7 @@
     border-color: var(--ely-border-strong);
     background: var(--ely-nav-hover);
     transform: translateY(-2px);
+    box-shadow: var(--ely-shadow-sm);
   }
   .theme-card:active {
     transform: translateY(0) scale(0.98);
@@ -397,8 +410,8 @@
   }
 
   .theme-preview {
-    height: 28px;
-    border-radius: 8px;
+    height: 36px;
+    border-radius: 10px;
     margin-bottom: 10px;
     border: 1px solid var(--ely-border);
     overflow: hidden;
@@ -425,7 +438,7 @@
   }
   .ely-btn-primary:hover {
     background: var(--ely-accent-hover);
-    box-shadow: 0 2px 8px var(--ely-accent-soft);
+    box-shadow: 0 4px 14px var(--ely-accent-soft);
   }
   .ely-btn-primary:active {
     transform: scale(0.97);
@@ -525,73 +538,30 @@
   border-color: var(--ely-border) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════
-   ADVANCED ANIMATIONS
-   ═══════════════════════════════════════════════════════════ */
-
 @layer utilities {
-  /* —— Entradas —— */
-  .animate-fade-in {
-    animation: ely-fade-in var(--ely-duration) var(--ely-ease-out) both;
-  }
-  .animate-slide-up {
-    animation: ely-slide-up var(--ely-duration-slow) var(--ely-ease-out) both;
-  }
-  .animate-slide-down {
-    animation: ely-slide-down var(--ely-duration-slow) var(--ely-ease-out) both;
-  }
-  .animate-slide-left {
-    animation: ely-slide-left var(--ely-duration-slow) var(--ely-ease-out) both;
-  }
-  .animate-slide-right {
-    animation: ely-slide-right var(--ely-duration-slow) var(--ely-ease-out) both;
-  }
-  .animate-scale-in {
-    animation: ely-scale-in 0.4s var(--ely-ease-out) both;
-  }
-  .animate-boot {
-    animation: ely-boot 0.5s var(--ely-ease-out) both;
-  }
-  .animate-pop {
-    animation: ely-pop 0.4s var(--ely-ease-spring) both;
-  }
-
-  /* —— Continuas (suaves) —— */
-  .animate-soft-pulse {
-    animation: ely-soft-pulse 2.4s ease-in-out infinite;
-  }
-  .animate-status-dot {
-    animation: ely-status-dot 2s ease-in-out infinite;
-  }
-  .animate-spin-slow {
-    animation: ely-spin 1.2s linear infinite;
-  }
-  .animate-float {
-    animation: ely-float 4s ease-in-out infinite;
-  }
-  .animate-shimmer {
-    position: relative;
-    overflow: hidden;
-  }
+  .animate-fade-in { animation: ely-fade-in var(--ely-duration) var(--ely-ease-out) both; }
+  .animate-slide-up { animation: ely-slide-up var(--ely-duration-slow) var(--ely-ease-out) both; }
+  .animate-slide-down { animation: ely-slide-down var(--ely-duration-slow) var(--ely-ease-out) both; }
+  .animate-slide-left { animation: ely-slide-left var(--ely-duration-slow) var(--ely-ease-out) both; }
+  .animate-slide-right { animation: ely-slide-right var(--ely-duration-slow) var(--ely-ease-out) both; }
+  .animate-scale-in { animation: ely-scale-in 0.4s var(--ely-ease-out) both; }
+  .animate-boot { animation: ely-boot 0.5s var(--ely-ease-out) both; }
+  .animate-pop { animation: ely-pop 0.4s var(--ely-ease-spring) both; }
+  .animate-soft-pulse { animation: ely-soft-pulse 2.4s ease-in-out infinite; }
+  .animate-status-dot { animation: ely-status-dot 2s ease-in-out infinite; }
+  .animate-spin-slow { animation: ely-spin 1.2s linear infinite; }
+  .animate-float { animation: ely-float 4s ease-in-out infinite; }
+  .animate-shimmer { position: relative; overflow: hidden; }
   .animate-shimmer::after {
     content: '';
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      105deg,
-      transparent 40%,
-      var(--ely-accent-soft) 50%,
-      transparent 60%
-    );
+    background: linear-gradient(105deg, transparent 40%, var(--ely-accent-soft) 50%, transparent 60%);
     background-size: 200% 100%;
     animation: ely-shimmer 1.8s ease-in-out infinite;
     pointer-events: none;
   }
-
-  /* —— Stagger helpers (delay por hijo) —— */
-  .stagger-children > * {
-    animation: ely-slide-up 0.4s var(--ely-ease-out) both;
-  }
+  .stagger-children > * { animation: ely-slide-up 0.4s var(--ely-ease-out) both; }
   .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
   .stagger-children > *:nth-child(2) { animation-delay: 40ms; }
   .stagger-children > *:nth-child(3) { animation-delay: 80ms; }
@@ -603,170 +573,83 @@
   .stagger-children > *:nth-child(9) { animation-delay: 320ms; }
   .stagger-children > *:nth-child(10) { animation-delay: 360ms; }
   .stagger-children > *:nth-child(n+11) { animation-delay: 400ms; }
-
-  /* Delays manuales */
   .delay-75 { animation-delay: 75ms; }
   .delay-100 { animation-delay: 100ms; }
   .delay-150 { animation-delay: 150ms; }
   .delay-200 { animation-delay: 200ms; }
   .delay-300 { animation-delay: 300ms; }
   .delay-500 { animation-delay: 500ms; }
-
-  /* Legacy aliases */
   .animate-pulse-glow { animation: ely-soft-pulse 2.4s ease-in-out infinite; }
   .animate-breathe { animation: ely-float 4s ease-in-out infinite; }
 }
 
-/* —— Keyframes —— */
-@keyframes ely-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
+@keyframes ely-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes ely-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes ely-slide-down {
-  from {
-    opacity: 0;
-    transform: translateY(-12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-
 @keyframes ely-slide-left {
-  from {
-    opacity: 0;
-    transform: translateX(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
 }
-
 @keyframes ely-slide-right {
-  from {
-    opacity: 0;
-    transform: translateX(-16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
 }
-
 @keyframes ely-scale-in {
-  from {
-    opacity: 0;
-    transform: scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
 }
-
 @keyframes ely-boot {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
-
 @keyframes ely-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.85);
-  }
-  70% {
-    transform: scale(1.04);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
+  0% { opacity: 0; transform: scale(0.85); }
+  70% { transform: scale(1.04); }
+  100% { opacity: 1; transform: scale(1); }
 }
-
 @keyframes ely-select-pop {
   0% { transform: scale(0.96); }
   50% { transform: scale(1.02); }
   100% { transform: scale(1); }
 }
-
 @keyframes ely-dot-pop {
   0% { transform: scale(0); opacity: 0; }
   60% { transform: scale(1.3); }
   100% { transform: scale(1); opacity: 1; }
 }
-
 @keyframes ely-soft-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
 }
-
 @keyframes ely-status-dot {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.65;
-    transform: scale(0.85);
-  }
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(0.85); }
 }
-
-@keyframes ely-spin {
-  to { transform: rotate(360deg); }
-}
-
+@keyframes ely-spin { to { transform: rotate(360deg); } }
 @keyframes ely-float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-6px); }
 }
-
 @keyframes ely-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
-
-/* Mensajes de chat: entrada suave */
 @keyframes ely-msg-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px) scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
+.ely-msg-enter { animation: ely-msg-in 0.32s var(--ely-ease-out) both; }
 
-.ely-msg-enter {
-  animation: ely-msg-in 0.32s var(--ely-ease-out) both;
-}
-
-/* Barra de progreso indeterminada */
 @keyframes ely-progress {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(350%); }
 }
-
 .ely-progress-indeterminate {
   position: relative;
   height: 3px;
@@ -777,8 +660,7 @@
 .ely-progress-indeterminate::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 0; left: 0;
   height: 100%;
   width: 35%;
   border-radius: 9999px;
@@ -786,7 +668,6 @@
   animation: ely-progress 1.2s ease-in-out infinite;
 }
 
-/* Skeleton loading */
 .ely-skeleton {
   background: var(--ely-bg-soft);
   border-radius: var(--ely-radius);
@@ -797,21 +678,12 @@
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    var(--ely-accent-soft),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, var(--ely-accent-soft), transparent);
   animation: ely-shimmer 1.6s ease-in-out infinite;
   background-size: 200% 100%;
 }
 
-/* Ripple en botones (efecto Material) */
-.ely-ripple {
-  position: relative;
-  overflow: hidden;
-}
+.ely-ripple { position: relative; overflow: hidden; }
 .ely-ripple::before {
   content: '';
   position: absolute;
@@ -828,25 +700,12 @@
   transition-duration: 0s;
 }
 
-/* Page transition wrapper */
-.ely-page-enter {
-  animation: ely-page 0.4s var(--ely-ease-out) both;
-}
-
+.ely-page-enter { animation: ely-page 0.4s var(--ely-ease-out) both; }
 @keyframes ely-page {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-    filter: blur(2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    filter: blur(0);
-  }
+  from { opacity: 0; transform: translateY(8px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
-/* Respeto a preferencias de movimiento reducido */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -855,7 +714,6 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-
   .animate-soft-pulse,
   .animate-status-dot,
   .animate-float,
