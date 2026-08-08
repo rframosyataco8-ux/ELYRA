@@ -3,29 +3,29 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════
-   ELYRA Design System — Google-inspired (clean · neutral · spacious)
-   Soft blue accent · Material-like surfaces · low eye strain
+   ELYRA Design System v2
+   Google Material + premium tech · clean · spacious · easy on eyes
    ═══════════════════════════════════════════════════════════ */
 
-/* ─────────── DARK ─────────── */
+/* ─────────── DARK — charcoal with soft blue ─────────── */
 :root,
 [data-theme='dark'] {
-  --ely-bg: #0f1117;
-  --ely-bg-elevated: #161b22;
-  --ely-bg-soft: #1c2128;
-  --ely-surface: #161b22;
-  --ely-surface-strong: #1c2128;
-  --ely-border: rgba(255, 255, 255, 0.08);
-  --ely-border-strong: rgba(255, 255, 255, 0.14);
+  --ely-bg: #0d1117;
+  --ely-bg-elevated: #151b23;
+  --ely-bg-soft: #1c2330;
+  --ely-surface: #151b23;
+  --ely-surface-strong: #1c2330;
+  --ely-border: rgba(255, 255, 255, 0.07);
+  --ely-border-strong: rgba(255, 255, 255, 0.13);
   --ely-text: #e6edf3;
   --ely-text-muted: #8b949e;
   --ely-text-dim: #6e7681;
   --ely-accent: #58a6ff;
   --ely-accent-hover: #79b8ff;
-  --ely-accent-soft: rgba(88, 166, 255, 0.12);
+  --ely-accent-soft: rgba(88, 166, 255, 0.11);
   --ely-accent-mid: rgba(88, 166, 255, 0.18);
   --ely-glow: transparent;
-  --ely-scrollbar: rgba(139, 148, 158, 0.35);
+  --ely-scrollbar: rgba(139, 148, 158, 0.32);
   --ely-input-bg: #0d1117;
   --ely-danger: #f85149;
   --ely-success: #3fb950;
@@ -33,81 +33,93 @@
   --ely-blur: 0px;
   --ely-radius: 12px;
   --ely-radius-lg: 16px;
-  --ely-nav-hover: rgba(255, 255, 255, 0.06);
-  --ely-nav-active: rgba(88, 166, 255, 0.14);
-  --ely-header-border: rgba(255, 255, 255, 0.06);
-  --ely-card: #161b22;
-  --ely-card-hover: rgba(88, 166, 255, 0.08);
-  --ely-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2);
-  --ely-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --ely-radius-xl: 20px;
+  --ely-nav-hover: rgba(255, 255, 255, 0.055);
+  --ely-nav-active: rgba(88, 166, 255, 0.13);
+  --ely-header-border: rgba(255, 255, 255, 0.055);
+  --ely-card: #151b23;
+  --ely-card-hover: rgba(88, 166, 255, 0.07);
+  --ely-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.2);
+  --ely-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --ely-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --ely-track: rgba(255, 255, 255, 0.08);
+  --ely-overlay: rgba(13, 17, 23, 0.6);
 }
 
-/* ─────────── LIGHT (Google-like) ─────────── */
+/* ─────────── LIGHT — Google Workspace ─────────── */
 [data-theme='light'] {
-  --ely-bg: #f8f9fa;
+  --ely-bg: #f6f8fc;
   --ely-bg-elevated: #ffffff;
-  --ely-bg-soft: #f1f3f4;
+  --ely-bg-soft: #eef1f6;
   --ely-surface: #ffffff;
   --ely-surface-strong: #ffffff;
-  --ely-border: rgba(60, 64, 67, 0.12);
-  --ely-border-strong: rgba(60, 64, 67, 0.2);
-  --ely-text: #202124;
+  --ely-border: rgba(60, 64, 67, 0.1);
+  --ely-border-strong: rgba(60, 64, 67, 0.18);
+  --ely-text: #1f1f1f;
   --ely-text-muted: #5f6368;
   --ely-text-dim: #80868b;
-  --ely-accent: #1a73e8;
-  --ely-accent-hover: #1765cc;
-  --ely-accent-soft: rgba(26, 115, 232, 0.08);
-  --ely-accent-mid: rgba(26, 115, 232, 0.14);
+  --ely-accent: #0b57d0;
+  --ely-accent-hover: #0842a0;
+  --ely-accent-soft: rgba(11, 87, 208, 0.08);
+  --ely-accent-mid: rgba(11, 87, 208, 0.14);
   --ely-glow: transparent;
-  --ely-scrollbar: rgba(95, 99, 104, 0.3);
+  --ely-scrollbar: rgba(95, 99, 104, 0.28);
   --ely-input-bg: #ffffff;
-  --ely-danger: #d93025;
-  --ely-success: #188038;
-  --ely-warning: #e37400;
+  --ely-danger: #c5221f;
+  --ely-success: #137333;
+  --ely-warning: #b06000;
   --ely-blur: 0px;
   --ely-radius: 12px;
   --ely-radius-lg: 16px;
+  --ely-radius-xl: 20px;
   --ely-nav-hover: rgba(60, 64, 67, 0.06);
-  --ely-nav-active: rgba(26, 115, 232, 0.1);
-  --ely-header-border: rgba(60, 64, 67, 0.1);
+  --ely-nav-active: rgba(11, 87, 208, 0.1);
+  --ely-header-border: rgba(60, 64, 67, 0.09);
   --ely-card: #ffffff;
-  --ely-card-hover: rgba(26, 115, 232, 0.05);
-  --ely-shadow: 0 1px 2px rgba(60, 64, 67, 0.08), 0 1px 3px rgba(60, 64, 67, 0.06);
-  --ely-shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.06);
+  --ely-card-hover: rgba(11, 87, 208, 0.04);
+  --ely-shadow: 0 1px 2px rgba(60, 64, 67, 0.06), 0 1px 3px rgba(60, 64, 67, 0.08);
+  --ely-shadow-sm: 0 1px 2px rgba(60, 64, 67, 0.05);
+  --ely-shadow-lg: 0 4px 16px rgba(60, 64, 67, 0.1);
+  --ely-track: rgba(60, 64, 67, 0.1);
+  --ely-overlay: rgba(246, 248, 252, 0.7);
 }
 
-/* ─────────── CRISTAL (soft glass, less aggressive) ─────────── */
+/* ─────────── CRISTAL — refined glass ─────────── */
 [data-theme='transparent'] {
   --ely-bg: transparent;
-  --ely-bg-elevated: rgba(255, 255, 255, 0.08);
+  --ely-bg-elevated: rgba(255, 255, 255, 0.09);
   --ely-bg-soft: rgba(255, 255, 255, 0.05);
   --ely-surface: rgba(255, 255, 255, 0.1);
-  --ely-surface-strong: rgba(255, 255, 255, 0.14);
-  --ely-border: rgba(255, 255, 255, 0.14);
+  --ely-surface-strong: rgba(255, 255, 255, 0.15);
+  --ely-border: rgba(255, 255, 255, 0.13);
   --ely-border-strong: rgba(255, 255, 255, 0.22);
   --ely-text: #f1f3f4;
-  --ely-text-muted: rgba(241, 243, 244, 0.72);
+  --ely-text-muted: rgba(241, 243, 244, 0.75);
   --ely-text-dim: rgba(241, 243, 244, 0.5);
   --ely-accent: #8ab4f8;
   --ely-accent-hover: #aecbfa;
   --ely-accent-soft: rgba(138, 180, 248, 0.14);
   --ely-accent-mid: rgba(138, 180, 248, 0.22);
   --ely-glow: transparent;
-  --ely-scrollbar: rgba(138, 180, 248, 0.3);
+  --ely-scrollbar: rgba(138, 180, 248, 0.28);
   --ely-input-bg: rgba(255, 255, 255, 0.08);
   --ely-danger: #f28b82;
   --ely-success: #81c995;
   --ely-warning: #fdd663;
-  --ely-blur: 24px;
+  --ely-blur: 28px;
   --ely-radius: 14px;
   --ely-radius-lg: 18px;
+  --ely-radius-xl: 22px;
   --ely-nav-hover: rgba(255, 255, 255, 0.08);
   --ely-nav-active: rgba(138, 180, 248, 0.18);
   --ely-header-border: rgba(255, 255, 255, 0.1);
   --ely-card: rgba(255, 255, 255, 0.08);
   --ely-card-hover: rgba(138, 180, 248, 0.12);
-  --ely-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  --ely-shadow: 0 4px 20px rgba(0, 0, 0, 0.22);
   --ely-shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.15);
+  --ely-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.3);
+  --ely-track: rgba(255, 255, 255, 0.12);
+  --ely-overlay: rgba(0, 0, 0, 0.25);
 }
 
 @layer base {
@@ -121,8 +133,11 @@
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.25s ease, color 0.2s ease;
-    letter-spacing: -0.01em;
+    transition:
+      background-color 0.3s cubic-bezier(0.2, 0, 0, 1),
+      color 0.25s cubic-bezier(0.2, 0, 0, 1);
+    letter-spacing: -0.011em;
+    line-height: 1.5;
   }
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -132,6 +147,10 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--ely-text-dim);
+  }
+  ::selection {
+    background: var(--ely-accent-mid);
+    color: var(--ely-text);
   }
 }
 
@@ -143,28 +162,33 @@
   color: var(--ely-text);
   min-height: 100%;
   position: relative;
+  transition: background 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
 
 [data-theme='light'] .ely-app {
-  background: var(--ely-bg);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(11, 87, 208, 0.04), transparent 55%),
+    var(--ely-bg);
 }
 
 [data-theme='dark'] .ely-app {
-  background: var(--ely-bg);
+  background:
+    radial-gradient(ellipse 70% 40% at 50% -5%, rgba(88, 166, 255, 0.04), transparent 50%),
+    var(--ely-bg);
 }
 
 [data-theme='transparent'] .ely-app {
   background: linear-gradient(
-    160deg,
-    rgba(255, 255, 255, 0.06) 0%,
-    rgba(15, 20, 35, 0.2) 50%,
-    rgba(8, 12, 24, 0.15) 100%
+    155deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(20, 28, 45, 0.18) 45%,
+    rgba(10, 14, 28, 0.12) 100%
   );
-  backdrop-filter: blur(var(--ely-blur)) saturate(1.2);
-  -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.2);
+  backdrop-filter: blur(var(--ely-blur)) saturate(1.25);
+  -webkit-backdrop-filter: blur(var(--ely-blur)) saturate(1.25);
 }
 
-/* ─── Panels & surfaces ─── */
+/* ─── Surfaces ─── */
 .ely-panel {
   background: var(--ely-surface);
   border: 1px solid var(--ely-border);
@@ -182,37 +206,46 @@
   border: 1px solid var(--ely-border);
   background: var(--ely-card);
   box-shadow: var(--ely-shadow-sm);
-  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition:
+    background 0.2s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s cubic-bezier(0.2, 0, 0, 1);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
   padding: 1.25rem;
+  cursor: pointer;
 }
 .ely-product-card:hover {
   background: var(--ely-card-hover);
   border-color: var(--ely-border-strong);
   box-shadow: var(--ely-shadow);
-  transform: translateY(-1px);
+  transform: translateY(-2px);
+}
+.ely-product-card:active {
+  transform: translateY(0);
 }
 .ely-product-icon {
   width: 2.75rem;
   height: 2.75rem;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid var(--ely-border);
   background: var(--ely-accent-soft);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--ely-accent);
-  transition: transform 0.2s ease;
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), background 0.2s ease;
 }
 .ely-product-card:hover .ely-product-icon {
-  transform: scale(1.04);
+  transform: scale(1.06);
+  background: var(--ely-accent-mid);
 }
 
-/* Nav items — Google-like pill */
+/* Nav — Google-style pills */
 .ely-nav-item {
   width: 100%;
   display: flex;
@@ -223,6 +256,7 @@
   border: none;
   color: var(--ely-text-muted);
   transition: background 0.15s ease, color 0.15s ease;
+  cursor: pointer;
 }
 .ely-nav-item:hover {
   color: var(--ely-text);
@@ -246,12 +280,12 @@
 }
 
 @layer components {
-  /* Clean surface (replaces heavy glass) */
   .hud-glass {
     background: var(--ely-surface);
     border: 1px solid var(--ely-border);
     border-radius: var(--ely-radius-lg);
     box-shadow: var(--ely-shadow-sm);
+    transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
   }
 
   .hud-glass-strong {
@@ -259,21 +293,21 @@
     border: 1px solid var(--ely-border);
     border-radius: var(--ely-radius-lg);
     box-shadow: var(--ely-shadow);
+    transition: background 0.25s ease, border-color 0.25s ease;
   }
 
   [data-theme='transparent'] .hud-glass {
     background: var(--ely-surface);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(22px) saturate(1.2);
+    -webkit-backdrop-filter: blur(22px) saturate(1.2);
   }
 
   [data-theme='transparent'] .hud-glass-strong {
     background: var(--ely-surface-strong);
-    backdrop-filter: blur(28px);
-    -webkit-backdrop-filter: blur(28px);
+    backdrop-filter: blur(30px) saturate(1.3);
+    -webkit-backdrop-filter: blur(30px) saturate(1.3);
   }
 
-  /* Soft focus ring instead of glow */
   .hud-glow {
     box-shadow: 0 0 0 2px var(--ely-accent-soft);
   }
@@ -284,13 +318,12 @@
     color: var(--ely-text);
   }
 
-  /* Input — clean */
   .input-hud {
     background: var(--ely-input-bg);
     border: 1px solid var(--ely-border);
     border-radius: 28px;
     box-shadow: var(--ely-shadow-sm);
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease;
   }
   .input-hud:focus-within {
     border-color: var(--ely-accent);
@@ -301,35 +334,104 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.3rem 0.85rem;
+    padding: 0.35rem 0.9rem;
     border-radius: 9999px;
     background: var(--ely-accent-soft);
     border: 1px solid transparent;
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--ely-accent);
+    letter-spacing: -0.01em;
   }
 
   .theme-card {
-    border: 1px solid var(--ely-border);
+    border: 1.5px solid var(--ely-border);
     background: var(--ely-surface);
-    border-radius: 12px;
-    padding: 14px 12px;
+    border-radius: 14px;
+    padding: 16px 12px;
     text-align: center;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+    transition:
+      border-color 0.18s ease,
+      background 0.18s ease,
+      box-shadow 0.18s ease,
+      transform 0.15s ease;
+    position: relative;
+    overflow: hidden;
   }
   .theme-card:hover {
     border-color: var(--ely-border-strong);
     background: var(--ely-nav-hover);
+    transform: translateY(-1px);
   }
   .theme-card.active {
     border-color: var(--ely-accent);
     background: var(--ely-accent-soft);
+    box-shadow: 0 0 0 1px var(--ely-accent);
+  }
+
+  /* Theme preview swatches */
+  .theme-preview {
+    height: 28px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    border: 1px solid var(--ely-border);
+    overflow: hidden;
+    display: flex;
+  }
+  .theme-preview span {
+    flex: 1;
+  }
+
+  /* Primary button */
+  .ely-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    background: var(--ely-accent);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+  }
+  .ely-btn-primary:hover {
+    background: var(--ely-accent-hover);
+  }
+  .ely-btn-primary:active {
+    transform: scale(0.98);
+  }
+  .ely-btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .ely-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    background: var(--ely-accent-soft);
+    color: var(--ely-accent);
+    border: 1px solid var(--ely-border);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .ely-btn-secondary:hover {
+    background: var(--ely-accent-mid);
+    border-color: var(--ely-border-strong);
   }
 }
 
-/* Soften hard-coded sky utilities so they respect the theme */
+/* Theme-aware sky overrides */
 [data-theme='light'] .text-white { color: var(--ely-text) !important; }
 [data-theme='light'] .text-sky-100,
 [data-theme='light'] .text-sky-200,
@@ -396,22 +498,22 @@
 }
 
 @layer utilities {
-  .animate-fade-in { animation: fade-in 0.35s ease-out both; }
-  .animate-slide-up { animation: slide-up 0.4s cubic-bezier(0.2, 0, 0, 1) both; }
+  .animate-fade-in { animation: fade-in 0.3s cubic-bezier(0.2, 0, 0, 1) both; }
+  .animate-slide-up { animation: slide-up 0.35s cubic-bezier(0.2, 0, 0, 1) both; }
   .animate-pulse-glow { animation: none; }
-  .animate-boot { animation: boot-in 0.5s cubic-bezier(0.2, 0, 0, 1) both; }
+  .animate-boot { animation: boot-in 0.45s cubic-bezier(0.2, 0, 0, 1) both; }
   .animate-breathe { animation: none; }
 }
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(6px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes boot-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
