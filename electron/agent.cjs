@@ -13,6 +13,9 @@ const MODEL_FAST = 'llama-3.1-8b-instant';
 const MODEL_SMART = 'llama-3.3-70b-versatile';
 const MODEL_CHAIN_GROQ = [MODEL_FAST, 'gemma2-9b-it', MODEL_SMART];
 
+const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/openai';
+const GEMINI_MODEL = 'gemini-2.0-flash';
+
 const COMPLEX_RE =
   /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas)\b/i;
 
@@ -47,10 +50,11 @@ function detectProviderFromKey(apiKey) {
       provider: 'anthropic',
     };
   }
-  if (k.startsWith('AIza')) {
+  /* Gemini: AIza… (clásica) o AQ.… (Google AI Studio reciente) */
+  if (k.startsWith('AIza') || k.startsWith('AQ.')) {
     return {
-      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-      model: 'gemini-2.0-flash',
+      baseUrl: GEMINI_BASE,
+      model: GEMINI_MODEL,
       provider: 'gemini',
     };
   }
@@ -115,9 +119,30 @@ function isComplexQuery(text) {
 }
 
 function selectModel(config, userText) {
+  const provider = inferProvider(config);
+  if (provider === 'gemini') {
+    return config.model || GEMINI_MODEL;
+  }
   if (config.model && config.model !== MODEL_FAST) return config.model;
   if (isComplexQuery(userText)) return MODEL_SMART;
   return config.model || MODEL_FAST;
+}
+
+function llmHeaders(config) {
+  const key = (config.apiKey || '').trim();
+  const provider = inferProvider(config);
+  const headers = { 'Content-Type': 'application/json' };
+  if (provider === 'gemini') {
+    /* Compatible OpenAI + nativo AI Studio */
+    headers.Authorization = 'Bearer ' + key;
+    headers['x-goog-api-key'] = key;
+  } else if (provider === 'anthropic') {
+    headers['x-api-key'] = key;
+    headers['anthropic-version'] = '2023-06-01';
+  } else {
+    headers.Authorization = 'Bearer ' + key;
+  }
+  return headers;
 }
 
 function fallbackResponse(userText) {
@@ -148,14 +173,14 @@ async function callLLM(messages, config, model) {
     temperature: 0.4,
     max_tokens: 1400,
   };
-  const headers = {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + (config.apiKey || ''),
-  };
-  const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: llmHeaders(config),
+    body: JSON.stringify(body),
+  });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    throw new Error('LLM ' + res.status + ': ' + errText.slice(0, 200));
+    throw new Error('LLM ' + res.status + ': ' + errText.slice(0, 280));
   }
   const data = await res.json();
   const content = data.choices?.[0]?.message?.content || '';
@@ -166,7 +191,9 @@ async function testApiConnection(partial) {
   try {
     const config = { ...getConfig(), ...(partial || {}) };
     if (!config.apiKey) return { ok: false, message: 'Falta la API key.' };
-    const model = config.model || MODEL_FAST;
+    const provider = inferProvider(config);
+    const model =
+      config.model || (provider === 'gemini' ? GEMINI_MODEL : MODEL_FAST);
     const result = await callLLM(
       [
         { role: 'system', content: 'Responde solo: ok' },
@@ -177,13 +204,22 @@ async function testApiConnection(partial) {
     );
     return {
       ok: true,
-      message: 'Conexión correcta con ' + model + '.',
+      message:
+        'Conexión correcta · ' +
+        (provider === 'gemini' ? 'Gemini' : provider) +
+        ' · ' +
+        model,
       model,
       baseUrl: config.baseUrl,
+      provider,
       sample: (result.content || '').slice(0, 80),
     };
   } catch (err) {
-    return { ok: false, message: 'No se pudo conectar: ' + (err.message || String(err)), error: String(err) };
+    return {
+      ok: false,
+      message: 'No se pudo conectar: ' + (err.message || String(err)),
+      error: String(err),
+    };
   }
 }
 
@@ -238,19 +274,17 @@ async function runAgent(message, history, helpers) {
       const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
       const res = await fetch(baseUrl + '/chat/completions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + config.apiKey,
-        },
+        headers: llmHeaders(config),
         body: JSON.stringify(body),
       });
 
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
-        if (steps === 1 && model !== MODEL_FAST) {
+        if (steps === 1 && model !== MODEL_FAST && inferProvider(config) !== 'gemini') {
+          model = MODEL_FAST;
           continue;
         }
-        throw new Error('LLM ' + res.status + ' ' + errText.slice(0, 180));
+        throw new Error('LLM ' + res.status + ' ' + errText.slice(0, 220));
       }
 
       const data = await res.json();
@@ -293,6 +327,7 @@ async function runAgent(message, history, helpers) {
       if (
         steps < maxSteps &&
         !usedTools &&
+        inferProvider(config) !== 'gemini' &&
         model !== MODEL_SMART &&
         (!reply || reply.length < 12 || /no puedo|no sé|no se|as an ai|como ia/i.test(reply))
       ) {
@@ -342,4 +377,6 @@ module.exports = {
   MODEL_FAST,
   MODEL_SMART,
   MODEL_CHAIN: MODEL_CHAIN_GROQ,
+  GEMINI_BASE,
+  GEMINI_MODEL,
 };
