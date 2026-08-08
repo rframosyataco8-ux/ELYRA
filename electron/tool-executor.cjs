@@ -1,5 +1,5 @@
 /**
- * Ejecutor unificado de tools ELYRA — PC, FS, Python, web, memoria.
+ * Ejecutor unificado de tools ELYRA — PC autónomo, FS, Python, web, memoria.
  */
 const fs = require('fs');
 const path = require('path');
@@ -9,6 +9,7 @@ const fsSkills = require('./fs-skills.cjs');
 const HOOK_TOOLS = require('./agent-tool-gate.cjs');
 const { deepWebSearch } = require('./web-search-boost.cjs');
 const { youtubeSearchUrl, googleSearchUrl } = require('./intent-compound.cjs');
+const pcControl = require('./pc-control.cjs');
 
 function resolveUserPath(filePath) {
   if (!filePath) return path.join(os.homedir(), 'Documents', 'elyra-output.txt');
@@ -26,7 +27,7 @@ function resolveUserPath(filePath) {
 async function executeTool(tool, helpers) {
   const name = String(tool.name || '').toLowerCase();
   const params = tool.params || {};
-  const pc = helpers.pc;
+  const pc = helpers.pc || pcControl;
 
   if (HOOK_TOOLS.has(name)) {
     return hooks.extendExecute(name, params, helpers, null);
@@ -123,16 +124,29 @@ async function executeTool(tool, helpers) {
         let p = params.path || path.join(os.homedir(), 'Documents');
         if (!path.isAbsolute(p)) p = resolveUserPath(p);
         if (!fs.existsSync(p)) return { ok: false, result: 'No existe' };
-        const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 80);
+        const items = fs.readdirSync(p, { withFileTypes: true }).slice(0, 120);
         return {
           ok: true,
           result: items.map((d) => (d.isDirectory() ? '[DIR] ' : '') + d.name).join('\n'),
         };
       }
       case 'search_files':
-        return pc ? await pc.searchFiles(params.query, params.root) : { ok: false, result: 'N/A' };
+        return pc.searchFiles
+          ? await pc.searchFiles(params.query, params.root)
+          : { ok: false, result: 'N/A' };
       case 'run_command':
-        return await helpers.runCommand(params.command || '');
+      case 'shell': {
+        const cmd = params.command || params.cmd || '';
+        if (helpers.runCommand) {
+          try {
+            return await helpers.runCommand(cmd);
+          } catch {
+            /* fallback */
+          }
+        }
+        if (pc.shell) return await pc.shell(cmd);
+        return { ok: false, result: 'Shell no disponible' };
+      }
       case 'get_system_info':
         if (helpers.getSystemStats) {
           const s = await helpers.getSystemStats();
@@ -143,39 +157,54 @@ async function executeTool(tool, helpers) {
           result: os.hostname() + ', ' + Math.round(os.totalmem() / 1e9) + ' GB RAM.',
         };
       case 'battery':
-        return pc ? await pc.battery() : { ok: false, result: 'N/A' };
+        return pc.battery ? await pc.battery() : { ok: false, result: 'N/A' };
       case 'network_info':
-        return pc ? await pc.networkInfo() : { ok: false, result: 'N/A' };
+        return pc.networkInfo ? await pc.networkInfo() : { ok: false, result: 'N/A' };
       case 'disk_space':
-        return pc ? await pc.systemExtras('disk_space') : { ok: false, result: 'N/A' };
+        return pc.systemExtras ? await pc.systemExtras('disk_space') : { ok: false, result: 'N/A' };
       case 'uptime':
-        return pc ? await pc.systemExtras('uptime') : { ok: false, result: 'N/A' };
+        return pc.systemExtras ? await pc.systemExtras('uptime') : { ok: false, result: 'N/A' };
       case 'volume':
-        return pc ? await pc.volume(params.action, params.value) : { ok: false, result: 'N/A' };
+        return pc.volume ? await pc.volume(params.action, params.value) : { ok: false, result: 'N/A' };
       case 'media':
-        return pc ? await pc.media(params.action) : { ok: false, result: 'N/A' };
+        return pc.media ? await pc.media(params.action) : { ok: false, result: 'N/A' };
       case 'brightness':
-        return pc ? await pc.brightness(params.action, params.value) : { ok: false, result: 'N/A' };
+        return pc.brightness
+          ? await pc.brightness(params.action, params.value)
+          : { ok: false, result: 'N/A' };
       case 'clipboard':
-        return pc ? await pc.clipboard(params.action, params.text) : { ok: false, result: 'N/A' };
+        return pc.clipboard
+          ? await pc.clipboard(params.action, params.text)
+          : { ok: false, result: 'N/A' };
       case 'screenshot':
-        return pc ? await pc.screenshot() : { ok: false, result: 'N/A' };
+        return pc.screenshot ? await pc.screenshot() : { ok: false, result: 'N/A' };
       case 'list_processes':
-        return pc ? await pc.listProcesses() : { ok: false, result: 'N/A' };
+        return pc.listProcesses ? await pc.listProcesses() : { ok: false, result: 'N/A' };
       case 'kill_process':
-        return pc ? await pc.killProcess(params.name) : { ok: false, result: 'N/A' };
+        return pc.killProcess ? await pc.killProcess(params.name) : { ok: false, result: 'N/A' };
       case 'windows':
-        return pc ? await pc.windows(params.action) : { ok: false, result: 'N/A' };
+        return pc.windows
+          ? await pc.windows(params.action, params.title || params.name)
+          : { ok: false, result: 'N/A' };
       case 'input':
-        return pc ? await pc.input(params.action, { text: params.text }) : { ok: false, result: 'N/A' };
+        return pc.input
+          ? await pc.input(params.action, {
+              text: params.text,
+              x: params.x,
+              y: params.y,
+              keys: params.keys || params.key,
+            })
+          : { ok: false, result: 'N/A' };
       case 'notify':
-        return pc ? await pc.notify(params.title, params.message) : { ok: false, result: 'N/A' };
+        return pc.notify ? await pc.notify(params.title, params.message) : { ok: false, result: 'N/A' };
       case 'open_settings':
-        return pc ? await pc.openSettings(params.page || params.name) : { ok: false, result: 'N/A' };
+        return pc.openSettings
+          ? await pc.openSettings(params.page || params.name)
+          : { ok: false, result: 'N/A' };
       case 'empty_recycle':
-        return pc ? await pc.emptyRecycle() : { ok: false, result: 'N/A' };
+        return pc.emptyRecycle ? await pc.emptyRecycle() : { ok: false, result: 'N/A' };
       case 'power':
-        return pc ? await pc.power(params.action, params.minutes) : { ok: false, result: 'N/A' };
+        return pc.power ? await pc.power(params.action, params.minutes) : { ok: false, result: 'N/A' };
       default:
         return { ok: false, result: 'Herramienta desconocida: ' + name };
     }
