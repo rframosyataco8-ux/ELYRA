@@ -5,13 +5,20 @@ import {
   THEME_OPTIONS,
   type ThemeId,
 } from '@/lib/theme';
-import { Palette, Moon, Sun, Monitor, Sparkles } from 'lucide-react';
+import { Palette, Moon, Sun, Monitor, Sparkles, Check } from 'lucide-react';
 
 const ICONS: Record<ThemeId, typeof Moon> = {
   dark: Moon,
   light: Sun,
   system: Monitor,
   transparent: Sparkles,
+};
+
+const PREVIEWS: Record<ThemeId, string[]> = {
+  dark: ['#0d1117', '#151b23', '#58a6ff', '#e6edf3'],
+  light: ['#f6f8fc', '#ffffff', '#0b57d0', '#1f1f1f'],
+  system: ['#0d1117', '#f6f8fc', '#58a6ff', '#0b57d0'],
+  transparent: ['#1a2030', '#2a3548', '#8ab4f8', '#f1f3f4'],
 };
 
 export function ThemeSettings() {
@@ -43,13 +50,14 @@ export function ThemeSettings() {
         </h3>
       </div>
       <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
-        Elige un tema cómodo. Oscuro y claro están pensados para no cansar la vista.
-        Cristal añade un toque de transparencia suave.
+        Temas pensados para uso prolongado. Claro imita Google Workspace; oscuro es
+        neutro y cómodo de noche.
       </p>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-3">
         {THEME_OPTIONS.map((opt) => {
           const Icon = ICONS[opt.id];
           const active = theme === opt.id;
+          const colors = PREVIEWS[opt.id];
           return (
             <button
               key={opt.id}
@@ -57,14 +65,24 @@ export function ThemeSettings() {
               onClick={() => select(opt.id)}
               className={`theme-card ${active ? 'active' : ''}`}
             >
-              <Icon
-                className="w-5 h-5 mx-auto mb-2"
-                style={{ color: active ? 'var(--ely-accent)' : 'var(--ely-text-muted)' }}
-              />
-              <div className="text-[13px] font-medium" style={{ color: 'var(--ely-text)' }}>
-                {opt.label}
+              <div className="theme-preview">
+                {colors.map((c, i) => (
+                  <span key={i} style={{ background: c }} />
+                ))}
               </div>
-              <div className="text-[11px] mt-1 leading-snug" style={{ color: 'var(--ely-text-muted)' }}>
+              <div className="flex items-center justify-center gap-1.5 mb-1">
+                <Icon
+                  className="w-4 h-4"
+                  style={{ color: active ? 'var(--ely-accent)' : 'var(--ely-text-muted)' }}
+                />
+                <span className="text-[13px] font-medium" style={{ color: 'var(--ely-text)' }}>
+                  {opt.label}
+                </span>
+                {active && (
+                  <Check className="w-3.5 h-3.5" style={{ color: 'var(--ely-accent)' }} />
+                )}
+              </div>
+              <div className="text-[11px] leading-snug" style={{ color: 'var(--ely-text-muted)' }}>
                 {opt.hint}
               </div>
             </button>
