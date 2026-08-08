@@ -1,6 +1,6 @@
 /**
- * ELYRA / LUNA Agent v18 — Operador autónomo PC + laboratorio + voz humana
- * Fix: reintento sin tools ante 404 function-calling; errores limpios; modelos más robustos
+ * ELYRA Agent v19 — Operador autónomo PC + laboratorio + voz natural
+ * Fix: reintento sin tools ante 404 function-calling; errores limpios; identidad ELYRA
  */
 const fs = require('fs');
 const path = require('path');
@@ -200,7 +200,7 @@ function fallbackResponse(userText) {
   if (/hola|buenos|buenas/.test(t)) return 'Hola. Estoy lista. ¿En qué te ayudo?';
   if (/gracias/.test(t)) return 'Con gusto.';
   if (/qui[eé]n eres|que eres|qu[eé] eres|pres[eé]ntate/.test(t)) {
-    return 'Soy Luna. Puedo controlar tu PC, buscar información y ayudarte con el laboratorio. Dime qué necesitas.';
+    return 'Soy ELYRA. Puedo controlar tu PC, buscar información y ayudarte con el laboratorio. Dime qué necesitas.';
   }
   return 'Puedo abrir apps, controlar el sistema, buscar en la web y ayudarte con el laboratorio. ¿Qué hacemos?';
 }
@@ -235,7 +235,6 @@ function cleanUserFacingError(errMsg) {
   if (/ENOTFOUND|ECONNREFUSED|network|fetch failed/i.test(m)) {
     return 'No hay conexión con el servicio de inteligencia. Revisa internet o la URL del proveedor.';
   }
-  // Nunca volcar JSON crudo al usuario
   if (m.length > 160 || /[{}\[\]]/.test(m)) {
     return 'El modelo no respondió bien. Puedo reintentar o usar control local y búsquedas.';
   }
@@ -371,7 +370,6 @@ async function runAgent(message, history, helpers) {
       if (!res.ok) {
         const errText = await res.text().catch(() => '');
 
-        // Fix principal: 404 Function not found → reintentar SIN tools
         if (!disableTools && isToolApiError(res.status, errText)) {
           disableTools = true;
           currentMessages = messages.slice();
@@ -379,7 +377,6 @@ async function runAgent(message, history, helpers) {
           continue;
         }
 
-        // Modelo inválido → fallback más simple
         if (
           (res.status === 404 || res.status === 400) &&
           model !== MODEL_FALLBACK &&
@@ -455,7 +452,7 @@ async function runAgent(message, history, helpers) {
     return {
       response: reply,
       intelligent: true,
-      via: disableTools ? 'agent-v18-no-tools' : 'agent-v18',
+      via: disableTools ? 'agent-v19-no-tools' : 'agent-v19',
       model,
       steps,
       usedTools,

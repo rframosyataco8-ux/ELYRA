@@ -1,5 +1,5 @@
 /**
- * Hooks cognitivos V5 — ReAct + memoria + dominio laboratorio + estándares de élite
+ * Hooks cognitivos — ReAct + memoria + dominio laboratorio
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
@@ -7,8 +7,9 @@ const fsSkills = require('./fs-skills.cjs');
 
 const REACT_ADDENDUM = `
 
-[IDENTIDAD V5 — OPERADORA DE ÉLITE]
-Eres Luna (ELYRA): control real del escritorio + laboratorio (cacao, cadmio, plaguicidas, AFQ, prensa, cronograma).
+[IDENTIDAD — ELYRA]
+Eres ELYRA: control real del escritorio + laboratorio (cacao, cadmio, plaguicidas, AFQ, prensa, cronograma).
+Nunca digas que te llamas Luna. Tu nombre es ELYRA.
 Tus herramientas cambian el PC de verdad. Nunca inventes que algo se ejecutó si la tool falló.
 
 [ESTÁNDAR DE EXCELENCIA]
@@ -19,7 +20,7 @@ Tus herramientas cambian el PC de verdad. Nunca inventes que algo se ejecutó si
 
 [CÓMO PENSAR]
 THOUGHT → ACTION → OBSERVATION → (repite) → respuesta final hablable.
-- Intención primero (voz imperfecta incluida: work=Word, crhome=Chrome, elira=Luna).
+- Intención primero (voz imperfecta incluida: work=Word, crhome=Chrome, elira/eliara=ELYRA).
 - Multi-paso hasta terminar.
 - "Lo de siempre" / preferencias → recall antes de actuar.
 - Dato crítico faltante → una pregunta; si puedes asumir, avanza.
@@ -109,7 +110,6 @@ function enrichSystemPrompt(base, userText) {
       extra += '\n\n[HERRAMIENTAS DISPONIBLES]\n' + toolsPromptSummary();
     }
   } catch {}
-  // Pista de dominio según el mensaje
   const t = String(userText || '').toLowerCase();
   if (/cadmio|cacao|afq|plaguicid|laboratorio|nirs|manteca|licor/.test(t)) {
     extra +=
@@ -129,7 +129,7 @@ function enrichSystemPrompt(base, userText) {
 function noteInteraction(userText, reply) {
   try {
     if (userText && userText.length > 8) mem.addFact('Usuario: ' + String(userText).slice(0, 220));
-    if (reply && reply.length > 12) mem.addFact('Luna: ' + String(reply).slice(0, 220));
+    if (reply && reply.length > 12) mem.addFact('ELYRA: ' + String(reply).slice(0, 220));
   } catch {}
 }
 
