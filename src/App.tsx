@@ -11,6 +11,8 @@ import { RegistroPrensaPanel } from '@/components/RegistroPrensaPanel';
 import { AfqPanel, type AfqView } from '@/components/AfqPanel';
 import { CronogramaPanel } from '@/components/CronogramaPanel';
 import { ThemeSettings } from '@/components/ThemeSettings';
+import type { LabUser } from '@/lib/users';
+import { canAccessPage } from '@/lib/users';
 import { Mic, Send, Minus, Square, X, Loader2, Ear, Key, Check, Save, Trash2, Sparkles, Wifi, AlertCircle, Radio } from 'lucide-react';
 
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
@@ -38,6 +40,7 @@ const LAB_PAGES: AppPage[] = ['productos', 'registro-prensa', 'afq', 'cronograma
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<LabUser | null>(null);
   const [operator, setOperator] = useState('Operador');
   const [messages, setMessages] = useState<Message[]>([]);
   const [booted, setBooted] = useState(false);
@@ -71,6 +74,12 @@ export default function App() {
   continuousRef.current = continuous;
   deskModeRef.current = deskMode;
   messagesRef.current = messages;
+
+  const isAdmin = !!currentUser?.isAdmin;
+
+  const navigate = useCallback((p: AppPage) => {
+    if (canAccessPage(currentUser, p)) setPage(p);
+  }, [currentUser]);
 
   const addMessage = useCallback((role: 'user' | 'elyra', text: string) => {
     const entry = { id: `${Date.now()}-${Math.random()}`, role, text, timestamp: Date.now() };
@@ -135,10 +144,7 @@ export default function App() {
       window.elyra.hideFloatingCore?.();
     }
     if (floatingActiveRef.current) {
-      window.elyra.floatingCoreState?.({
-        speaking,
-        listening: listening || transcribing || deskMode,
-      });
+      window.elyra.floatingCoreState?.({ speaking, listening: listening || transcribing || deskMode });
     }
   }, [speaking, listening, transcribing, thinking, deskMode]);
 
@@ -154,9 +160,7 @@ export default function App() {
 
   useEffect(() => {
     const onRelisten = () => {
-      if ((continuousRef.current || deskModeRef.current) && !processingRef.current && !speaking) {
-        startListening();
-      }
+      if ((continuousRef.current || deskModeRef.current) && !processingRef.current && !speaking) startListening();
     };
     window.addEventListener('elyra-relisten', onRelisten);
     return () => window.removeEventListener('elyra-relisten', onRelisten);
@@ -175,14 +179,8 @@ export default function App() {
     if (!isDesktop || !window.elyra?.onDeskMode) return;
     return window.elyra.onDeskMode((on: boolean) => {
       setDeskMode(on);
-      if (on) {
-        setContinuous(true);
-        setWakeEnabled(true);
-      } else {
-        setContinuous(false);
-        window.elyra?.hideFloatingCore?.();
-        floatingActiveRef.current = false;
-      }
+      if (on) { setContinuous(true); setWakeEnabled(true); }
+      else { setContinuous(false); window.elyra?.hideFloatingCore?.(); floatingActiveRef.current = false; }
     });
   }, []);
 
@@ -210,7 +208,7 @@ export default function App() {
     const t = setTimeout(async () => {
       setBooted(true);
       let bootMsg = isDesktop ? greetingFor(operator) : 'ELYRA lista. Use la versión de escritorio para el control total.';
-      if (isDesktop) {
+      if (isDesktop && isAdmin) {
         try {
           const c = await window.elyra?.agentConfigGet();
           if (c && !c.hasKey) {
@@ -222,7 +220,7 @@ export default function App() {
       await speak(bootMsg);
     }, 450);
     return () => clearTimeout(t);
-  }, [authenticated, operator, addMessage, speak]);
+  }, [authenticated, operator, addMessage, speak, isAdmin]);
 
   const handleLogout = () => {
     clearSession();
@@ -230,6 +228,8 @@ export default function App() {
     setBooted(false);
     setMessages([]);
     setAuthenticated(false);
+    setCurrentUser(null);
+    setPage('inicio');
   };
 
   const handleToggleListen = () => {
@@ -277,7 +277,7 @@ export default function App() {
   };
 
   const handleSaveConfig = async () => {
-    if (!isDesktop || !window.elyra) return;
+    if (!isDesktop || !window.elyra || !isAdmin) return;
     setCfgSaving(true); setCfgSaved(false); setCfgTestMsg(null);
     try {
       const result = await window.elyra.agentConfigSet({ apiKey: cfgApiKey.trim() || undefined, baseUrl: cfgBaseUrl.trim(), model: cfgModel.trim() });
@@ -292,7 +292,7 @@ export default function App() {
   };
 
   const handleTestConfig = async () => {
-    if (!isDesktop || !window.elyra) return;
+    if (!isDesktop || !window.elyra || !isAdmin) return;
     setCfgTesting(true); setCfgTestMsg(null);
     try {
       if (cfgApiKey.trim()) {
@@ -337,13 +337,29 @@ export default function App() {
 
   if (!authenticated) {
     return (
-      <LoginGate onAuthenticated={(name) => { setOperator(name); setAuthenticated(true); }} />
+      <LoginGate
+        onAuthenticated={({ user, operator: name }) => {
+          setCurrentUser(user);
+          setOperator(name);
+          setAuthenticated(true);
+          setPage('inicio');
+        }}
+      />
     );
   }
 
   return (
     <div className="ely-app h-screen w-screen flex overflow-hidden select-none relative">
-      <Sidebar active={page} onNavigate={setPage} hasApiKey={hasApiKey} collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed((v) => !v)} operator={operator} onLogout={handleLogout} />
+      <Sidebar
+        active={page}
+        onNavigate={navigate}
+        hasApiKey={hasApiKey}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((v) => !v)}
+        operator={operator}
+        user={currentUser}
+        onLogout={handleLogout}
+      />
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         <header
           className="h-11 flex items-center justify-between px-4 drag-region"
@@ -352,37 +368,26 @@ export default function App() {
           <div className="flex items-center gap-2 text-[12px] pl-1" style={{ color: 'var(--ely-text-muted)' }}>
             <span className="font-medium" style={{ color: 'var(--ely-text)' }}>ELYRA</span>
             {isDesktop && <span>· Escritorio</span>}
+            {currentUser && <span>· {currentUser.roleLabel}</span>}
             {deskMode && <span style={{ color: 'var(--ely-warning)' }}>· Modo escritorio</span>}
             {((wakeEnabled && wakeListening) || continuous) && <span>· Escucha activa</span>}
             {naturalTts && <span>· Voz neural</span>}
-            {hasApiKey && <span style={{ color: 'var(--ely-accent)' }}>· IA activa</span>}
-            {!hasApiKey && isDesktop && <span style={{ color: 'var(--ely-warning)' }}>· Sin API key</span>}
+            {isAdmin && hasApiKey && <span style={{ color: 'var(--ely-accent)' }}>· IA activa</span>}
           </div>
           <div className="flex items-center gap-0.5 no-drag">
             {isDesktop && (
               <>
                 <button
                   onClick={() => {
-                    setDeskMode(true);
-                    setContinuous(true);
-                    setWakeEnabled(true);
-                    window.elyra?.showFloatingCore?.();
-                    window.elyra?.minimize?.();
+                    setDeskMode(true); setContinuous(true); setWakeEnabled(true);
+                    window.elyra?.showFloatingCore?.(); window.elyra?.minimize?.();
                   }}
                   className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
                   style={{ color: 'var(--ely-text-muted)' }}
-                  title="Minimizar · núcleo al lado · sigue escuchando (Ctrl+Shift+E oculta todo)"
+                  title="Minimizar"
                 ><Minus className="w-3.5 h-3.5" /></button>
-                <button
-                  onClick={() => window.elyra?.maximize()}
-                  className="w-8 h-8 flex items-center justify-center rounded-full transition-colors"
-                  style={{ color: 'var(--ely-text-muted)' }}
-                ><Square className="w-3 h-3" /></button>
-                <button
-                  onClick={() => window.elyra?.close()}
-                  className="w-8 h-8 flex items-center justify-center rounded-full transition-colors hover:text-red-400"
-                  style={{ color: 'var(--ely-text-muted)' }}
-                ><X className="w-3.5 h-3.5" /></button>
+                <button onClick={() => window.elyra?.maximize()} className="w-8 h-8 flex items-center justify-center rounded-full" style={{ color: 'var(--ely-text-muted)' }}><Square className="w-3 h-3" /></button>
+                <button onClick={() => window.elyra?.close()} className="w-8 h-8 flex items-center justify-center rounded-full hover:text-red-400" style={{ color: 'var(--ely-text-muted)' }}><X className="w-3.5 h-3.5" /></button>
               </>
             )}
           </div>
@@ -398,12 +403,7 @@ export default function App() {
                   </p>
                   <div className="status-chip mt-2 mx-auto">
                     {thinking || transcribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--ely-accent)' }} /> : (
-                      <span
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{
-                          background: speaking || listening || wakeListening || deskMode ? 'var(--ely-accent)' : 'var(--ely-success)',
-                        }}
-                      />
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: speaking || listening || wakeListening || deskMode ? 'var(--ely-accent)' : 'var(--ely-success)' }} />
                     )}
                     <span>{statusLabel}</span>
                   </div>
@@ -416,7 +416,7 @@ export default function App() {
                 </div>
               </>
             )}
-            {page === 'asistente' && (
+            {page === 'asistente' && canAccessPage(currentUser, 'asistente') && (
               <div className="flex-1 flex flex-col min-h-0 max-w-2xl mx-auto w-full animate-fade-in">
                 <div className="flex items-center gap-2 mb-4">
                   <Sparkles className="w-4 h-4" style={{ color: 'var(--ely-accent)' }} />
@@ -425,254 +425,113 @@ export default function App() {
                 <ConversationLog messages={messages} />
               </div>
             )}
-            {page === 'productos' && <ProductsPanel onSelectProduct={handleSelectProduct} />}
-            {page === 'registro-prensa' && <RegistroPrensaPanel onSelectView={handleRegistroView} />}
-            {page === 'afq' && <AfqPanel onSelectProduct={handleSelectProduct} />}
-            {page === 'cronograma' && <CronogramaPanel />}
-            {page === 'config' && (
+            {page === 'productos' && canAccessPage(currentUser, 'productos') && <ProductsPanel onSelectProduct={handleSelectProduct} />}
+            {page === 'registro-prensa' && canAccessPage(currentUser, 'registro-prensa') && <RegistroPrensaPanel onSelectView={handleRegistroView} />}
+            {page === 'afq' && canAccessPage(currentUser, 'afq') && <AfqPanel onSelectProduct={handleSelectProduct} />}
+            {page === 'cronograma' && canAccessPage(currentUser, 'cronograma') && <CronogramaPanel />}
+            {page === 'config' && canAccessPage(currentUser, 'config') && (
               <div className="max-w-lg mx-auto w-full space-y-5 pt-2 animate-fade-in overflow-y-auto pb-4">
                 <div className="flex items-center gap-2">
                   <Key className="w-4 h-4" style={{ color: 'var(--ely-accent)' }} />
                   <h2 className="text-lg font-medium" style={{ color: 'var(--ely-text)' }}>Configuración</h2>
                 </div>
                 <ThemeSettings />
-                <div className="hud-glass-strong p-5 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Proveedor de IA</h3>
-                    {hasApiKey ? (
-                      <span className="text-[11px] flex items-center gap-1" style={{ color: 'var(--ely-success)' }}>
-                        <Check className="w-3 h-3" /> Conectada
-                      </span>
-                    ) : (
-                      <span className="text-[11px]" style={{ color: 'var(--ely-warning)' }}>Sin clave</span>
+
+                {isAdmin && (
+                  <div className="hud-glass-strong p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Proveedor de IA</h3>
+                      {hasApiKey ? (
+                        <span className="text-[11px] flex items-center gap-1" style={{ color: 'var(--ely-success)' }}><Check className="w-3 h-3" /> Conectada</span>
+                      ) : (
+                        <span className="text-[11px]" style={{ color: 'var(--ely-warning)' }}>Sin clave</span>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Proveedor</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {providers.map((p) => {
+                          const active = cfgBaseUrl === p.url || cfgBaseUrl.startsWith(p.url);
+                          return (
+                            <button key={p.label} onClick={() => { setCfgBaseUrl(p.url); setCfgModel(p.model); setCfgTestMsg(null); }} className="text-[11px] px-2.5 py-1.5 rounded-full border transition-colors" style={{ background: active ? 'var(--ely-accent-soft)' : 'transparent', borderColor: active ? 'var(--ely-accent)' : 'var(--ely-border)', color: active ? 'var(--ely-accent)' : 'var(--ely-text-muted)' }}>{p.label}</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>API Key</label>
+                      <input type="password" value={cfgApiKey} onChange={(e) => onApiKeyChange(e.target.value)} placeholder={hasApiKey ? '••••••••' : 'pegue su API key'} className="w-full rounded-xl px-3.5 py-2.5 text-sm outline-none" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Base URL</label>
+                        <input value={cfgBaseUrl} onChange={(e) => setCfgBaseUrl(e.target.value)} className="w-full rounded-xl px-3 py-2 text-xs outline-none" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Modelo</label>
+                        <input value={cfgModel} onChange={(e) => setCfgModel(e.target.value)} className="w-full rounded-xl px-3 py-2 text-xs outline-none" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={handleSaveConfig} disabled={cfgSaving || !isDesktop} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40" style={{ background: 'var(--ely-accent)', color: '#fff' }}>{cfgSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : cfgSaved ? <><Check className="w-4 h-4" /> Guardado</> : <><Save className="w-4 h-4" /> Guardar</>}</button>
+                      <button onClick={handleTestConfig} disabled={cfgTesting || !isDesktop} className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40" style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)', border: '1px solid var(--ely-border)' }}>{cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar</>}</button>
+                    </div>
+                    {cfgTestMsg && (
+                      <div className="flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5" style={{ background: cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)', border: `1px solid ${cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.25)' : 'rgba(248, 81, 73, 0.25)'}`, color: cfgTestMsg.ok ? 'var(--ely-success)' : 'var(--ely-danger)' }}>
+                        {cfgTestMsg.ok ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                        <span>{cfgTestMsg.text}</span>
+                      </div>
                     )}
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Proveedor</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {providers.map((p) => {
-                        const active = cfgBaseUrl === p.url || cfgBaseUrl.startsWith(p.url);
-                        return (
-                          <button
-                            key={p.label}
-                            onClick={() => { setCfgBaseUrl(p.url); setCfgModel(p.model); setCfgTestMsg(null); }}
-                            className="text-[11px] px-2.5 py-1.5 rounded-full border transition-colors"
-                            style={{
-                              background: active ? 'var(--ely-accent-soft)' : 'transparent',
-                              borderColor: active ? 'var(--ely-accent)' : 'var(--ely-border)',
-                              color: active ? 'var(--ely-accent)' : 'var(--ely-text-muted)',
-                            }}
-                          >
-                            {p.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                )}
+
+                {!isAdmin && (
+                  <div className="hud-glass p-4 text-[13px]" style={{ color: 'var(--ely-text-muted)' }}>
+                    La configuración de API keys solo está disponible para el administrador.
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>API Key</label>
-                    <input
-                      type="password"
-                      value={cfgApiKey}
-                      onChange={(e) => onApiKeyChange(e.target.value)}
-                      placeholder={hasApiKey ? '••••••••' : 'pegue su API key'}
-                      className="w-full rounded-xl px-3.5 py-2.5 text-sm outline-none"
-                      style={{
-                        background: 'var(--ely-input-bg)',
-                        border: '1px solid var(--ely-border)',
-                        color: 'var(--ely-text)',
-                      }}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Base URL</label>
-                      <input
-                        value={cfgBaseUrl}
-                        onChange={(e) => setCfgBaseUrl(e.target.value)}
-                        className="w-full rounded-xl px-3 py-2 text-xs outline-none"
-                        style={{
-                          background: 'var(--ely-input-bg)',
-                          border: '1px solid var(--ely-border)',
-                          color: 'var(--ely-text)',
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Modelo</label>
-                      <input
-                        value={cfgModel}
-                        onChange={(e) => setCfgModel(e.target.value)}
-                        className="w-full rounded-xl px-3 py-2 text-xs outline-none"
-                        style={{
-                          background: 'var(--ely-input-bg)',
-                          border: '1px solid var(--ely-border)',
-                          color: 'var(--ely-text)',
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleSaveConfig}
-                      disabled={cfgSaving || !isDesktop}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40"
-                      style={{ background: 'var(--ely-accent)', color: '#fff' }}
-                    >
-                      {cfgSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : cfgSaved ? <><Check className="w-4 h-4" /> Guardado</> : <><Save className="w-4 h-4" /> Guardar</>}
-                    </button>
-                    <button
-                      onClick={handleTestConfig}
-                      disabled={cfgTesting || !isDesktop}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-full text-sm font-medium disabled:opacity-40"
-                      style={{
-                        background: 'var(--ely-accent-soft)',
-                        color: 'var(--ely-accent)',
-                        border: '1px solid var(--ely-border)',
-                      }}
-                    >
-                      {cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar</>}
-                    </button>
-                  </div>
-                  {cfgTestMsg && (
-                    <div
-                      className="flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5"
-                      style={{
-                        background: cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)',
-                        border: `1px solid ${cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.25)' : 'rgba(248, 81, 73, 0.25)'}`,
-                        color: cfgTestMsg.ok ? 'var(--ely-success)' : 'var(--ely-danger)',
-                      }}
-                    >
-                      {cfgTestMsg.ok ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
-                      <span>{cfgTestMsg.text}</span>
-                    </div>
-                  )}
-                </div>
+                )}
+
                 <div className="hud-glass p-5 space-y-4">
                   <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Voz</h3>
-                  <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
-                    Al minimizar, ELYRA queda a un lado y sigue escuchando. Ctrl+Shift+E oculta el sistema completo.
-                  </p>
+                  <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>Al minimizar, ELYRA queda a un lado y sigue escuchando. Ctrl+Shift+E oculta el sistema completo.</p>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm flex items-center gap-2" style={{ color: 'var(--ely-text)' }}>
-                      <Radio className="w-3.5 h-3.5" /> Activación por voz
-                    </span>
-                    <button
-                      onClick={() => setWakeEnabled((v) => !v)}
-                      className="relative w-11 h-6 rounded-full transition-colors"
-                      style={{ background: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-border)' }}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${wakeEnabled ? 'translate-x-5' : ''}`} />
-                    </button>
+                    <span className="text-sm flex items-center gap-2" style={{ color: 'var(--ely-text)' }}><Radio className="w-3.5 h-3.5" /> Activación por voz</span>
+                    <button onClick={() => setWakeEnabled((v) => !v)} className="relative w-11 h-6 rounded-full transition-colors" style={{ background: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-border)' }}><span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${wakeEnabled ? 'translate-x-5' : ''}`} /></button>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm" style={{ color: 'var(--ely-text)' }}>Reescucha tras responder</span>
-                    <button
-                      onClick={() => setContinuous((v) => !v)}
-                      className="relative w-11 h-6 rounded-full transition-colors"
-                      style={{ background: continuous ? 'var(--ely-accent)' : 'var(--ely-border)' }}
-                    >
-                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${continuous ? 'translate-x-5' : ''}`} />
-                    </button>
+                    <button onClick={() => setContinuous((v) => !v)} className="relative w-11 h-6 rounded-full transition-colors" style={{ background: continuous ? 'var(--ely-accent)' : 'var(--ely-border)' }}><span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow ${continuous ? 'translate-x-5' : ''}`} /></button>
                   </div>
                 </div>
                 <div className="hud-glass p-5 space-y-3">
                   <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Memoria y sesión</h3>
-                  <button onClick={handleClearMemory} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ely-danger)' }}>
-                    <Trash2 className="w-3.5 h-3.5" /> Borrar memoria local
-                  </button>
-                  <button onClick={handleLogout} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ely-text-muted)' }}>
-                    Cerrar sesión del operador
-                  </button>
+                  <button onClick={handleClearMemory} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ely-danger)' }}><Trash2 className="w-3.5 h-3.5" /> Borrar memoria local</button>
+                  <button onClick={handleLogout} className="flex items-center gap-2 text-[13px]" style={{ color: 'var(--ely-text-muted)' }}>Cerrar sesión</button>
                 </div>
-                {!cfgLoaded && isDesktop && (
-                  <p className="text-center text-xs" style={{ color: 'var(--ely-text-dim)' }}>Cargando…</p>
-                )}
+                {!cfgLoaded && isDesktop && isAdmin && <p className="text-center text-xs" style={{ color: 'var(--ely-text-dim)' }}>Cargando…</p>}
               </div>
             )}
             {!hideChatBar && (
               <div className="w-full max-w-xl mx-auto mt-auto pt-4">
-                {error && (
-                  <p className="text-xs text-center mb-2 px-2" style={{ color: 'var(--ely-danger)' }}>{error}</p>
-                )}
+                {error && <p className="text-xs text-center mb-2 px-2" style={{ color: 'var(--ely-danger)' }}>{error}</p>}
                 <div className="flex items-center gap-2 input-hud px-3 py-2">
-                  <button
-                    onClick={handleToggleListen}
-                    disabled={thinking || transcribing}
-                    className="w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:opacity-40"
-                    style={{
-                      background: listening ? 'rgba(248, 81, 73, 0.2)' : 'transparent',
-                      color: listening ? 'var(--ely-danger)' : 'var(--ely-text-muted)',
-                    }}
-                  >
-                    {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
-                  </button>
-                  <button
-                    onClick={() => setWakeEnabled((v) => !v)}
-                    className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
-                    style={{
-                      color: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-text-dim)',
-                      background: wakeEnabled ? 'var(--ely-accent-soft)' : 'transparent',
-                    }}
-                    title="Activación por voz"
-                  >
-                    <Radio className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => setContinuous((v) => !v)}
-                    className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
-                    style={{
-                      color: continuous ? 'var(--ely-warning)' : 'var(--ely-text-dim)',
-                      background: continuous ? 'rgba(210, 153, 34, 0.15)' : 'transparent',
-                    }}
-                    title="Reescucha"
-                  >
-                    <Ear className="w-3.5 h-3.5" />
-                  </button>
-                  <input
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    disabled={thinking}
-                    placeholder="Escriba o diga mi nombre…"
-                    className="flex-1 bg-transparent outline-none text-sm"
-                    style={{ color: 'var(--ely-text)' }}
-                  />
-                  <button
-                    onClick={handleSend}
-                    disabled={!inputValue.trim() || thinking}
-                    className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-30"
-                    style={{ color: 'var(--ely-accent)' }}
-                  >
-                    {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  </button>
+                  <button onClick={handleToggleListen} disabled={thinking || transcribing} className="w-9 h-9 rounded-full flex items-center justify-center transition-colors disabled:opacity-40" style={{ background: listening ? 'rgba(248, 81, 73, 0.2)' : 'transparent', color: listening ? 'var(--ely-danger)' : 'var(--ely-text-muted)' }}>{transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}</button>
+                  <button onClick={() => setWakeEnabled((v) => !v)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: wakeEnabled ? 'var(--ely-accent)' : 'var(--ely-text-dim)', background: wakeEnabled ? 'var(--ely-accent-soft)' : 'transparent' }} title="Activación por voz"><Radio className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setContinuous((v) => !v)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: continuous ? 'var(--ely-warning)' : 'var(--ely-text-dim)', background: continuous ? 'rgba(210, 153, 34, 0.15)' : 'transparent' }} title="Reescucha"><Ear className="w-3.5 h-3.5" /></button>
+                  <input value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} disabled={thinking} placeholder="Escriba o diga mi nombre…" className="flex-1 bg-transparent outline-none text-sm" style={{ color: 'var(--ely-text)' }} />
+                  <button onClick={handleSend} disabled={!inputValue.trim() || thinking} className="w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-30" style={{ color: 'var(--ely-accent)' }}>{thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</button>
                 </div>
               </div>
             )}
           </main>
-          {page === 'inicio' && (
-            <div className="pr-5 py-5 hidden lg:flex">
-              <SystemPanel />
-            </div>
-          )}
+          {page === 'inicio' && (<div className="pr-5 py-5 hidden lg:flex"><SystemPanel /></div>)}
         </div>
-        <footer
-          className="h-9 flex items-center justify-between px-5 text-[11px]"
-          style={{
-            borderTop: '1px solid var(--ely-header-border)',
-            color: 'var(--ely-text-dim)',
-          }}
-        >
+        <footer className="h-9 flex items-center justify-between px-5 text-[11px]" style={{ borderTop: '1px solid var(--ely-header-border)', color: 'var(--ely-text-dim)' }}>
           <span className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />
-              Activo · {operator}
-            </span>
+            <span className="flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />Activo · {operator}</span>
             <span>{formatUptime(uptime)}</span>
           </span>
-          <span>
-            {currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </span>
+          <span>{currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
         </footer>
       </div>
     </div>
