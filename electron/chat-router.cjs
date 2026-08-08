@@ -1,5 +1,5 @@
 /**
- * Router ELYRA v8 — búsquedas YouTube/Google/Wiki + skills + PC
+ * Router ELYRA v9 — conversación vocal natural + PC + búsquedas
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
@@ -17,15 +17,35 @@ const { resolveOpenExcelPath } = require('./open-excel-context.cjs');
 const { deepWebSearch } = require('./web-search-boost.cjs');
 
 const PRESENCE_REPLIES = [
-  'Sí, señor. Estoy aquí.',
-  'Online. ¿En qué le ayudo?',
-  'Presente. Diga.',
-  'Sistemas operativos. Le escucho.',
-  'Aquí estoy. ¿Qué necesita?',
+  'Sí, aquí estoy. Dime.',
+  'Te escucho.',
+  'Hola. ¿Qué necesitas?',
+  'Estoy contigo. ¿En qué te ayudo?',
+  'Dime, te oigo bien.',
+  'Aquí. ¿Qué hacemos?',
 ];
 
 function pickPresence() {
   return PRESENCE_REPLIES[Math.floor(Math.random() * PRESENCE_REPLIES.length)];
+}
+
+/** Respuestas cortas y hablables (estilo voz) */
+function speakify(text) {
+  if (!text) return text;
+  let t = String(text);
+  t = t.replace(/```[\s\S]*?```/g, ' ');
+  t = t.replace(/\*\*?/g, '');
+  t = t.replace(/^#+\s+/gm, '');
+  t = t.replace(/\n{2,}/g, '. ');
+  t = t.replace(/\n/g, ' ');
+  t = t.replace(/\s+/g, ' ').trim();
+  // Acortar muros de texto para voz
+  if (t.length > 480) {
+    const cut = t.slice(0, 480);
+    const last = Math.max(cut.lastIndexOf('.'), cut.lastIndexOf('?'));
+    t = last > 200 ? cut.slice(0, last + 1) : cut + '.';
+  }
+  return t;
 }
 
 async function routeChat({
@@ -52,7 +72,7 @@ async function routeChat({
 
   if (
     !text ||
-    /^(estas ahi|estás ahí|estas alli|me escuchas|hola|oye|hey|buenos dias|buenas tardes|buenas noches)$/i.test(
+    /^(estas ahi|estás ahí|estas alli|me escuchas|me oyes|hola|oye|hey|buenos dias|buenas tardes|buenas noches|ey|eh)$/i.test(
       text,
     )
   ) {
@@ -61,18 +81,18 @@ async function routeChat({
 
   try {
     const skill = await trySkillIntent(text);
-    if (skill) return skill;
+    if (skill) return { ...skill, response: speakify(skill.response) };
   } catch {}
 
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
-  if (quick) return quick;
+  if (quick) return { ...quick, response: speakify(quick.response) };
 
   try {
     const oc = getOpenClawConfig && getOpenClawConfig();
     if (oc?.enabled && chatOpenClaw) {
       const ocRes = await chatOpenClaw(fixed, history || []);
       if (ocRes.ok && ocRes.response) {
-        return { response: ocRes.response, intelligent: true, via: 'openclaw' };
+        return { response: speakify(ocRes.response), intelligent: true, via: 'openclaw' };
       }
     }
   } catch {}
@@ -80,14 +100,12 @@ async function routeChat({
   const config = getConfig();
   if (!config.apiKey) {
     const sk = await trySmartTopic(fixed, text);
-    if (sk) return sk;
-    return (
-      fallbackResponse?.(message) || {
-        response:
-          'No hay API key. En Configuración puede añadirla para razonamiento avanzado. El control del PC y búsquedas web ya funcionan.',
-        intelligent: false,
-      }
-    );
+    if (sk) return { ...sk, response: speakify(sk.response) };
+    return {
+      response:
+        'Aún no tengo clave de inteligencia configurada. Puedo controlar el PC y buscar en la web. Si quieres razonar más a fondo, agrega una API key en Configuración.',
+      intelligent: false,
+    };
   }
 
   try {
@@ -98,36 +116,33 @@ async function routeChat({
       const sk = await trySmartTopic(fixed, text);
       if (sk) {
         return {
-          response: sk.response + ' (Modo local: la API no respondió.)',
+          response: speakify(sk.response + ' Por cierto, la API no respondió del todo.'),
           intelligent: true,
           via: 'smart-fallback',
         };
       }
       return {
-        response:
-          resp.includes('API') || resp.includes('key')
-            ? resp
-            : 'El modelo no respondió. Revisa la API key. Sigo con el PC y búsquedas.',
+        response: 'El modelo no respondió bien. Revisa la API key. Mientras, sigo con el PC y las búsquedas.',
         intelligent: false,
         via: 'error',
       };
     }
 
-    return { response: resp, intelligent: true, via: 'llm' };
+    return { response: speakify(resp), intelligent: true, via: 'llm' };
   } catch (err) {
     const msg = String(err.message || err);
     if (/429|rate limit/i.test(msg)) {
       const sk = await trySmartTopic(fixed, text);
-      if (sk) return { ...sk, via: 'smart-ratelimit' };
+      if (sk) return { ...sk, response: speakify(sk.response), via: 'smart-ratelimit' };
       return {
-        response: 'El servicio de IA está saturado un momento. Intente de nuevo en unos segundos.',
+        response: 'El servicio de inteligencia está un poco saturado. Prueba en unos segundos.',
         intelligent: false,
       };
     }
     const sk = await trySmartTopic(fixed, text);
-    if (sk) return { ...sk, via: 'smart-error' };
+    if (sk) return { ...sk, response: speakify(sk.response), via: 'smart-error' };
     return {
-      response: 'Problema con el modelo. Sigo operativa para el sistema y búsquedas.',
+      response: 'Tuve un tropiezo con el modelo. Sigo lista para el sistema y búsquedas.',
       intelligent: false,
     };
   }
@@ -166,9 +181,7 @@ async function tryAnalyzeOpenExcel(helpers) {
     const found = await resolveOpenExcelPath();
     if (!found.ok || !found.path) {
       return {
-        response:
-          found.result ||
-          'No localicé un Excel reciente. Abre el archivo o dime la ruta.',
+        response: found.result || 'No encontré un Excel reciente. Ábrelo o dime la ruta.',
         intelligent: true,
         via: 'excel-miss',
       };
@@ -177,21 +190,20 @@ async function tryAnalyzeOpenExcel(helpers) {
       const r = await helpers.runPythonTool('analyze_excel', { path: found.path });
       if (r.ok) {
         return {
-          response: 'Analicé «' + found.name + '»:\n' + String(r.result || '').slice(0, 1200),
+          response: 'Revisé «' + found.name + '». ' + String(r.result || '').slice(0, 900),
           intelligent: true,
           via: 'excel-open',
         };
       }
     }
     return {
-      response:
-        'Encontré «' + found.name + '». Puedes pedir «analiza este excel: ' + found.path + '».',
+      response: 'Encontré «' + found.name + '». Si quieres, dime y lo analizo a fondo.',
       intelligent: true,
       via: 'excel-path',
     };
   } catch (e) {
     return {
-      response: 'No pude inspeccionar Excel ahora (' + (e.message || 'error') + ').',
+      response: 'No pude mirar el Excel ahora. Probemos de nuevo en un momento.',
       intelligent: false,
     };
   }
@@ -205,7 +217,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   const rememberMatch = text.match(/\b(?:recuerda|anota|guarda|no olvides)\s+(?:que\s+)?(.+)/i);
   if (rememberMatch) {
     await helpers.remember(rememberMatch[1].trim());
-    return { response: 'Anotado, señor.', intelligent: false };
+    return { response: 'Listo, lo guardé.', intelligent: false };
   }
 
   if (
@@ -226,13 +238,13 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
       if (s) {
         return {
           response:
-            'Diagnóstico: CPU ' +
+            'Ahora mismo: procesador al ' +
             s.cpu +
-            '%, memoria ' +
+            ' por ciento, memoria al ' +
             s.ram +
-            '%, disco ' +
+            ' y disco al ' +
             s.disk +
-            '%. Equipo ' +
+            '. Equipo ' +
             (s.hostname || os.hostname()) +
             '.',
           intelligent: false,
@@ -241,23 +253,18 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
       }
     } catch {}
     return {
-      response:
-        'Sistemas operativos. ' +
-        os.hostname() +
-        ', ' +
-        Math.round(os.totalmem() / 1e9) +
-        ' GB de RAM.',
+      response: 'El equipo está en marcha. ' + os.hostname() + '.',
       intelligent: false,
     };
   }
 
   if (/\b(administrador de tareas|task ?manager|gestor de tareas)\b/.test(text) && pc.openTaskManager) {
     const r = await pc.openTaskManager();
-    return { response: r.result || 'Administrador de tareas abierto.', intelligent: false };
+    return { response: r.result || 'Abrí el administrador de tareas.', intelligent: false };
   }
   if ((/\b(limpia|limpiar)\s+(los\s+)?temporales\b/.test(text) || /\bvacia temporales\b/.test(text)) && pc.emptyTemp) {
     const r = await pc.emptyTemp();
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Limpié los temporales.', intelligent: false };
   }
   if (/\b(estado (del )?wifi|wifi status)\b/.test(text) && pc.wifiStatus) {
     const r = await pc.wifiStatus();
@@ -265,19 +272,19 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   }
   if (/\b(activa|activar|enciende|encender)\s+(el\s+)?wifi\b/.test(text) && pc.setWifi) {
     const r = await pc.setWifi(true);
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Activé el wifi.', intelligent: false };
   }
   if (/\b(desactiva|desactivar|apaga|apagar)\s+(el\s+)?wifi\b/.test(text) && pc.setWifi) {
     const r = await pc.setWifi(false);
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Apagué el wifi.', intelligent: false };
   }
   if ((/\b(flush|vacía|vacia)\s+dns\b/.test(text) || /\blimpia (la )?dns\b/.test(text)) && pc.flushDns) {
     const r = await pc.flushDns();
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Listo, DNS limpio.', intelligent: false };
   }
   if (/\b(qué ventanas|que ventanas|ventanas abiertas)\b/.test(text) && pc.listWindows) {
     const r = await pc.listWindows();
-    return { response: (r.result || 'Sin datos').slice(0, 500), intelligent: false };
+    return { response: (r.result || 'No veo ventanas ahora.').slice(0, 500), intelligent: false };
   }
 
   const compound = parseCompound(text);
@@ -285,7 +292,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   if (compound?.type === 'youtube_search') {
     await helpers.openUrl(youtubeSearchUrl(compound.query));
     return {
-      response: 'Abrí YouTube con la búsqueda «' + compound.query + '».',
+      response: 'Listo, abrí YouTube con «' + compound.query + '».',
       intelligent: true,
       via: 'youtube-search',
     };
@@ -296,7 +303,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     const sk = await smartKnowledge(compound.query);
     if (sk.ok) {
       return {
-        response: 'Abrí Wikipedia. ' + sk.response.slice(0, 500),
+        response: 'Abrí Wikipedia. ' + sk.response.slice(0, 400),
         intelligent: true,
         via: 'wiki',
       };
@@ -322,7 +329,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     const deep = await deepWebSearch(compound.query);
     if (deep.ok) {
       return {
-        response: 'Listo. ' + deep.response.slice(0, 450),
+        response: 'Listo. ' + deep.response.slice(0, 400),
         intelligent: true,
         via: 'compound+deep',
       };
@@ -337,7 +344,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     if (/\b(video|vídeo|cancion|canción|trailer|clip)\b/i.test(text)) {
       await helpers.openUrl(youtubeSearchUrl(compound.query));
       return {
-        response: 'Parece un video: abrí YouTube con «' + compound.query + '».',
+        response: 'Parece un video: te abrí YouTube con «' + compound.query + '».',
         intelligent: true,
         via: 'youtube-from-google-intent',
       };
@@ -356,35 +363,35 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
 
   if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
     const r = await pc.volume('up');
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Subí el volumen.', intelligent: false };
   }
   if (/\b(baja|bajar)\s+(el\s+)?volumen\b/.test(text)) {
     const r = await pc.volume('down');
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Bajé el volumen.', intelligent: false };
   }
   if (/\b(silencia|mute|silencio)\b/.test(text)) {
     const r = await pc.volume('mute');
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Silenciado.', intelligent: false };
   }
   if (/\b(sube|subir)\s+(el\s+)?brillo\b/.test(text)) {
     const r = await pc.brightness('up');
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Subí el brillo.', intelligent: false };
   }
   if (/\b(baja|bajar)\s+(el\s+)?brillo\b/.test(text)) {
     const r = await pc.brightness('down');
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Bajé el brillo.', intelligent: false };
   }
   if (/\b(captura|screenshot)\b/.test(text)) {
     const r = await pc.screenshot();
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Listo, capturé la pantalla.', intelligent: false };
   }
   if (/\b(bloquea|bloquear)\s+(la\s+)?(sesión|pc|pantalla)\b/.test(text)) {
     const r = await pc.windows('lock');
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Bloqueé la sesión.', intelligent: false };
   }
   if (/\b(minimiza|minimizar)\s+(todas|ventanas|todo)\b/.test(text) || /\bmostrar escritorio\b/.test(text)) {
     const r = await pc.windows('minimize_all');
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Minimicé las ventanas.', intelligent: false };
   }
   if (/\b(batería|bateria)\b/.test(text)) {
     const r = await pc.battery();
@@ -392,15 +399,15 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   }
   if (/\b(vacía|vacia|vaciar)\s+(la\s+)?papelera\b/.test(text)) {
     const r = await pc.emptyRecycle();
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Vacío la papelera.', intelligent: false };
   }
   if (/\b(apaga|apagar)\s+(el\s+)?(pc|equipo)\b/.test(text) && !/pantalla/.test(text)) {
     const r = await pc.power('shutdown', 1);
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Voy a apagar el equipo.', intelligent: false };
   }
   if (/\b(reinicia|reiniciar)\b/.test(text)) {
     const r = await pc.power('restart', 1);
-    return { response: r.result, intelligent: false };
+    return { response: r.result || 'Reinicio el equipo.', intelligent: false };
   }
 
   const skEarly = await trySmartTopic(text, text);
@@ -417,13 +424,13 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   );
   if (openMatch || /\b(abre|abrir)\b/.test(text)) {
     if (/\by\s+(?:me\s+)?busca/i.test(text) && /youtube/i.test(text)) {
-      /* leave to compound */
+      /* compound */
     } else {
       const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos'];
       for (const f of folderKeys) {
         if (text.includes(f)) {
           const r = await helpers.openFolder(f);
-          return { response: r.message || r.result, intelligent: false };
+          return { response: r.message || r.result || 'Abrí la carpeta.', intelligent: false };
         }
       }
       let name = openMatch ? openMatch[1].trim() : '';
@@ -446,19 +453,17 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
       }
       if (name) {
         const r = await helpers.openApp(name);
-        return { response: r.message || r.result, intelligent: false, via: 'open-app' };
+        return { response: r.message || r.result || 'Listo, lo abrí.', intelligent: false, via: 'open-app' };
       }
     }
   }
 
-  // Qué puedes hacer / capacidades
   if (/\b(qu[eé]\s+puedes\s+hacer|qu[eé]\s+sabes\s+hacer|tus\s+funciones|capacidades|ayuda\s+con\s+qu[eé]|c[oó]mo\s+me\s+ayudas)\b/i.test(text)) {
     return {
       response:
-        'Puedo controlar el PC: abrir apps, carpetas y páginas, volumen, capturas y procesos. ' +
-        'Busco en Google, YouTube o la web en tiempo real. ' +
-        'Calculo, recuerdo notas y ayudo con laboratorio de cacao: cadmio, plaguicidas, AFQ e informes. ' +
-        'Dime qué necesitas y lo hago.',
+        'Puedo controlar tu PC: abrir apps, carpetas, páginas, volumen, capturas y procesos. ' +
+        'Busco en Google o YouTube. Calculo, recuerdo cosas y te ayudo con el laboratorio de cacao, cadmio y plaguicidas. ' +
+        'Háblame normal, como a una persona. ¿Qué quieres hacer?',
       intelligent: true,
       via: 'capabilities',
     };
