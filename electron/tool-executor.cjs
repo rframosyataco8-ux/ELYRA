@@ -1,5 +1,5 @@
 /**
- * Ejecutor unificado de tools ELYRA — PC autónomo, FS, Python, web, memoria.
+ * Ejecutor unificado de tools ELYRA — PC, FS, Python, web, memoria + permisos 0.2
  */
 const fs = require('fs');
 const path = require('path');
@@ -10,6 +10,7 @@ const HOOK_TOOLS = require('./agent-tool-gate.cjs');
 const { deepWebSearch } = require('./web-search-boost.cjs');
 const { youtubeSearchUrl, googleSearchUrl } = require('./intent-compound.cjs');
 const pcControl = require('./pc-control.cjs');
+const { authorizeTool, checkShellCommand } = require('./tool-permissions.cjs');
 
 function resolveUserPath(filePath) {
   if (!filePath) return path.join(os.homedir(), 'Documents', 'elyra-output.txt');
@@ -28,6 +29,15 @@ async function executeTool(tool, helpers) {
   const name = String(tool.name || '').toLowerCase();
   const params = tool.params || {};
   const pc = helpers.pc || pcControl;
+  const ctx = {
+    userText: (helpers && helpers.userText) || '',
+    allowDestructive: !!(helpers && helpers.allowDestructive),
+  };
+
+  const auth = authorizeTool(name, params, ctx);
+  if (!auth.ok) {
+    return { ok: false, result: auth.result, blocked: true, needsConfirm: !!auth.needsConfirm };
+  }
 
   if (HOOK_TOOLS.has(name)) {
     return hooks.extendExecute(name, params, helpers, null);
@@ -137,6 +147,8 @@ async function executeTool(tool, helpers) {
       case 'run_command':
       case 'shell': {
         const cmd = params.command || params.cmd || '';
+        const shellCheck = checkShellCommand(cmd);
+        if (!shellCheck.ok) return shellCheck;
         if (helpers.runCommand) {
           try {
             return await helpers.runCommand(cmd);
