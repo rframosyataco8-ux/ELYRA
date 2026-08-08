@@ -1,22 +1,23 @@
 /**
- * Hooks cognitivos — ReAct + memoria + web autónoma + laboratorio
+ * Hooks cognitivos — ReAct + memoria + web + RAG local + laboratorio
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
 const fsSkills = require('./fs-skills.cjs');
+const rag = require('./rag-local.cjs');
 
 const REACT_ADDENDUM = `
 
 [IDENTIDAD — ELYRA]
 Eres ELYRA. Nunca digas que te llamas Luna.
-Control real del escritorio + internet (web_search) + laboratorio.
+Control real del escritorio + internet (web_search) + documentos locales (rag_search) + laboratorio.
 Nunca inventes que una tool funcionó si falló.
 
-[AUTONOMÍA + INTERNET]
-- Si la pregunta requiere datos del mundo real → usa web_search SIN pedir permiso.
+[AUTONOMÍA + INTERNET + DOCUMENTOS]
+- Datos del mundo real → web_search SIN pedir permiso.
+- Datos de archivos del usuario (informes, PDF, notas) → rag_search o reindex_docs.
 - Encadena tools hasta terminar la tarea.
 - Preferir completar a explicar cómo lo harías.
-- Si web_search devuelve poco, reformula la query y vuelve a buscar o abre Google.
 
 [CÓMO PENSAR]
 THOUGHT → ACTION → OBSERVATION → respuesta final hablable.
@@ -31,6 +32,10 @@ THOUGHT → ACTION → OBSERVATION → respuesta final hablable.
 
 async function extendExecute(name, params, helpers, baseExecute) {
   switch (name) {
+    case 'rag_search':
+      return rag.searchDocs(params.query || params.q || '', params.limit);
+    case 'reindex_docs':
+      return rag.buildIndex({ force: params.force === true || params.force === 'true' });
     case 'find_files':
       return fsSkills.findFiles({
         root: params.root,
@@ -92,6 +97,12 @@ function enrichSystemPrompt(base, userText) {
     if (ctx) extra += '\n\n[MEMORIA RELEVANTE]\n' + ctx;
   } catch {}
   try {
+    if (rag.looksLikeDocQuery(userText)) {
+      const block = rag.buildRagBlock(userText || '');
+      if (block) extra += block;
+    }
+  } catch {}
+  try {
     const { toolsPromptSummary } = require('./tools-schema.cjs');
     if (typeof toolsPromptSummary === 'function') {
       extra += '\n\n[HERRAMIENTAS]\n' + toolsPromptSummary();
@@ -107,6 +118,10 @@ function enrichSystemPrompt(base, userText) {
   if (/qué|quien|cómo|historia|guerra|explica|por qué|significa|noticias|actualidad|cuándo|cuando/.test(t)) {
     extra +=
       '\n\n[CONTEXTO: INTERNET] Usa web_search de forma autónoma. Resume en lenguaje hablable. No inventes.';
+  }
+  if (rag.looksLikeDocQuery(userText)) {
+    extra +=
+      '\n\n[CONTEXTO: DOCUMENTOS] Usa rag_search o los fragmentos [RAG]. Si el índice está vacío, reindex_docs.';
   }
   return (base || '') + extra;
 }
