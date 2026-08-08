@@ -1,5 +1,5 @@
 /**
- * Router ELYRA — conversación vocal + PC + internet autónomo + fallbacks
+ * Router ELYRA — conversación vocal + PC + internet + inteligencia local sin API key
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
@@ -15,6 +15,7 @@ const {
 const { trySkillIntent } = require('./skills-router.cjs');
 const { resolveOpenExcelPath } = require('./open-excel-context.cjs');
 const { deepWebSearch } = require('./web-search-boost.cjs');
+const { runLocalIntelligence } = require('./local-intelligence.cjs');
 
 const PRESENCE_REPLIES = [
   'Sí, aquí estoy. Dime.',
@@ -90,7 +91,7 @@ async function routeChat({
     if (/present/i.test(text)) {
       return {
         response:
-          'Soy ELYRA. Asistente de voz de tu escritorio. Controlo el PC, busco en internet y te ayudo con el laboratorio. ¿En qué te ayudo?',
+          'Soy ELYRA. Asistente de voz de tu escritorio. Controlo el PC, busco en internet y puedo razonar en local sin API key. ¿En qué te ayudo?',
         intelligent: true,
         via: 'presence',
       };
@@ -106,7 +107,7 @@ async function routeChat({
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
   if (quick) return { ...quick, response: speakify(quick.response) };
 
-  // AUTONOMÍA WEB: preguntas de conocimiento → internet primero (sin esperar al LLM)
+  // Conocimiento: web autónoma
   if (looksLikeKnowledgeQuestion(text) || looksLikeKnowledgeQuestion(fixed)) {
     try {
       const sk = await trySmartTopic(fixed, text);
@@ -131,17 +132,24 @@ async function routeChat({
   } catch {}
 
   const config = getConfig();
+
+  // SIN API KEY → motor de inteligencia local completo
   if (!config.apiKey) {
-    const sk = await trySmartTopic(fixed, text);
-    if (sk) return { ...sk, response: speakify(sk.response) };
-    if (looksLikeKnowledgeQuestion(text)) {
-      const deep = await deepWebSearch(fixed);
-      if (deep.ok) return { response: speakify(deep.response), intelligent: true, via: 'deep-nokey' };
-    }
+    try {
+      const local = await runLocalIntelligence(fixed, history || []);
+      if (local && local.response) {
+        return {
+          response: speakify(local.response),
+          intelligent: !!local.intelligent || local.ok,
+          via: local.via || 'local-intelligence',
+        };
+      }
+    } catch {}
     return {
       response:
-        'Puedo controlar el PC y buscar en internet. Para razonar más a fondo con un modelo fuerte, agrega una API key en Configuración.',
+        'Puedo controlar el PC y buscar en internet sin API key. Para un modelo local más fuerte instala Ollama (ollama pull llama3.2).',
       intelligent: false,
+      via: 'no-key',
     };
   }
 
@@ -157,6 +165,16 @@ async function routeChat({
         resp,
       )
     ) {
+      try {
+        const local = await runLocalIntelligence(fixed, history || []);
+        if (local && local.response) {
+          return {
+            response: speakify(local.response),
+            intelligent: true,
+            via: 'local-fallback:' + (local.via || ''),
+          };
+        }
+      } catch {}
       const sk = await trySmartTopic(fixed, text);
       if (sk) {
         return {
@@ -164,12 +182,6 @@ async function routeChat({
           intelligent: true,
           via: 'smart-fallback',
         };
-      }
-      if (looksLikeKnowledgeQuestion(text) || looksLikeKnowledgeQuestion(fixed)) {
-        const deep = await deepWebSearch(fixed);
-        if (deep.ok) {
-          return { response: speakify(deep.response), intelligent: true, via: 'deep-fallback' };
-        }
       }
       return {
         response: speakify(
@@ -182,21 +194,16 @@ async function routeChat({
 
     return { response: speakify(resp), intelligent: true, via };
   } catch (err) {
-    const msg = String(err.message || err);
-    if (/429|rate limit/i.test(msg)) {
-      const sk = await trySmartTopic(fixed, text);
-      if (sk) return { ...sk, response: speakify(sk.response), via: 'smart-ratelimit' };
-      return {
-        response: 'El servicio de inteligencia está un poco saturado. Prueba en unos segundos.',
-        intelligent: false,
-      };
-    }
-    const sk = await trySmartTopic(fixed, text);
-    if (sk) return { ...sk, response: speakify(sk.response), via: 'smart-error' };
-    if (looksLikeKnowledgeQuestion(fixed)) {
-      const deep = await deepWebSearch(fixed);
-      if (deep.ok) return { response: speakify(deep.response), intelligent: true, via: 'deep-error' };
-    }
+    try {
+      const local = await runLocalIntelligence(fixed, history || []);
+      if (local && local.response) {
+        return {
+          response: speakify(local.response),
+          intelligent: true,
+          via: 'local-error-fallback',
+        };
+      }
+    } catch {}
     return {
       response: 'Tuve un tropiezo con el modelo. Sigo lista para el sistema y búsquedas en internet.',
       intelligent: false,
@@ -512,9 +519,8 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   if (/\b(qu[eé]\s+puedes\s+hacer|qu[eé]\s+sabes\s+hacer|tus\s+funciones|capacidades|ayuda\s+con\s+qu[eé]|c[oó]mo\s+me\s+ayudas)\b/i.test(text)) {
     return {
       response:
-        'Puedo controlar tu PC: apps, carpetas, volumen, capturas y procesos. ' +
-        'Busco en internet por mi cuenta cuando me preguntas algo. ' +
-        'También te ayudo con el laboratorio de cacao, cadmio y plaguicidas. ¿Qué hacemos?',
+        'Puedo controlar tu PC, buscar en internet sin API key y, si tienes Ollama, razonar con un modelo local. ' +
+        'También te ayudo con el laboratorio. ¿Qué hacemos?',
       intelligent: true,
       via: 'capabilities',
     };
