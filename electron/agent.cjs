@@ -1,5 +1,5 @@
 /**
- * ELYRA Agent v16 — Operador autónomo PC + laboratorio
+ * ELYRA Agent v17 — Operador autónomo PC + laboratorio + voz humana
  * Proveedores: Groq, Gemini, NVIDIA NIM, Claude, OpenAI, xAI, OpenRouter, Ollama
  */
 const fs = require('fs');
@@ -21,7 +21,7 @@ const NVIDIA_BASE = 'https://integrate.api.nvidia.com/v1';
 const NVIDIA_MODEL = 'nvidia/llama-3.1-nemotron-70b-instruct';
 
 const COMPLEX_RE =
-  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas|ejecuta|comando|powershell|proceso|ventana|mouse|clic|click|teclado)\b/i;
+  /\b(analiza|analizar|planifica|explica|explicar|investiga|compara|diseña|reporte|informe|estrategia|resume|resumen|artículo|ensayo|código|codigo|programa|calcula|resuelve|traduce|escribe|redacta|guarda|archivo|documento|reunión|reunion|excel|pdf|powerpoint|presentación|por qué|porque|cómo funciona|como funciona|diferencia|ventajas|desventajas|opinión|opinion|cadmio|plaguicid|laboratorio|afq|cacao|dashboard|cronograma|interpreta|evaluación|evaluacion|sensorial|licor|manteca|nirs|plaguicida|protocolo|norma|ntp|detalle|profund|ayúdame a|ayudame a|paso a paso|completo|investiga|busca información|qué opinas|que opinas|ejecuta|comando|powershell|proceso|ventana|mouse|clic|click|teclado|autónom|autonom|hazlo todo|completa|termina)\b/i;
 
 const SYSTEM_PROMPT = require('./agent-prompt.cjs');
 
@@ -36,7 +36,23 @@ function ensureDefaultConfig() {
   if (!fs.existsSync(p)) {
     fs.writeFileSync(
       p,
-      JSON.stringify({ apiKey: '', baseUrl: DEFAULT_BASE_URL, model: MODEL_FAST, provider: 'groq' }, null, 2),
+      JSON.stringify(
+        {
+          apiKey: '',
+          baseUrl: DEFAULT_BASE_URL,
+          model: MODEL_FAST,
+          provider: 'groq',
+          sttApiKey: '',
+          elevenApiKey: '',
+          elevenVoiceId: 'oWAxZDx7w5VEj9dCyTzz',
+          elevenModel: 'eleven_multilingual_v2',
+          ttsStability: 0.48,
+          ttsSimilarity: 0.82,
+          ttsStyle: 0.28,
+        },
+        null,
+        2,
+      ),
       'utf-8',
     );
   }
@@ -95,9 +111,28 @@ function getConfig() {
       baseUrl: raw.baseUrl || DEFAULT_BASE_URL,
       model: raw.model || MODEL_FAST,
       provider: raw.provider || inferProvider(raw),
+      sttApiKey: raw.sttApiKey || '',
+      elevenApiKey: raw.elevenApiKey || '',
+      elevenVoiceId: raw.elevenVoiceId || 'oWAxZDx7w5VEj9dCyTzz',
+      elevenModel: raw.elevenModel || 'eleven_multilingual_v2',
+      ttsStability: typeof raw.ttsStability === 'number' ? raw.ttsStability : 0.48,
+      ttsSimilarity: typeof raw.ttsSimilarity === 'number' ? raw.ttsSimilarity : 0.82,
+      ttsStyle: typeof raw.ttsStyle === 'number' ? raw.ttsStyle : 0.28,
     };
   } catch {
-    return { apiKey: '', baseUrl: DEFAULT_BASE_URL, model: MODEL_FAST, provider: 'groq' };
+    return {
+      apiKey: '',
+      baseUrl: DEFAULT_BASE_URL,
+      model: MODEL_FAST,
+      provider: 'groq',
+      sttApiKey: '',
+      elevenApiKey: '',
+      elevenVoiceId: 'oWAxZDx7w5VEj9dCyTzz',
+      elevenModel: 'eleven_multilingual_v2',
+      ttsStability: 0.48,
+      ttsSimilarity: 0.82,
+      ttsStyle: 0.28,
+    };
   }
 }
 
@@ -118,7 +153,7 @@ function saveConfig(partial) {
 }
 
 function isComplexQuery(text) {
-  return COMPLEX_RE.test(text || '') || (text || '').length > 160;
+  return COMPLEX_RE.test(text || '') || (text || '').length > 140;
 }
 
 function selectModel(config, userText) {
@@ -185,8 +220,8 @@ async function callLLM(messages, config, model) {
   const body = {
     model: model || config.model || MODEL_FAST,
     messages,
-    temperature: 0.4,
-    max_tokens: 1400,
+    temperature: 0.35,
+    max_tokens: 1600,
   };
   const res = await fetch(url, {
     method: 'POST',
@@ -260,7 +295,7 @@ async function runAgent(message, history, helpers) {
     : SYSTEM_PROMPT + '\n\n' + (typeof toolsPromptSummary === 'function' ? toolsPromptSummary() : '');
 
   const messages = [{ role: 'system', content: systemContent }];
-  const hist = Array.isArray(history) ? history.slice(-16) : [];
+  const hist = Array.isArray(history) ? history.slice(-20) : [];
   for (const h of hist) {
     const role = h.role === 'elyra' || h.role === 'assistant' ? 'assistant' : 'user';
     const content = (h.text || h.content || '').trim();
@@ -272,14 +307,14 @@ async function runAgent(message, history, helpers) {
   const tools = TOOL_DEFINITIONS || [];
   const provider = inferProvider(config);
   const wantsTools =
-    /\b(abre|abrir|cierra|cerrar|busca|buscar|pon|reproduce|archivo|excel|pdf|captura|volumen|carpeta|google|youtube|recuerda|analiza|guarda|escribe|crea|genera|ejecuta|comando|powershell|proceso|ventana|minimiza|bloquea|clic|click|tecla|hotkey|mouse|copia|pega|apaga|reinicia|lista|muestra|mata|kill|shell|cmd|instala|descarga)\b/i.test(
+    /\b(abre|abrir|cierra|cerrar|busca|buscar|pon|reproduce|archivo|excel|pdf|captura|volumen|carpeta|google|youtube|recuerda|analiza|guarda|escribe|crea|genera|ejecuta|comando|powershell|proceso|ventana|minimiza|bloquea|clic|click|tecla|hotkey|mouse|copia|pega|apaga|reinicia|lista|muestra|mata|kill|shell|cmd|instala|descarga|hazlo|completa|termina|controla|mueve|escribe aquí|escribe aqui)\b/i.test(
       cleanedUser,
     );
 
   try {
     let reply = '';
     let steps = 0;
-    const maxSteps = 16;
+    const maxSteps = 20;
     let currentMessages = messages.slice();
     let usedTools = false;
 
@@ -288,12 +323,12 @@ async function runAgent(message, history, helpers) {
       const body = {
         model,
         messages: currentMessages,
-        temperature: wantsTools || steps > 1 ? 0.2 : 0.35,
-        max_tokens: 1800,
+        temperature: wantsTools || steps > 1 ? 0.18 : 0.32,
+        max_tokens: 2000,
       };
       if (tools.length) {
         body.tools = tools;
-        body.tool_choice = wantsTools && steps === 1 ? 'auto' : 'auto';
+        body.tool_choice = 'auto';
       }
 
       const baseUrl = (config.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
@@ -375,7 +410,7 @@ async function runAgent(message, history, helpers) {
       if (hooks.noteInteraction) hooks.noteInteraction(cleanedUser, reply);
     } catch {}
 
-    return { response: reply, intelligent: true, via: 'agent-v16', model, steps, usedTools };
+    return { response: reply, intelligent: true, via: 'agent-v17', model, steps, usedTools };
   } catch (err) {
     return {
       response:
