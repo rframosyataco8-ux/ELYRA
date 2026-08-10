@@ -1,5 +1,5 @@
 /**
- * ELYRA TTS — edge-tts + prosodia + caché de frases cortas (0.6)
+ * ELYRA TTS — edge-tts + prosodia + caché (perfil 1.3)
  */
 const path = require('path');
 const fs = require('fs');
@@ -359,7 +359,6 @@ async function synthesizeToBase64(text, options = {}) {
   };
   const voice = cfg.edgeVoice || EDGE_VOICE;
 
-  // 0.6: caché de frases cortas / confirmaciones
   if (prepared.text.length <= 160) {
     const hit = ttsCache.get(prepared.text, voice, cfg.rate);
     if (hit) return hit;
@@ -399,7 +398,7 @@ function ttsStatus() {
     rate: cfg.rate,
     pitch: cfg.pitch,
     volume: cfg.volume,
-    profile: 'elyra-0.6',
+    profile: 'elyra-1.3',
     cache: ttsCache.stats(),
   };
 }
