@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '0.9.0',
-  codename: 'EvalSecure',
-  phase: '0.9',
-  label: 'ELYRA 0.9 — Eval & Security',
+  platform: '1.0.0',
+  codename: 'Horizon',
+  phase: '1.0',
+  label: 'ELYRA 1.0 — Horizon',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
