@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.7.1',
-  codename: 'StableVoice',
-  phase: '1.7.1',
-  label: 'ELYRA 1.7.1 — Hybrid voice stable',
+  platform: '1.7.2',
+  codename: 'ClearMic',
+  phase: '1.7.2',
+  label: 'ELYRA 1.7.2 — Micrófono más sensible',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
