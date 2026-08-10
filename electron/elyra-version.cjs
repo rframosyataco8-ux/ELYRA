@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.0.0',
-  codename: 'Horizon',
-  phase: '1.0',
-  label: 'ELYRA 1.0 — Horizon',
+  platform: '1.1.0',
+  codename: 'SystemDB',
+  phase: '1.1',
+  label: 'ELYRA 1.1 — System Database',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -25,7 +25,7 @@ module.exports = {
     multiAgent: false,
     formalEval: true,
     trainingPipeline: false,
-    systemDatabase: false,
+    systemDatabase: true,
     securityHarden: true,
   },
 };
