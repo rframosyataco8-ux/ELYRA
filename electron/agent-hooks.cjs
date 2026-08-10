@@ -1,5 +1,5 @@
 /**
- * Hooks cognitivos — memoria + RAG + files + vision + OCR + training 1.5 + DB
+ * Hooks cognitivos — memoria + RAG + files + vision + OCR + training + lab 1.6 + DB
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
@@ -9,6 +9,7 @@ const files = require('./files-reliability.cjs');
 const vision = require('./vision-engine.cjs');
 const ocr = require('./ocr-engine.cjs');
 const train = require('./training-pipeline.cjs');
+const lab = require('./lab-templates.cjs');
 const { getConfig } = require('./agent.cjs');
 
 let db;
@@ -22,14 +23,15 @@ const REACT_ADDENDUM = `
 
 [IDENTIDAD — ELYRA]
 Eres ELYRA. Nunca digas que te llamas Luna.
-Desktop + internet + documentos + visión + OCR + memoria + preparación de dataset.
-Nunca inventes que una tool funcionó si falló.
+Desktop + internet + documentos + visión + OCR + laboratorio + memoria.
+Nunca inventes que una tool funcionó si falló. No inventes cifras de laboratorio.
 
 [AUTONOMÍA]
 - Mundo real → web_search.
 - Archivos → rag_search / analyze_excel / extract_pdf_smart.
 - Imágenes → analyze_image u ocr_image.
-- Dataset → training_status / export_training_dataset (no entrena un LLM dentro de la app).
+- Lab → lab_template (cadmio_resumen, afq_basico, cacao_lote).
+- Dataset → training_status / export_training_dataset.
 
 [CALIDAD HABLADA]
 - 1 frase si fue orden simple.
@@ -139,6 +141,15 @@ async function extendExecute(name, params, helpers, baseExecute) {
         return train.exportDataset({
           minPairs: params.min_pairs ? Number(params.min_pairs) : 5,
         });
+      case 'list_lab_templates':
+        return lab.listTemplates();
+      case 'lab_template': {
+        const name = params.name || params.template || params.id;
+        if (params.write === true || params.write === 'true' || params.as_docx) {
+          return lab.writeTemplateDoc(name);
+        }
+        return lab.getTemplate(name);
+      }
       case 'db_stats':
         if (!db) return { ok: false, result: 'BD de sistema no disponible' };
         return { ok: true, result: JSON.stringify(db.stats(), null, 2) };
@@ -186,8 +197,9 @@ function enrichSystemPrompt(base, userText) {
     }
   } catch {}
   const t = String(userText || '').toLowerCase();
-  if (/cadmio|cacao|afq|plaguicid|laboratorio|nirs|manteca|licor/.test(t)) {
-    extra += '\n\n[CONTEXTO: LABORATORIO] Precisión técnica y claridad operativa.';
+  if (/cadmio|cacao|afq|plaguicid|laboratorio|nirs|manteca|licor|plantilla/.test(t)) {
+    extra +=
+      '\n\n[CONTEXTO: LABORATORIO] Precisión técnica. Usa lab_template si pide plantilla. No inventes cifras.';
   }
   if (/abre|abrir|cierra|volumen|captura|proceso|ventana|chrome|excel|word/.test(t)) {
     extra += '\n\n[CONTEXTO: CONTROL PC] Ejecuta tools y confirma en pasado natural.';
