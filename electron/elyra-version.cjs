@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '0.8.0',
-  codename: 'Vision',
-  phase: '0.8',
-  label: 'ELYRA 0.8 — Vision',
+  platform: '0.9.0',
+  codename: 'EvalSecure',
+  phase: '0.9',
+  label: 'ELYRA 0.9 — Eval & Security',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -23,8 +23,9 @@ module.exports = {
     filesReliable: true,
     vision: true,
     multiAgent: false,
-    formalEval: false,
+    formalEval: true,
     trainingPipeline: false,
     systemDatabase: false,
+    securityHarden: true,
   },
 };

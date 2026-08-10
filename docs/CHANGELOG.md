@@ -1,20 +1,18 @@
 # ELYRA Changelog
 
-## [0.8.0] — 2026-08-10 — Vision
+## [0.9.0] — 2026-08-10 — Eval & Security
 
 ### Added
-- `vision-engine.cjs` — análisis multimodal (base64 / ruta local)
-- Tools: `analyze_image`, `analyze_screenshot`
-- Selección automática de modelo con visión según proveedor
-- `docs/VISION.md`
+- `elyra-eval.cjs` — suite offline ELYRA_EVAL
+- `security-harden.cjs` — redact secrets, path safety, audit.log, extra shell blocks
+- `docs/EVAL.md`, `docs/SECURITY.md`
 
-### Notes
-- Requiere API key + modelo multimodal
-- Formatos: PNG, JPG, WEBP, GIF (máx ~4 MB)
+### Capabilities
+- `formalEval: true`, `securityHarden: true`
 
 ---
 
+## [0.8.0] — Vision
 ## [0.7.0] — Reliable Files
 ## [0.6.0] — Voice Pro
-## [0.5.0] — Local RAG
 ## …
