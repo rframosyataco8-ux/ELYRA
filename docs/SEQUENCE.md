@@ -9,5 +9,6 @@
 | 1.1 | System database | Done |
 | 1.2 | Multi-agent | Done |
 | 1.3 | Voice + permissions | Done |
-| **1.4** | **OCR / vision UI** | **Done** |
-| 1.x | Training (con métrica) | Optional / on request |
+| 1.4 | OCR / vision UI | Done |
+| **1.5** | **Training foundation** | **Done** |
+| 1.6+ | Polish / your requests | Open |

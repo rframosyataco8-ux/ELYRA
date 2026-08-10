@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.4.0',
-  codename: 'ClearSight',
-  phase: '1.4',
-  label: 'ELYRA 1.4 — OCR & Vision UI',
+  platform: '1.5.0',
+  codename: 'TrainReady',
+  phase: '1.5',
+  label: 'ELYRA 1.5 — Training Foundation',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -25,7 +25,7 @@ module.exports = {
     ocr: true,
     multiAgent: true,
     formalEval: true,
-    trainingPipeline: false,
+    trainingPipeline: true,
     systemDatabase: true,
     securityHarden: true,
     nativePermissionDialogs: true,

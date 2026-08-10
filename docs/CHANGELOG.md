@@ -1,19 +1,18 @@
 # ELYRA Changelog
 
-## [1.4.0] — 2026-08-10 — OCR & Vision UI
+## [1.5.0] — 2026-08-10 — Training Foundation
 
 ### Added
-- `ocr-engine.cjs` — OCR imagen/PDF + extract_pdf_smart
-- Tools: ocr_image, ocr_pdf, extract_pdf_smart
-- Python tools OCR (Pillow + pytesseract opcionales)
-- IPC: pick-and-analyze image, analyze by path
-- docs/OCR.md
+- `training-pipeline.cjs` — export JSONL, métricas, readiness checklist
+- `docs/TRAINING.md`
+- Capability `trainingPipeline: true`
 
-### Optional deps
-- `pip install pillow pytesseract` + Tesseract OS binary
+### Honest scope
+- Prepara datos para LoRA externo; no entrena un LLM gigante in-app.
 
 ---
 
+## [1.4.0] — OCR & Vision UI
 ## [1.3.0] — Voice & Permissions
 ## [1.2.0] — Multi-Agent
 ## [1.1.0] — System Database
