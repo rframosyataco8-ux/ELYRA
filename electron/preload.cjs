@@ -35,6 +35,11 @@ contextBridge.exposeInMainWorld('elyra', {
   agentConfigSet: (partial) => ipcRenderer.invoke('agent-config-set', partial),
   agentConfigTest: (partial) => ipcRenderer.invoke('agent-config-test', partial),
 
+  /** 1.4 visión / OCR */
+  pickAndAnalyzeImage: (prompt) => ipcRenderer.invoke('vision-pick-analyze', { prompt }),
+  analyzeImagePath: (filePath, prompt) =>
+    ipcRenderer.invoke('vision-analyze-path', { path: filePath, prompt }),
+
   minimize: () => ipcRenderer.send('window-minimize'),
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
