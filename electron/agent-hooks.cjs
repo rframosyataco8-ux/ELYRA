@@ -1,10 +1,11 @@
 /**
- * Hooks cognitivos — ReAct + memoria + web + RAG local + laboratorio
+ * Hooks cognitivos — ReAct + memoria + web + RAG + files 0.7 + laboratorio
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
 const fsSkills = require('./fs-skills.cjs');
 const rag = require('./rag-local.cjs');
+const files = require('./files-reliability.cjs');
 
 const REACT_ADDENDUM = `
 
@@ -15,9 +16,9 @@ Nunca inventes que una tool funcionó si falló.
 
 [AUTONOMÍA + INTERNET + DOCUMENTOS]
 - Datos del mundo real → web_search SIN pedir permiso.
-- Datos de archivos del usuario (informes, PDF, notas) → rag_search o reindex_docs.
+- Datos de archivos del usuario → rag_search, analyze_excel, summarize_pdf, read_docx.
+- Si falta un archivo, dilo y sugiere Documentos/Informes.
 - Encadena tools hasta terminar la tarea.
-- Preferir completar a explicar cómo lo harías.
 
 [CÓMO PENSAR]
 THOUGHT → ACTION → OBSERVATION → respuesta final hablable.
@@ -55,18 +56,27 @@ async function extendExecute(name, params, helpers, baseExecute) {
       return fsSkills.mkdir(params.name || params.path);
     case 'scan_folder':
       return runPythonTool('scan_folder', { root: params.root, pattern: params.pattern });
+    case 'files_health':
+    case 'python_health':
+      return files.pythonHealth();
     case 'analyze_excel': {
-      const r = await runPythonTool('analyze_excel', {
+      const r = await files.analyzeExcelSafe({
         path: params.path,
-        export: params.export === true || params.export === 'true',
+        export: params.export,
+        sheet: params.sheet,
       });
-      if (r.ok && params.path) mem.noteFile(params.path, (r.result || '').slice(0, 200));
+      if (r.ok && (r.path || params.path)) {
+        mem.noteFile(r.path || params.path, (r.result || '').slice(0, 200));
+      }
       return r;
     }
     case 'summarize_pdf':
-      return runPythonTool('summarize_pdf', { path: params.path, max_pages: params.max_pages });
+      return files.summarizePdfSafe({
+        path: params.path,
+        max_pages: params.max_pages,
+      });
     case 'read_docx':
-      return runPythonTool('read_docx', { path: params.path });
+      return files.readDocxSafe({ path: params.path });
     case 'write_docx':
       return runPythonTool('write_docx', {
         path: params.path,
@@ -83,7 +93,7 @@ async function extendExecute(name, params, helpers, baseExecute) {
       return runPythonTool('html_dashboard', {
         path: params.path,
         title: params.title,
-        data: params.data,
+        body: params.body || params.data,
       });
     default:
       return baseExecute(name, params, helpers);
@@ -119,9 +129,9 @@ function enrichSystemPrompt(base, userText) {
     extra +=
       '\n\n[CONTEXTO: INTERNET] Usa web_search de forma autónoma. Resume en lenguaje hablable. No inventes.';
   }
-  if (rag.looksLikeDocQuery(userText)) {
+  if (rag.looksLikeDocQuery(userText) || /excel|pdf|docx|informe|csv/.test(t)) {
     extra +=
-      '\n\n[CONTEXTO: DOCUMENTOS] Usa rag_search o los fragmentos [RAG]. Si el índice está vacío, reindex_docs.';
+      '\n\n[CONTEXTO: ARCHIVOS] Usa analyze_excel / summarize_pdf / read_docx / rag_search. Si falta ruta, busca en Documentos e Informes.';
   }
   return (base || '') + extra;
 }
