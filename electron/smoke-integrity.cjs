@@ -1,5 +1,5 @@
 /**
- * Smoke de integridad ELYRA (+ eval opcional)
+ * Smoke de integridad ELYRA
  */
 function tryRequire(rel) {
   try {
@@ -14,6 +14,7 @@ function runSmokeIntegrity() {
   const critical = [
     './elyra-version.cjs',
     './elyra-db.cjs',
+    './multi-agent.cjs',
     './agent-prompt.cjs',
     './agent.cjs',
     './agent-hooks.cjs',
