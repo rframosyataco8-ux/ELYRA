@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.3.0',
-  codename: 'ClearVoice',
-  phase: '1.3',
-  label: 'ELYRA 1.3 — Voice & Permissions',
+  platform: '1.4.0',
+  codename: 'ClearSight',
+  phase: '1.4',
+  label: 'ELYRA 1.4 — OCR & Vision UI',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -22,6 +22,7 @@ module.exports = {
     rag: true,
     filesReliable: true,
     vision: true,
+    ocr: true,
     multiAgent: true,
     formalEval: true,
     trainingPipeline: false,

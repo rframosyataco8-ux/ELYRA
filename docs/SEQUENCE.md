@@ -8,6 +8,6 @@
 |---------|------|--------|
 | 1.1 | System database | Done |
 | 1.2 | Multi-agent | Done |
-| **1.3** | **Voice + UI permissions** | **Done** |
-| 1.4 | OCR / vision UI | **Next** |
-| 1.x | Training (con métrica) | Pending |
+| 1.3 | Voice + permissions | Done |
+| **1.4** | **OCR / vision UI** | **Done** |
+| 1.x | Training (con métrica) | Optional / on request |
