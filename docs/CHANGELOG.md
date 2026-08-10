@@ -1,20 +1,20 @@
 # ELYRA Changelog
 
-## [0.6.0] — 2026-08-10 — Voice Pro
+## [0.7.0] — 2026-08-10 — Reliable Files
 
 ### Added
-- `tts-cache.cjs` — caché de frases cortas (menor latencia en «Listo», «Hecho», etc.)
-- Barge-in → arranque automático de escucha
-- VAD más sensible (umbrales y silencio afinados)
-- Ventanas anti-eco más cortas tras hablar / interrumpir
+- `files-reliability.cjs` — resolución de rutas, health Python, wrappers seguros
+- Tool Python `health` — comprueba pandas/openpyxl/pypdf/docx/pptx
+- Excel: multi-encoding CSV, hojas, nulos, búsqueda por nombre en Documentos/Informes/Descargas
+- PDF: más páginas, mejor mensaje si es escaneado
+- DOCX: lee tablas además de párrafos
 
 ### Changed
-- `useVoice.ts` pipeline 0.6
-- `tts.cjs` usa caché antes de sintetizar
-- Logs de latencia etiquetados ELYRA (no Luna)
+- `agent_tools.py` endurecido (rutas, límites, errores claros)
 
 ---
 
+## [0.6.0] — Voice Pro
 ## [0.5.0] — Local RAG
 ## [0.4.0] — Structured Memory
 ## [0.3.0] — Resilient LLM

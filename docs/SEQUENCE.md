@@ -2,15 +2,9 @@
 
 | Order | Version | Name | Status |
 |------:|---------|------|--------|
-| 0 | 0.0 | Full audit | Done |
-| 1 | 0.1 | Foundation | Done |
-| 2 | 0.2 | Tool permissions | Done |
-| 3 | 0.3 | LLM resilience | Done |
-| 4 | 0.4 | Memory structured | Done |
-| 5 | 0.5 | Local RAG | Done |
-| 6 | **0.6** | Voice pro | **Done** |
-| 7 | 0.7 | Files/data reliability | **Next** |
-| 8 | 0.8 | Vision | Pending |
+| 0–6 | 0.0–0.6 | Audit → Voice pro | Done |
+| 7 | **0.7** | Files/data reliability | **Done** |
+| 8 | 0.8 | Vision | **Next** |
 | 9 | 0.9 | Eval + security | Pending |
 | 10 | 1.0 | Production polish | Pending |
 
