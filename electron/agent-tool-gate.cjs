@@ -1,4 +1,4 @@
-/** Tools que van a agent-hooks (Python + FS + RAG + memoria) */
+/** Tools que van a agent-hooks */
 module.exports = new Set([
   'scan_folder',
   'analyze_excel',
@@ -15,4 +15,8 @@ module.exports = new Set([
   'recall',
   'rag_search',
   'reindex_docs',
+  'analyze_image',
+  'analyze_screenshot',
+  'files_health',
+  'python_health',
 ]);
