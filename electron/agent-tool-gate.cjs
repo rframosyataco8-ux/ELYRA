@@ -22,4 +22,6 @@ module.exports = new Set([
   'extract_pdf_smart',
   'files_health',
   'python_health',
+  'training_status',
+  'export_training_dataset',
 ]);
