@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '0.7.0',
-  codename: 'ReliableFiles',
-  phase: '0.7',
-  label: 'ELYRA 0.7 — Reliable Files',
+  platform: '0.8.0',
+  codename: 'Vision',
+  phase: '0.8',
+  label: 'ELYRA 0.8 — Vision',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -21,7 +21,7 @@ module.exports = {
     llmResilience: true,
     rag: true,
     filesReliable: true,
-    vision: false,
+    vision: true,
     multiAgent: false,
     formalEval: false,
     trainingPipeline: false,
