@@ -1,5 +1,5 @@
 /**
- * Router ELYRA 1.8 — conversación + PC + web + Brain local (sin API key)
+ * Router ELYRA 1.9.1 — conversación + PC NLU + web + Brain local
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
@@ -17,6 +17,7 @@ const { resolveOpenExcelPath } = require('./open-excel-context.cjs');
 const { deepWebSearch } = require('./web-search-boost.cjs');
 const { runLocalIntelligence } = require('./local-intelligence.cjs');
 const { isComplexTask, runMultiAgent } = require('./multi-agent.cjs');
+const { tryPcFirst } = require('./chat-router-pc-hook.cjs');
 
 const PRESENCE_REPLIES = [
   'Sí, aquí estoy. Dime.',
@@ -54,7 +55,7 @@ function speakify(text) {
 function looksLikeKnowledgeQuestion(text) {
   const t = String(text || '').toLowerCase();
   if (t.length < 4) return false;
-  if (/\b(abre|abrir|cierra|volumen|brillo|captura|chrome|excel|word|carpeta|minimiza|apaga|reinicia)\b/.test(t))
+  if (/\b(abre|abrir|cierra|volumen|brillo|captura|chrome|excel|word|carpeta|minimiza|apaga|reinicia|silencia|wifi|portapapeles)\b/.test(t))
     return false;
   return /\b(qué|que|quién|quien|cómo|como|por qué|porque|cuándo|cuando|dónde|donde|explica|cuéntame|cuentame|historia|guerra|pasó|paso|significa|diferencia|quién inventó|quien invento|busca información|investiga|noticias|actualidad|porfa|dime)\b/i.test(
     t,
@@ -92,13 +93,21 @@ async function routeChat({
     if (/present/i.test(text)) {
       return {
         response:
-          'Soy ELYRA. Asistente inteligente de tu escritorio. Razono en local, busco en internet y controlo el PC. ¿En qué te ayudo?',
+          'Soy ELYRA. Controlo tu PC, busco en internet y razono en local. ¿En qué te ayudo?',
         intelligent: true,
         via: 'presence',
       };
     }
     return { response: pickPresence(), intelligent: true, via: 'presence' };
   }
+
+  // PC NLU prioritario (antes que todo)
+  try {
+    const pcHit = await tryPcFirst(text, helpers, pc, getSystemStats);
+    if (pcHit && pcHit.response) {
+      return { ...pcHit, response: speakify(pcHit.response), intelligent: !!pcHit.intelligent };
+    }
+  } catch {}
 
   try {
     const skill = await trySkillIntent(text);
@@ -108,7 +117,6 @@ async function routeChat({
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
   if (quick) return { ...quick, response: speakify(quick.response) };
 
-  // Multi-agent tareas compuestas
   try {
     if (isComplexTask(fixed) || isComplexTask(text)) {
       const ma = await runMultiAgent(fixed, helpers);
@@ -123,7 +131,6 @@ async function routeChat({
     }
   } catch {}
 
-  // 1.8: Brain local PRIMERO para conocimiento (sin API key)
   if (looksLikeKnowledgeQuestion(text) || looksLikeKnowledgeQuestion(fixed) || text.split(/\s+/).length >= 3) {
     try {
       const local = await runLocalIntelligence(fixed, history || []);
@@ -159,7 +166,6 @@ async function routeChat({
 
   const config = getConfig();
 
-  // Sin API key → siempre Brain local
   if (!config.apiKey) {
     try {
       const local = await runLocalIntelligence(fixed, history || []);
@@ -173,13 +179,12 @@ async function routeChat({
     } catch {}
     return {
       response:
-        'Puedo controlar el PC y buscar en internet sin API key. Para un modelo local más fuerte: ollama pull llama3.2.',
+        'Puedo controlar el PC y buscar en internet sin API key. Para más inteligencia: ollama pull llama3.2',
       intelligent: true,
       via: 'no-key',
     };
   }
 
-  // Con API key → agente LLM, con fallback a Brain
   try {
     const result = await runAgent(fixed, history || [], helpers);
     const resp = result?.response || '';
@@ -207,9 +212,7 @@ async function routeChat({
         return { response: speakify(sk.response), intelligent: true, via: 'smart-fallback' };
       }
       return {
-        response: speakify(
-          resp || 'El modelo no respondió bien. Mientras, puedo controlar el PC y buscar en la web.',
-        ),
+        response: speakify(resp || 'El modelo no respondió bien. Puedo controlar el PC y buscar en la web.'),
         intelligent: false,
         via: 'error',
       };
@@ -271,7 +274,7 @@ async function tryAnalyzeOpenExcel(helpers) {
     const found = await resolveOpenExcelPath();
     if (!found.ok || !found.path) {
       return {
-        response: found.result || 'No encontré un Excel reciente. Ábrelo o dime la ruta.',
+        response: found.result || 'No encontré un Excel reciente.',
         intelligent: true,
         via: 'excel-miss',
       };
@@ -287,15 +290,12 @@ async function tryAnalyzeOpenExcel(helpers) {
       }
     }
     return {
-      response: 'Encontré «' + found.name + '». Si quieres, dime y lo analizo a fondo.',
+      response: 'Encontré «' + found.name + '».',
       intelligent: true,
       via: 'excel-path',
     };
-  } catch (e) {
-    return {
-      response: 'No pude mirar el Excel ahora. Probemos de nuevo en un momento.',
-      intelligent: false,
-    };
+  } catch {
+    return { response: 'No pude mirar el Excel ahora.', intelligent: false };
   }
 }
 
@@ -311,70 +311,10 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   }
 
   if (
-    /\b(analiza|analizar|resume|resumen|dime qué|dime que)\b/.test(text) &&
-    /\b(excel|xlsx|hoja|archivo)\b/.test(text)
+    /\b(analiza|analizar|resume|resumen)\b/.test(text) &&
+    /\b(excel|xlsx|hoja)\b/.test(text)
   ) {
     return tryAnalyzeOpenExcel(helpers);
-  }
-
-  if (
-    /\b(cómo va|como va|como esta|cómo está|estado del|estado de)\s+(el\s+)?(sistema|pc|equipo)\b/.test(
-      text,
-    ) ||
-    /\b(estado del sistema|cómo está el pc|como esta el pc|diagnóstico|diagnostico)\b/.test(text)
-  ) {
-    try {
-      const s = getSystemStats ? await getSystemStats() : null;
-      if (s) {
-        return {
-          response:
-            'Ahora mismo: procesador al ' +
-            s.cpu +
-            ' por ciento, memoria al ' +
-            s.ram +
-            ' y disco al ' +
-            s.disk +
-            '. Equipo ' +
-            (s.hostname || os.hostname()) +
-            '.',
-          intelligent: false,
-          via: 'local-stats',
-        };
-      }
-    } catch {}
-    return {
-      response: 'El equipo está en marcha. ' + os.hostname() + '.',
-      intelligent: false,
-    };
-  }
-
-  if (/\b(administrador de tareas|task ?manager|gestor de tareas)\b/.test(text) && pc.openTaskManager) {
-    const r = await pc.openTaskManager();
-    return { response: r.result || 'Abrí el administrador de tareas.', intelligent: false };
-  }
-  if ((/\b(limpia|limpiar)\s+(los\s+)?temporales\b/.test(text) || /\bvacia temporales\b/.test(text)) && pc.emptyTemp) {
-    const r = await pc.emptyTemp();
-    return { response: r.result || 'Limpié los temporales.', intelligent: false };
-  }
-  if (/\b(estado (del )?wifi|wifi status)\b/.test(text) && pc.wifiStatus) {
-    const r = await pc.wifiStatus();
-    return { response: (r.result || '').slice(0, 400), intelligent: false };
-  }
-  if (/\b(activa|activar|enciende|encender)\s+(el\s+)?wifi\b/.test(text) && pc.setWifi) {
-    const r = await pc.setWifi(true);
-    return { response: r.result || 'Activé el wifi.', intelligent: false };
-  }
-  if (/\b(desactiva|desactivar|apaga|apagar)\s+(el\s+)?wifi\b/.test(text) && pc.setWifi) {
-    const r = await pc.setWifi(false);
-    return { response: r.result || 'Apagué el wifi.', intelligent: false };
-  }
-  if ((/\b(flush|vacía|vacia)\s+dns\b/.test(text) || /\blimpia (la )?dns\b/.test(text)) && pc.flushDns) {
-    const r = await pc.flushDns();
-    return { response: r.result || 'Listo, DNS limpio.', intelligent: false };
-  }
-  if (/\b(qué ventanas|que ventanas|ventanas abiertas)\b/.test(text) && pc.listWindows) {
-    const r = await pc.listWindows();
-    return { response: (r.result || 'No veo ventanas ahora.').slice(0, 500), intelligent: false };
   }
 
   const compound = parseCompound(text);
@@ -398,11 +338,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
         via: 'wiki',
       };
     }
-    return {
-      response: 'Abrí Wikipedia con «' + compound.query + '».',
-      intelligent: true,
-      via: 'wiki',
-    };
+    return { response: 'Abrí Wikipedia con «' + compound.query + '».', intelligent: true, via: 'wiki' };
   }
 
   if (compound?.type === 'compound_search') {
@@ -434,7 +370,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     if (/\b(video|vídeo|cancion|canción|trailer|clip)\b/i.test(text)) {
       await helpers.openUrl(youtubeSearchUrl(compound.query));
       return {
-        response: 'Parece un video: te abrí YouTube con «' + compound.query + '».',
+        response: 'Te abrí YouTube con «' + compound.query + '».',
         intelligent: true,
         via: 'youtube-from-google-intent',
       };
@@ -451,62 +387,11 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     };
   }
 
-  if (/\b(sube|subir)\s+(el\s+)?volumen\b/.test(text)) {
-    const r = await pc.volume('up');
-    return { response: r.result || 'Subí el volumen.', intelligent: false };
-  }
-  if (/\b(baja|bajar)\s+(el\s+)?volumen\b/.test(text)) {
-    const r = await pc.volume('down');
-    return { response: r.result || 'Bajé el volumen.', intelligent: false };
-  }
-  if (/\b(silencia|mute|silencio)\b/.test(text)) {
-    const r = await pc.volume('mute');
-    return { response: r.result || 'Silenciado.', intelligent: false };
-  }
-  if (/\b(sube|subir)\s+(el\s+)?brillo\b/.test(text)) {
-    const r = await pc.brightness('up');
-    return { response: r.result || 'Subí el brillo.', intelligent: false };
-  }
-  if (/\b(baja|bajar)\s+(el\s+)?brillo\b/.test(text)) {
-    const r = await pc.brightness('down');
-    return { response: r.result || 'Bajé el brillo.', intelligent: false };
-  }
-  if (/\b(captura|screenshot)\b/.test(text)) {
-    const r = await pc.screenshot();
-    return { response: r.result || 'Listo, capturé la pantalla.', intelligent: false };
-  }
-  if (/\b(bloquea|bloquear)\s+(la\s+)?(sesión|pc|pantalla)\b/.test(text)) {
-    const r = await pc.windows('lock');
-    return { response: r.result || 'Bloqueé la sesión.', intelligent: false };
-  }
-  if (/\b(minimiza|minimizar)\s+(todas|ventanas|todo)\b/.test(text) || /\bmostrar escritorio\b/.test(text)) {
-    const r = await pc.windows('minimize_all');
-    return { response: r.result || 'Minimicé las ventanas.', intelligent: false };
-  }
-  if (/\b(batería|bateria)\b/.test(text)) {
-    const r = await pc.battery();
-    return { response: r.result, intelligent: false };
-  }
-  if (/\b(vacía|vacia|vaciar)\s+(la\s+)?papelera\b/.test(text)) {
-    const r = await pc.emptyRecycle();
-    return { response: r.result || 'Vacío la papelera.', intelligent: false };
-  }
-  if (/\b(apaga|apagar)\s+(el\s+)?(pc|equipo)\b/.test(text) && !/pantalla/.test(text)) {
-    const r = await pc.power('shutdown', 1);
-    return { response: r.result || 'Voy a apagar el equipo.', intelligent: false };
-  }
-  if (/\b(reinicia|reiniciar)\b/.test(text)) {
-    const r = await pc.power('restart', 1);
-    return { response: r.result || 'Reinicio el equipo.', intelligent: false };
-  }
-
   const openMatch = text.match(
     /\b(?:abre|abrir|lanza|ejecuta|abreme|abrime)\s+(?:el\s+|la\s+|los\s+|las\s+)?(.+)/i,
   );
   if (openMatch || /\b(abre|abrir)\b/.test(text)) {
-    if (/\by\s+(?:me\s+)?busca/i.test(text) && /youtube/i.test(text)) {
-      /* compound */
-    } else {
+    if (!(/\by\s+(?:me\s+)?busca/i.test(text) && /youtube/i.test(text))) {
       const folderKeys = ['documentos', 'descargas', 'escritorio', 'informes', 'imagenes', 'musica', 'videos'];
       for (const f of folderKeys) {
         if (text.includes(f)) {
@@ -539,20 +424,18 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
     }
   }
 
-  if (/\b(qu[eé]\s+puedes\s+hacer|qu[eé]\s+sabes\s+hacer|tus\s+funciones|capacidades|ayuda\s+con\s+qu[eé]|c[oó]mo\s+me\s+ayudas)\b/i.test(text)) {
+  if (/\b(qu[eé]\s+puedes\s+hacer|capacidades|c[oó]mo\s+me\s+ayudas)\b/i.test(text)) {
     return {
       response:
-        'Puedo controlar tu PC, buscar en internet, explicar temas, recordar datos y razonar en local sin API key. ¿Qué hacemos?',
+        'Controlo volumen, brillo, ventanas, WiFi, capturas, procesos, apps, carpetas, y también busco en internet y razono en local. Dime qué hacer.',
       intelligent: true,
       via: 'capabilities',
     };
   }
 
-  {
-    const mathReply = tryLocalMath(text);
-    if (mathReply) {
-      return { response: mathReply, intelligent: true, via: 'local-math' };
-    }
+  const mathReply = tryLocalMath(text);
+  if (mathReply) {
+    return { response: mathReply, intelligent: true, via: 'local-math' };
   }
 
   if (/\b(qué hora|que hora|hora es)\b/.test(text)) {
