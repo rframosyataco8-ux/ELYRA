@@ -24,6 +24,7 @@ const { chatOpenClaw, pingOpenClaw, getOpenClawConfig } = require('./openclaw-br
 const { routeChat } = require('./chat-router.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
 const { checkShellCommand } = require('./tool-permissions.cjs');
+const { registerVisionIpc } = require('./vision-ipc.cjs');
 
 let mainWindow = null;
 let floatingCore = null;
@@ -367,6 +368,8 @@ const agentHelpers = {
   getSystemStats,
   runPythonTool,
 };
+
+registerVisionIpc(ipcMain);
 
 ipcMain.handle('get-system-stats', async () => getSystemStats());
 ipcMain.handle('open-app', async (_e, name) => openAppHelper(name));
