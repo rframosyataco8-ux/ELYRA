@@ -1,34 +1,36 @@
-# Control del PC — ELYRA 1.9.1
+# Control del PC — ELYRA 1.10
 
-Habla natural. Ejemplos:
+## Cadenas (nuevo)
+
+Puedes unir comandos:
+
+- «abre chrome y sube el volumen»
+- «captura de pantalla y luego bloquea el pc»
+- «abre notepad y escribe hola mundo»
+
+## Escribir en pantalla
+
+- «escribe hola equipo»
+- «presiona enter»
 
 ## Audio / pantalla
-- sube el volumen / volumen al 50
-- silencia
-- sube el brillo / brillo al 70
-- captura de pantalla
-- apaga la pantalla / bloquea el pc
-- mostrar escritorio
+
+- sube/baja volumen · volumen al 50 · silencia
+- brillo · captura · apaga pantalla · bloquea · escritorio
 
 ## Sistema
-- estado del sistema / batería / espacio en disco
-- activa wifi / desactiva wifi / limpia dns
-- limpia temporales / vacía la papelera
-- administrador de tareas
-- qué ventanas hay / procesos pesados
-- cierra chrome (proceso)
-- enfoca word
-- abre configuración wifi
 
-## Apps / carpetas
-- abre chrome / word / excel / notepad
-- abre documentos / descargas
-- abre youtube / gmail
+- estado del sistema · batería · disco · wifi · DNS · temporales · papelera
+- task manager · ventanas · procesos · cierra chrome · enfoca word
+
+## Apps
+
+- abre word / excel / chrome / documentos
 
 ## Energía
-- apaga el pc / reinicia / suspende
-- cancela el apagado
+
+- apaga / reinicia / suspende / cancela el apagado
 
 ## Teclado
-- copiar / pegar / deshacer / guardar (hotkeys)
-- alt tab
+
+- copiar · pegar · deshacer · guardar · alt tab · nueva pestaña

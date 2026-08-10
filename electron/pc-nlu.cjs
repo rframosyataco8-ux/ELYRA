@@ -1,6 +1,7 @@
 /**
- * PC NLU 1.9.1 — lenguaje natural → acciones de control del PC
- * Cubre muchas formas de pedir lo mismo en español.
+ * PC NLU 1.10 — lenguaje natural → control del PC
+ * + cadenas: «abre chrome y sube el volumen»
+ * + escribir texto en la ventana activa
  */
 
 function n(s) {
@@ -12,12 +13,35 @@ function n(s) {
     .trim();
 }
 
-/**
- * @returns {Promise<{response:string,intelligent?:boolean,via?:string}|null>}
- */
-async function tryPcNlu(text, helpers, pc, getSystemStats) {
-  const t = n(text);
+function splitChain(t) {
+  // divide por « y luego », « y después », «, y », « y » cuando ambas partes parecen comandos
+  const parts = t.split(/\s+y\s+luego\s+|\s+y\s+despues\s+|\s+y\s+después\s+|\s*,\s*y\s+/i);
+  if (parts.length >= 2) return parts.map((p) => p.trim()).filter(Boolean);
+  // «abre X y sube el volumen»
+  const m = t.match(/^(.+?)\s+y\s+(sube|baja|silencia|captura|abre|cierra|minimiza|bloquea|limpia)(.+)$/i);
+  if (m) return [m[1].trim(), (m[2] + m[3]).trim()];
+  return [t];
+}
+
+async function tryOne(t, helpers, pc, getSystemStats) {
   if (!t || t.length < 2) return null;
+
+  // —— Escribir texto ——
+  const typeM = t.match(
+    /\b(?:escribe|escribir|tipea|typea|pon el texto)\s+["']?(.+?)["']?\s*$/,
+  );
+  if (typeM && typeM[1].length > 0 && typeM[1].length < 500) {
+    const r = await pc.input('type', { text: typeM[1] });
+    return { response: r.result || 'Texto escrito.', via: 'pc-nlu-type' };
+  }
+  if (/\b(presiona enter|dale enter|pulsa enter)\b/.test(t)) {
+    await pc.input('enter');
+    return { response: 'Enter.', via: 'pc-nlu-enter' };
+  }
+  if (/\b(presiona escape|cancela con escape)\b/.test(t)) {
+    await pc.input('escape');
+    return { response: 'Escape.', via: 'pc-nlu-esc' };
+  }
 
   // —— Volumen ——
   if (/\b(sube|subir|aumenta|alza)\b.*\bvolumen\b|\bvolumen\b.*\b(sube|alto|mas)\b/.test(t)) {
@@ -28,7 +52,7 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
     const r = await pc.volume('down');
     return { response: r.result || 'Bajé el volumen.', via: 'pc-nlu-vol' };
   }
-  if (/\b(silencia|mute|enmudece|quita el sonido|sin sonido)\b/.test(t)) {
+  if (/\b(silencia|mute|enmudece|quita el sonido|sin sonido|quita el audio)\b/.test(t)) {
     const r = await pc.volume('mute');
     return { response: r.result || 'Silencio.', via: 'pc-nlu-mute' };
   }
@@ -68,7 +92,7 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
   }
 
   // —— Captura / pantalla ——
-  if (/\b(captura|screenshot|captura de pantalla|haz una captura|toma una captura)\b/.test(t)) {
+  if (/\b(captura|screenshot|captura de pantalla|haz una captura|toma una captura|saca una foto de la pantalla)\b/.test(t)) {
     const r = await pc.screenshot();
     return { response: r.result || 'Captura lista.', via: 'pc-nlu-shot' };
   }
@@ -76,11 +100,11 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
     const r = await pc.windows('screen_off');
     return { response: r.result || 'Pantalla apagada.', via: 'pc-nlu-screen' };
   }
-  if (/\b(bloquea|bloquear)\b.*\b(sesion|pc|pantalla|equipo)\b|\bbloquea el pc\b/.test(t)) {
+  if (/\b(bloquea|bloquear)\b.*\b(sesion|pc|pantalla|equipo)\b|\bbloquea el pc\b|\bbloquea la pantalla\b/.test(t)) {
     const r = await pc.windows('lock');
     return { response: r.result || 'Sesión bloqueada.', via: 'pc-nlu-lock' };
   }
-  if (/\b(minimiza|minimizar)\b.*\b(todas|ventanas|todo)\b|\bmostrar escritorio\b|\bve al escritorio\b/.test(t)) {
+  if (/\b(minimiza|minimizar)\b.*\b(todas|ventanas|todo)\b|\bmostrar escritorio\b|\bve al escritorio\b|\bir al escritorio\b/.test(t)) {
     const r = await pc.windows('minimize_all');
     return { response: r.result || 'Escritorio.', via: 'pc-nlu-desk' };
   }
@@ -103,8 +127,8 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
     return { response: r.result || 'Suspendiendo…', via: 'pc-nlu-power' };
   }
 
-  // —— Sistema / info ——
-  if (/\b(estado del sistema|como esta el pc|cómo está el pc|diagnostico|diagnóstico|rendimiento)\b/.test(t)) {
+  // —— Sistema ——
+  if (/\b(estado del sistema|como esta el pc|cómo está el pc|diagnostico|diagnóstico|rendimiento|como va el pc)\b/.test(t)) {
     try {
       const s = getSystemStats ? await getSystemStats() : null;
       if (s) {
@@ -171,12 +195,14 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
     const r = await pc.listProcesses();
     return { response: (r.result || '').slice(0, 800), via: 'pc-nlu-proc' };
   }
-  const killM = t.match(/\b(?:cierra|cerrar|mata|mata el proceso|cierra el proceso)\s+(?:la\s+|el\s+)?([a-z0-9._-]{2,40})/);
+  const killM = t.match(
+    /\b(?:cierra|cerrar|mata|mata el proceso|cierra el proceso|cierra la app)\s+(?:la\s+|el\s+)?([a-z0-9._-]{2,40})/,
+  );
   if (killM && !/ventana|sesion|pc|equipo/.test(killM[1])) {
     const r = await pc.killProcess(killM[1]);
     return { response: r.result || 'Listo.', via: 'pc-nlu-kill' };
   }
-  const focusM = t.match(/\b(?:enfoca|activa|trae|pon al frente)\s+(?:la\s+|el\s+)?(.+)/);
+  const focusM = t.match(/\b(?:enfoca|activa|trae|pon al frente|trae al frente)\s+(?:la\s+|el\s+)?(.+)/);
   if (focusM) {
     const r = await pc.windows('focus', focusM[1].trim().slice(0, 80));
     return { response: r.result || 'Ventana activada.', via: 'pc-nlu-focus' };
@@ -187,7 +213,7 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
     return { response: r.result || 'Ventana cerrada.', via: 'pc-nlu-close' };
   }
 
-  // —— Ajustes Windows ——
+  // —— Ajustes ——
   if (/\b(abre|abrir|abre la)\b.*\b(configuracion|configuración|ajustes|settings)\b/.test(t)) {
     let page = 'system';
     if (/wifi|red|network/.test(t)) page = 'wifi';
@@ -210,6 +236,11 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
     const r = await pc.clipboard('clear');
     return { response: r.result || 'Portapapeles limpio.', via: 'pc-nlu-clip' };
   }
+  const clipWrite = t.match(/\b(?:copia al portapapeles|pon en el portapapeles)\s+(.+)/);
+  if (clipWrite) {
+    const r = await pc.clipboard('write', clipWrite[1].slice(0, 2000));
+    return { response: r.result || 'Copiado.', via: 'pc-nlu-clip-w' };
+  }
 
   // —— Notificación ——
   const noti = t.match(/\b(?:notifica|avisa|muestra un aviso)\s+(.+)/);
@@ -218,33 +249,41 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
     return { response: 'Aviso enviado.', via: 'pc-nlu-notify' };
   }
 
-  // —— Hotkeys comunes ——
+  // —— Hotkeys ——
   if (/\b(copiar|copy)\b/.test(t) && t.split(' ').length <= 3) {
     await pc.input('hotkey', { keys: 'ctrl+c' });
-    return { response: 'Ctrl+C enviado.', via: 'pc-nlu-hotkey' };
+    return { response: 'Ctrl+C.', via: 'pc-nlu-hotkey' };
   }
   if (/\b(pegar|paste)\b/.test(t) && t.split(' ').length <= 3) {
     await pc.input('hotkey', { keys: 'ctrl+v' });
-    return { response: 'Ctrl+V enviado.', via: 'pc-nlu-hotkey' };
+    return { response: 'Ctrl+V.', via: 'pc-nlu-hotkey' };
   }
   if (/\b(deshacer|undo)\b/.test(t) && t.split(' ').length <= 3) {
     await pc.input('hotkey', { keys: 'ctrl+z' });
-    return { response: 'Ctrl+Z enviado.', via: 'pc-nlu-hotkey' };
+    return { response: 'Ctrl+Z.', via: 'pc-nlu-hotkey' };
   }
   if (/\b(guardar|save)\b/.test(t) && /\b(archivo|documento|esto)\b/.test(t)) {
     await pc.input('hotkey', { keys: 'ctrl+s' });
-    return { response: 'Ctrl+S enviado.', via: 'pc-nlu-hotkey' };
+    return { response: 'Ctrl+S.', via: 'pc-nlu-hotkey' };
   }
   if (/\b(alt\s*tab|cambia de ventana|siguiente ventana)\b/.test(t)) {
     await pc.input('hotkey', { keys: 'alt+tab' });
     return { response: 'Alt+Tab.', via: 'pc-nlu-hotkey' };
+  }
+  if (/\b(nueva pestana|nueva pestaña|new tab)\b/.test(t)) {
+    await pc.input('hotkey', { keys: 'ctrl+t' });
+    return { response: 'Ctrl+T.', via: 'pc-nlu-hotkey' };
+  }
+  if (/\b(cierra pestana|cierra pestaña|close tab)\b/.test(t)) {
+    await pc.input('hotkey', { keys: 'ctrl+w' });
+    return { response: 'Ctrl+W.', via: 'pc-nlu-hotkey' };
   }
 
   // —— Buscar archivos ——
   const findF = t.match(
     /\b(?:busca|buscar|encuentra)\s+(?:el\s+archivo\s+|archivo\s+|el\s+)?["']?([^"']+?)["']?\s*(?:en\s+(documentos|descargas|escritorio))?$/,
   );
-  if (findF && !/pdf|youtube|google|en internet|en la web/.test(t)) {
+  if (findF && !/pdf|youtube|google|en internet|en la web|wikipedia/.test(t)) {
     const path = require('path');
     const os = require('os');
     const home = os.homedir();
@@ -258,7 +297,43 @@ async function tryPcNlu(text, helpers, pc, getSystemStats) {
     return { response: (r.result || 'Sin resultados.').slice(0, 700), via: 'pc-nlu-find', intelligent: true };
   }
 
+  // —— Abrir app (si no lo capturó tryLocal) ——
+  const openM = t.match(/\b(?:abre|abrir|lanza|ejecuta)\s+(?:el\s+|la\s+)?(.+)/);
+  if (openM && helpers && helpers.openApp) {
+    const name = openM[1].replace(/\s+por favor.*$/i, '').trim();
+    if (name && name.length < 60 && !/configuracion|ajustes|volumen|brillo/.test(name)) {
+      const r = await helpers.openApp(name);
+      return {
+        response: r.message || r.result || 'Listo, lo abrí.',
+        via: 'pc-nlu-open',
+      };
+    }
+  }
+
   return null;
 }
 
-module.exports = { tryPcNlu };
+async function tryPcNlu(text, helpers, pc, getSystemStats) {
+  const t = n(text);
+  if (!t || t.length < 2) return null;
+
+  const chain = splitChain(t);
+  if (chain.length > 1) {
+    const replies = [];
+    for (const part of chain.slice(0, 4)) {
+      const r = await tryOne(part, helpers, pc, getSystemStats);
+      if (r && r.response) replies.push(r.response);
+    }
+    if (replies.length) {
+      return {
+        response: replies.join(' '),
+        via: 'pc-nlu-chain',
+        intelligent: true,
+      };
+    }
+  }
+
+  return tryOne(t, helpers, pc, getSystemStats);
+}
+
+module.exports = { tryPcNlu, tryOne, splitChain };

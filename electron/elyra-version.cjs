@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.9.1',
-  codename: 'PC-NLU',
-  phase: '1.9.1',
-  label: 'ELYRA 1.9.1 — PC control NLU + Brain v2',
+  platform: '1.10.0',
+  codename: 'CommandChain',
+  phase: '1.10',
+  label: 'ELYRA 1.10 — Cadenas de comandos PC + escribir texto',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -13,6 +13,7 @@ module.exports = {
     brainV2: true,
     pcControl: true,
     pcNlu: true,
+    pcChains: true,
     webSearch: true,
     localIntelligence: true,
     rag: true,
