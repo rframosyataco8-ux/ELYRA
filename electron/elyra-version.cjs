@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.8.0',
-  codename: 'Brain',
-  phase: '1.8',
-  label: 'ELYRA 1.8 — Brain local (IA sin API key)',
+  platform: '1.9.0',
+  codename: 'BrainV2',
+  phase: '1.9',
+  label: 'ELYRA 1.9 — Brain v2 (follow-ups + RAG + multi-source)',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -13,6 +13,7 @@ module.exports = {
     voiceHybrid: true,
     voiceNoApiKey: true,
     brainLocal: true,
+    brainV2: true,
     pcControl: true,
     webSearch: true,
     localIntelligence: true,
