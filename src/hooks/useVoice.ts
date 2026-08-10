@@ -4,7 +4,7 @@ type RecognitionEvent = any;
 
 interface UseVoiceOptions {
   onCommand?: (transcript: string) => void;
-  /** Si true, reabre el mic tras hablar (conversación continua) */
+  /** Si true, reabre el mic tras hablar (conversación continua). Default true = manos libres. */
   continuous?: boolean;
 }
 
@@ -62,7 +62,7 @@ function fixSpanishTranscript(raw: string) {
   return t;
 }
 
-export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}) {
+export function useVoice({ onCommand, continuous = true }: UseVoiceOptions = {}) {
   const [speaking, setSpeaking] = useState(false);
   const [listening, setListening] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -81,7 +81,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
   const ignoreUntilRef = useRef(0);
   const listeningModeRef = useRef<'webspeech' | null>(null);
   const continuousRef = useRef(continuous);
-  const wantListenRef = useRef(false);
+  const wantListenRef = useRef(true);
   const startListeningRef = useRef<(() => Promise<void>) | null>(null);
   const ampRafRef = useRef(0);
   const ampCtxRef = useRef<AudioContext | null>(null);
@@ -141,10 +141,11 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
   );
 
   const scheduleRelisten = useCallback(() => {
-    if (!continuousRef.current && !wantListenRef.current) return;
     window.setTimeout(() => {
       if (speakingRef.current) return;
-      startListeningRef.current?.();
+      if (continuousRef.current || wantListenRef.current) {
+        startListeningRef.current?.();
+      }
     }, 450);
   }, []);
 
@@ -271,7 +272,6 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
     onCommandRef.current?.(text);
   }, []);
 
-  /** Web Speech — sin API key. continuous = conversación natural */
   const startWebSpeechListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return false;
@@ -282,7 +282,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
 
     const recognition = new SR();
     recognition.lang = 'es-MX';
-    recognition.continuous = !!continuousRef.current;
+    recognition.continuous = true;
     recognition.interimResults = false;
     recognition.maxAlternatives = 3;
 
@@ -297,9 +297,8 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
     recognition.onresult = (event: RecognitionEvent) => {
       const results = event.results;
       if (!results || !results.length) return;
-      // Último resultado final
       for (let i = event.resultIndex; i < results.length; i++) {
-        if (!results[i].isFinal && continuousRef.current) continue;
+        if (!results[i].isFinal) continue;
         let best = '';
         let bestScore = -1;
         const row = results[i];
@@ -316,13 +315,11 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
 
     recognition.onerror = (event: RecognitionEvent) => {
       const code = event.error || '';
-      if (code === 'no-speech') {
-        // En modo continuo no molestar
-        if (!continuousRef.current) setError('No detecté voz. Habla cuando el mic esté activo.');
-      } else if (code === 'not-allowed') {
-        setError('Permiso de micrófono necesario en Windows → Privacidad → Micrófono.');
+      if (code === 'no-speech') return;
+      if (code === 'not-allowed') {
+        setError('Permiso de micrófono: Windows → Privacidad → Micrófono → permitir ELYRA.');
       } else if (code === 'network') {
-        setError('Reconocimiento de voz necesita internet (Web Speech).');
+        setError('La escucha necesita internet (reconocimiento del sistema).');
       } else if (code !== 'aborted') {
         setError('Mic: ' + code);
       }
@@ -332,17 +329,16 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
       setListening(false);
       setAmplitude(0);
       listeningModeRef.current = null;
-      // Reabrir en conversación continua si no estamos hablando
-      if ((continuousRef.current || wantListenRef.current) && !speakingRef.current) {
+      if (wantListenRef.current && !speakingRef.current) {
         window.setTimeout(() => {
-          if (!speakingRef.current && (continuousRef.current || wantListenRef.current)) {
+          if (!speakingRef.current && wantListenRef.current) {
             try {
               recognition.start();
             } catch {
               startListeningRef.current?.();
             }
           }
-        }, 280);
+        }, 300);
       }
     };
 
@@ -358,11 +354,8 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
   const startListening = useCallback(async () => {
     setError(null);
     wantListenRef.current = true;
-    // 1.7: Web Speech PRIMERO (sin API key)
     if (startWebSpeechListening()) return;
-    setError(
-      'Tu sistema no expone reconocimiento de voz. En Electron/Chromium debería estar disponible. Revisa permisos de micrófono.',
-    );
+    setError('No hay reconocimiento de voz. Revisa micrófono y que Electron permita SpeechRecognition.');
     setSupported(false);
   }, [startWebSpeechListening]);
 
@@ -389,15 +382,14 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
     });
   }, [stopSpeaking, stopListening]);
 
-  // Activar escucha continua cuando continuous pasa a true
+  // Arranque automático manos libres al montar
   useEffect(() => {
-    if (continuous) {
+    const t = window.setTimeout(() => {
       wantListenRef.current = true;
-      if (!speakingRef.current && !listening) {
-        startListeningRef.current?.();
-      }
-    }
-  }, [continuous, listening]);
+      startListeningRef.current?.();
+    }, 1200);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     setSupported(true);
