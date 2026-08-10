@@ -1,9 +1,5 @@
 /**
- * ELYRA 0.2 — permisos de herramientas
- * Bloquea acciones destructivas salvo confirmación explícita del usuario.
- *
- * Confirmación: el mensaje del usuario debe contener
- * "confirma", "confirmado", "hazlo ya", "forzar", "si confirma", etc.
+ * ELYRA permisos de herramientas (0.2 + 0.9 harden)
  */
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -44,6 +40,9 @@ function checkShellCommand(command) {
   const cmd = String(command || '');
   for (const re of BLOCKED_SHELL) {
     if (re.test(cmd)) {
+      try {
+        require('./security-harden.cjs').auditLog('shell_blocked', cmd.slice(0, 200));
+      } catch {}
       return {
         ok: false,
         blocked: true,
@@ -52,14 +51,18 @@ function checkShellCommand(command) {
       };
     }
   }
+  try {
+    const extra = require('./security-harden.cjs').extraShellBlocked(cmd);
+    if (!extra.ok) {
+      try {
+        require('./security-harden.cjs').auditLog('shell_blocked_extra', cmd.slice(0, 200));
+      } catch {}
+      return extra;
+    }
+  } catch {}
   return { ok: true };
 }
 
-/**
- * @param {string} name tool name
- * @param {object} params
- * @param {{ userText?: string, allowDestructive?: boolean }} ctx
- */
 function authorizeTool(name, params, ctx) {
   const n = String(name || '').toLowerCase();
   const userText = (ctx && ctx.userText) || '';
@@ -74,6 +77,9 @@ function authorizeTool(name, params, ctx) {
     const action = String(params?.action || '').toLowerCase();
     if (action === 'shutdown' || action === 'restart') {
       if (!force && !userConfirmed(userText)) {
+        try {
+          require('./security-harden.cjs').auditLog('power_needs_confirm', action);
+        } catch {}
         return {
           ok: false,
           blocked: true,
@@ -82,12 +88,18 @@ function authorizeTool(name, params, ctx) {
             'Esa acción apaga o reinicia el PC. Di «confirma apagar» o «confirma reiniciar» si realmente lo quieres.',
         };
       }
+      try {
+        require('./security-harden.cjs').auditLog('power_authorized', action);
+      } catch {}
     }
   }
 
   if (n === 'kill_process') {
     const proc = String(params?.name || '').toLowerCase();
     if (/explorer|winlogon|csrss|system|smss/.test(proc)) {
+      try {
+        require('./security-harden.cjs').auditLog('kill_blocked_critical', proc);
+      } catch {}
       return {
         ok: false,
         blocked: true,
@@ -119,7 +131,6 @@ function authorizeTool(name, params, ctx) {
   }
 
   if ((n === 'run_command' || n === 'shell') && !force && !userConfirmed(userText)) {
-    // Permitir comandos de lectura; bloquear si parecen escritura agresiva
     const cmd = String(params?.command || params?.cmd || '');
     if (/remove-item|del |rmdir|rm |format |shutdown|stop-computer|restart-computer/i.test(cmd)) {
       return {
