@@ -1,5 +1,5 @@
 /**
- * Router ELYRA — conversación vocal + PC + internet + inteligencia local sin API key
+ * Router ELYRA — conversación + PC + web + multi-agent 1.2
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
@@ -16,6 +16,7 @@ const { trySkillIntent } = require('./skills-router.cjs');
 const { resolveOpenExcelPath } = require('./open-excel-context.cjs');
 const { deepWebSearch } = require('./web-search-boost.cjs');
 const { runLocalIntelligence } = require('./local-intelligence.cjs');
+const { isComplexTask, runMultiAgent } = require('./multi-agent.cjs');
 
 const PRESENCE_REPLIES = [
   'Sí, aquí estoy. Dime.',
@@ -91,7 +92,7 @@ async function routeChat({
     if (/present/i.test(text)) {
       return {
         response:
-          'Soy ELYRA. Asistente de voz de tu escritorio. Controlo el PC, busco en internet y puedo razonar en local sin API key. ¿En qué te ayudo?',
+          'Soy ELYRA. Asistente de voz de tu escritorio. Controlo el PC, busco en internet, uso documentos y puedo coordinar tareas en varios pasos. ¿En qué te ayudo?',
         intelligent: true,
         via: 'presence',
       };
@@ -107,7 +108,21 @@ async function routeChat({
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
   if (quick) return { ...quick, response: speakify(quick.response) };
 
-  // Conocimiento: web autónoma
+  // Multi-agent: tareas compuestas (después de intents locales simples)
+  try {
+    if (isComplexTask(fixed) || isComplexTask(text)) {
+      const ma = await runMultiAgent(fixed, helpers);
+      if (ma && ma.response) {
+        return {
+          response: speakify(ma.response),
+          intelligent: !!ma.intelligent,
+          via: ma.via || 'multi-agent',
+          plan_steps: ma.plan_steps,
+        };
+      }
+    }
+  } catch {}
+
   if (looksLikeKnowledgeQuestion(text) || looksLikeKnowledgeQuestion(fixed)) {
     try {
       const sk = await trySmartTopic(fixed, text);
@@ -133,7 +148,6 @@ async function routeChat({
 
   const config = getConfig();
 
-  // SIN API KEY → motor de inteligencia local completo
   if (!config.apiKey) {
     try {
       const local = await runLocalIntelligence(fixed, history || []);
@@ -519,8 +533,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   if (/\b(qu[eé]\s+puedes\s+hacer|qu[eé]\s+sabes\s+hacer|tus\s+funciones|capacidades|ayuda\s+con\s+qu[eé]|c[oó]mo\s+me\s+ayudas)\b/i.test(text)) {
     return {
       response:
-        'Puedo controlar tu PC, buscar en internet sin API key y, si tienes Ollama, razonar con un modelo local. ' +
-        'También te ayudo con el laboratorio. ¿Qué hacemos?',
+        'Puedo controlar tu PC, buscar en internet, coordinar tareas en varios pasos, revisar documentos y, con API o Ollama, razonar a fondo. ¿Qué hacemos?',
       intelligent: true,
       via: 'capabilities',
     };
