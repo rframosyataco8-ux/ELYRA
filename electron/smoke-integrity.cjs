@@ -1,5 +1,5 @@
 /**
- * Smoke de integridad ELYRA (+ eval opcional 0.9)
+ * Smoke de integridad ELYRA (+ eval opcional)
  */
 function tryRequire(rel) {
   try {
@@ -13,6 +13,7 @@ function tryRequire(rel) {
 function runSmokeIntegrity() {
   const critical = [
     './elyra-version.cjs',
+    './elyra-db.cjs',
     './agent-prompt.cjs',
     './agent.cjs',
     './agent-hooks.cjs',
@@ -48,6 +49,11 @@ function runSmokeIntegrity() {
     version = require('./elyra-version.cjs');
   } catch {}
 
+  let dbStats = null;
+  try {
+    dbStats = require('./elyra-db.cjs').stats();
+  } catch {}
+
   let evalSummary = null;
   try {
     if (process.env.ELYRA_RUN_EVAL === '1') {
@@ -65,6 +71,7 @@ function runSmokeIntegrity() {
     version: version
       ? { platform: version.platform, product: version.product, label: version.label }
       : null,
+    db: dbStats,
     eval: evalSummary,
     at: new Date().toISOString(),
   };
