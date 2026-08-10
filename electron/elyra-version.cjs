@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.1.0',
-  codename: 'SystemDB',
-  phase: '1.1',
-  label: 'ELYRA 1.1 — System Database',
+  platform: '1.2.0',
+  codename: 'MultiAgent',
+  phase: '1.2',
+  label: 'ELYRA 1.2 — Multi-Agent',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -22,7 +22,7 @@ module.exports = {
     rag: true,
     filesReliable: true,
     vision: true,
-    multiAgent: false,
+    multiAgent: true,
     formalEval: true,
     trainingPipeline: false,
     systemDatabase: true,

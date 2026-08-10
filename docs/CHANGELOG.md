@@ -1,20 +1,15 @@
 # ELYRA Changelog
 
-## [1.1.0] — 2026-08-10 — System Database
+## [1.2.0] — 2026-08-10 — Multi-Agent
 
 ### Added
-- `elyra-db.cjs` — BD de sistema en `~/.elyra/system/elyra-system.json`
-- Conversaciones, mensajes, memoria, tools, archivos, búsquedas, auditoría
-- Migración automática desde `memory/cognitive.json`
-- `docs/DATABASE.md`
-- Capability `systemDatabase: true`
-
-### Design
-- Sin módulo nativo (compatible Electron sin rebuild)
-- API lista para motor SQLite en el futuro
+- `multi-agent.cjs` — planner + researcher + executor + verifier
+- Activación automática en tareas multi-paso
+- `docs/MULTI_AGENT.md`
+- Capability `multiAgent: true`
 
 ---
 
+## [1.1.0] — System Database
 ## [1.0.0] — Horizon
-## [0.9.0] — Eval & Security
 ## …
