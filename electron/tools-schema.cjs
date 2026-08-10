@@ -1,9 +1,10 @@
 /**
- * ELYRA Tool Schemas — PC + RAG + vision + OCR 1.4
+ * ELYRA Tool Schemas — PC + RAG + vision + OCR + lab 1.6
  */
 const FS_EXTRA = require('./tools-fs-extra.cjs');
 const VISION_EXTRA = require('./tools-vision-extra.cjs');
 const OCR_EXTRA = require('./tools-ocr-extra.cjs');
+const LAB_EXTRA = require('./tools-lab-extra.cjs');
 
 const TOOL_DEFINITIONS = [
   {
@@ -20,6 +21,7 @@ const TOOL_DEFINITIONS = [
   },
   ...VISION_EXTRA,
   ...OCR_EXTRA,
+  ...LAB_EXTRA,
   {
     type: 'function',
     function: {
