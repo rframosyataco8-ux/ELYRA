@@ -10,5 +10,9 @@
 | 1.2 | Multi-agent | Done |
 | 1.3 | Voice + permissions | Done |
 | 1.4 | OCR / vision UI | Done |
-| **1.5** | **Training foundation** | **Done** |
-| 1.6+ | Polish / your requests | Open |
+| 1.5 | Training foundation | Done |
+| **1.6** | **Product complete (UI + lab + BD v2)** | **Done** |
+
+## Más allá
+
+Solo mejoras bajo petición del usuario (bugs, dominio, fine-tune externo).

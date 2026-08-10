@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.5.0',
-  codename: 'TrainReady',
-  phase: '1.5',
-  label: 'ELYRA 1.5 — Training Foundation',
+  platform: '1.6.0',
+  codename: 'Complete',
+  phase: '1.6',
+  label: 'ELYRA 1.6 — Product Complete',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -29,5 +29,8 @@ module.exports = {
     systemDatabase: true,
     securityHarden: true,
     nativePermissionDialogs: true,
+    labTemplates: true,
+    visionUi: true,
+    dbSchemaV2: true,
   },
 };
