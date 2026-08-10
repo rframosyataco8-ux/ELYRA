@@ -1,5 +1,5 @@
 /**
- * Hooks cognitivos — memoria + RAG + files + vision + OCR 1.4 + DB
+ * Hooks cognitivos — memoria + RAG + files + vision + OCR + training 1.5 + DB
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
@@ -8,6 +8,7 @@ const rag = require('./rag-local.cjs');
 const files = require('./files-reliability.cjs');
 const vision = require('./vision-engine.cjs');
 const ocr = require('./ocr-engine.cjs');
+const train = require('./training-pipeline.cjs');
 const { getConfig } = require('./agent.cjs');
 
 let db;
@@ -21,14 +22,14 @@ const REACT_ADDENDUM = `
 
 [IDENTIDAD — ELYRA]
 Eres ELYRA. Nunca digas que te llamas Luna.
-Desktop + internet + documentos + visión + OCR + memoria de sistema.
+Desktop + internet + documentos + visión + OCR + memoria + preparación de dataset.
 Nunca inventes que una tool funcionó si falló.
 
 [AUTONOMÍA]
 - Mundo real → web_search.
-- Archivos → rag_search / analyze_excel / summarize_pdf / extract_pdf_smart.
-- Imágenes → analyze_image, ocr_image o analyze_screenshot.
-- PDF escaneado sin texto → extract_pdf_smart u ocr_pdf.
+- Archivos → rag_search / analyze_excel / extract_pdf_smart.
+- Imágenes → analyze_image u ocr_image.
+- Dataset → training_status / export_training_dataset (no entrena un LLM dentro de la app).
 
 [CALIDAD HABLADA]
 - 1 frase si fue orden simple.
@@ -132,6 +133,12 @@ async function extendExecute(name, params, helpers, baseExecute) {
           cfg,
         );
       }
+      case 'training_status':
+        return train.trainingStatus();
+      case 'export_training_dataset':
+        return train.exportDataset({
+          minPairs: params.min_pairs ? Number(params.min_pairs) : 5,
+        });
       case 'db_stats':
         if (!db) return { ok: false, result: 'BD de sistema no disponible' };
         return { ok: true, result: JSON.stringify(db.stats(), null, 2) };
@@ -196,6 +203,10 @@ function enrichSystemPrompt(base, userText) {
   if (/imagen|foto|captura|screenshot|ocr|texto de la (foto|imagen)|transcribe/.test(t)) {
     extra +=
       '\n\n[CONTEXTO: VISIÓN/OCR] analyze_image (API) u ocr_image (local Tesseract).';
+  }
+  if (/entren|dataset|fine.?tune|lora|exportar (datos|dataset)/.test(t)) {
+    extra +=
+      '\n\n[CONTEXTO: TRAINING] Usa training_status o export_training_dataset. No digas que entrenaste un modelo dentro de la app.';
   }
   return (base || '') + extra;
 }
