@@ -1,8 +1,8 @@
 /**
- * ELYRA Tool Schemas — Function Calling (OpenAI-compatible)
- * PC + laboratorio + RAG local 0.5
+ * ELYRA Tool Schemas — PC + RAG + vision 0.8 + laboratorio
  */
 const FS_EXTRA = require('./tools-fs-extra.cjs');
+const VISION_EXTRA = require('./tools-vision-extra.cjs');
 
 const TOOL_DEFINITIONS = [
   {
@@ -17,17 +17,18 @@ const TOOL_DEFINITIONS = [
       },
     },
   },
+  ...VISION_EXTRA,
   {
     type: 'function',
     function: {
       name: 'rag_search',
       description:
-        'Busca en el índice local de documentos del usuario (Documentos, Informes, Escritorio, Descargas). Usa esto para preguntas sobre informes, PDFs, protocolos o notas propias.',
+        'Busca en el índice local de documentos del usuario (Documentos, Informes, Escritorio, Descargas).',
       parameters: {
         type: 'object',
         properties: {
           query: { type: 'string' },
-          limit: { type: 'string', description: 'Número de fragmentos (opcional)' },
+          limit: { type: 'string' },
         },
         required: ['query'],
       },
@@ -37,13 +38,10 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'reindex_docs',
-      description:
-        'Reconstruye el índice RAG local de documentos del usuario. force=true relee todos los archivos.',
+      description: 'Reconstruye el índice RAG local. force=true relee todos los archivos.',
       parameters: {
         type: 'object',
-        properties: {
-          force: { type: 'boolean' },
-        },
+        properties: { force: { type: 'boolean' } },
       },
     },
   },
@@ -51,12 +49,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'scan_folder',
-      description: 'Escanea Documentos (u otra carpeta) buscando Excel, PDF, Word, PPT, texto.',
+      description: 'Escanea Documentos buscando Excel, PDF, Word, PPT, texto.',
       parameters: {
         type: 'object',
         properties: {
           root: { type: 'string' },
-          pattern: { type: 'string', description: 'Filtro opcional en el nombre' },
+          pattern: { type: 'string' },
         },
       },
     },
@@ -66,7 +64,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'analyze_excel',
-      description: 'Analiza un CSV/Excel con pandas: columnas, stats, muestra. Opcional export ejecutivo.',
+      description: 'Analiza CSV/Excel: columnas, stats, muestra. Opcional export.',
       parameters: {
         type: 'object',
         properties: {
@@ -81,7 +79,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'summarize_pdf',
-      description: 'Extrae texto de un PDF para analizarlo o resumirlo.',
+      description: 'Extrae texto de un PDF.',
       parameters: {
         type: 'object',
         properties: { path: { type: 'string' } },
@@ -105,12 +103,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'write_docx',
-      description: 'Redacta un informe corporativo en Word (.docx) en Documentos/Informes.',
+      description: 'Redacta informe Word en Documentos/Informes.',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string' },
-          body: { type: 'string', description: 'Texto con párrafos; # y ## para títulos; - para viñetas' },
+          body: { type: 'string' },
           path: { type: 'string' },
         },
         required: ['title', 'body'],
@@ -121,15 +119,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'write_pptx',
-      description: 'Crea una presentación PowerPoint ejecutiva.',
+      description: 'Crea presentación PowerPoint.',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string' },
-          slides: {
-            type: 'string',
-            description: 'JSON array [{title, bullets: string[]}] o texto plano',
-          },
+          slides: { type: 'string' },
           body: { type: 'string' },
           path: { type: 'string' },
         },
@@ -141,12 +136,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'html_dashboard',
-      description: 'Genera un dashboard HTML ejecutivo en Informes/.',
+      description: 'Dashboard HTML en Informes/.',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string' },
-          body: { type: 'string', description: 'HTML interior' },
+          body: { type: 'string' },
           path: { type: 'string' },
         },
         required: ['title', 'body'],
@@ -226,7 +221,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_app',
-      description: 'Abre cualquier aplicación del PC (Word, Chrome, Excel, Spotify, etc.).',
+      description: 'Abre aplicación del PC.',
       parameters: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -262,8 +257,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'run_command',
-      description:
-        'Ejecuta un comando de shell/CMD/PowerShell en el PC del usuario y devuelve la salida. Úsalo para automatizar cualquier tarea de sistema.',
+      description: 'Ejecuta comando de shell (sujeto a permisos 0.2).',
       parameters: {
         type: 'object',
         properties: { command: { type: 'string' } },
@@ -275,20 +269,15 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'input',
-      description:
-        'Control de teclado y mouse: type, click, dblclick, rightclick, move, enter, escape, tab, backspace, hotkey. Para click/move pasa x,y. Para hotkey usa keys (ej. ctrl+s, alt+f4, ctrl+shift+esc).',
+      description: 'Teclado/mouse: type, click, move, hotkey, etc.',
       parameters: {
         type: 'object',
         properties: {
-          action: {
-            type: 'string',
-            description:
-              'type|click|dblclick|rightclick|move|enter|escape|tab|backspace|hotkey',
-          },
-          text: { type: 'string', description: 'Texto a escribir (action=type)' },
-          x: { type: 'string', description: 'Coordenada X pantalla' },
-          y: { type: 'string', description: 'Coordenada Y pantalla' },
-          keys: { type: 'string', description: 'Combinación ej. ctrl+c, alt+tab, win' },
+          action: { type: 'string' },
+          text: { type: 'string' },
+          x: { type: 'string' },
+          y: { type: 'string' },
+          keys: { type: 'string' },
         },
         required: ['action'],
       },
@@ -298,7 +287,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'remember',
-      description: 'Guarda preferencia o hecho en memoria a largo plazo.',
+      description: 'Guarda hecho en memoria.',
       parameters: {
         type: 'object',
         properties: {
@@ -353,7 +342,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'uptime',
-      description: 'Uptime del sistema.',
+      description: 'Uptime.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -436,7 +425,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'kill_process',
-      description: 'Cierra un proceso por nombre.',
+      description: 'Cierra proceso (requiere confirma).',
       parameters: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -448,19 +437,12 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'windows',
-      description:
-        'Control de ventanas: minimize_all, lock, screen_off, list, focus (requiere title), close (requiere title).',
+      description: 'minimize_all, lock, screen_off, list, focus, close.',
       parameters: {
         type: 'object',
         properties: {
-          action: {
-            type: 'string',
-            enum: ['minimize_all', 'lock', 'screen_off', 'list', 'focus', 'close'],
-          },
-          title: {
-            type: 'string',
-            description: 'Título o nombre de proceso de la ventana (focus/close)',
-          },
+          action: { type: 'string' },
+          title: { type: 'string' },
         },
         required: ['action'],
       },
@@ -485,7 +467,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_settings',
-      description: 'Ajustes Windows (display, sound, network, bluetooth, update, etc.).',
+      description: 'Ajustes Windows.',
       parameters: {
         type: 'object',
         properties: { page: { type: 'string' } },
@@ -496,7 +478,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'empty_recycle',
-      description: 'Vaciar papelera.',
+      description: 'Vaciar papelera (confirma).',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -504,7 +486,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'power',
-      description: 'shutdown|restart|sleep|cancel',
+      description: 'shutdown|restart|sleep|cancel (confirma).',
       parameters: {
         type: 'object',
         properties: {
