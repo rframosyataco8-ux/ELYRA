@@ -21,6 +21,7 @@ function runSmokeIntegrity() {
     './tools-schema.cjs',
     './pc-control.cjs',
     './tts.cjs',
+    './tts-cache.cjs',
     './stt.cjs',
     './web-search-boost.cjs',
     './smart-knowledge.cjs',
