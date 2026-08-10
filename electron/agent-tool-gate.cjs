@@ -17,6 +17,9 @@ module.exports = new Set([
   'reindex_docs',
   'analyze_image',
   'analyze_screenshot',
+  'ocr_image',
+  'ocr_pdf',
+  'extract_pdf_smart',
   'files_health',
   'python_health',
 ]);
