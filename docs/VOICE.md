@@ -1,26 +1,41 @@
-# ELYRA Voice (0.6)
+# ELYRA Voice 1.7 — Hands-free
 
-## Pipeline
+## Sin API key
 
-```text
-MIC → VAD (RMS) → MediaRecorder → STT → ELYRA → TTS (cache|edge-tts) → speaker
-         ↑ barge-in (Ctrl+Espacio / hablar encima)
-```
+La escucha usa **Web Speech API** del sistema (Chromium/Electron).
+No requiere Groq ni Whisper para conversar.
 
-## Mejoras 0.6
+- Necesita **internet** para el motor de reconocimiento del sistema.
+- Micrófono permitido en Windows → Privacidad → Micrófono.
 
-| Tema | Comportamiento |
-|------|----------------|
-| VAD | Umbral de habla ~0.018, silencio ~1.15 s |
-| Barge-in | Corta TTS y **empieza a escuchar** |
-| Anti-eco | Ignore corto tras fin de frase (~350–500 ms) |
-| Latencia TTS | Caché de confirmaciones cortas |
-| Atajo | `Ctrl+Espacio` interrumpe |
+## Conversación continua
 
-## Dependencias
+Por defecto `continuous = true`:
+
+1. ELYRA escucha
+2. Tú hablas
+3. Responde (edge-tts / voz del sistema)
+4. Vuelve a escuchar sola
+
+Activa el icono **oreja** (reesucha) o modo escritorio al minimizar.
+
+## Interrumpir
+
+`Ctrl+Space` (barge-in) corta la voz y abre el mic.
+
+## TTS natural
 
 ```bash
 pip install edge-tts
 ```
 
 Voz por defecto: `es-MX-DaliaNeural`.
+
+## Inteligencia sin API key
+
+Chat router → local-intelligence (math, web, Ollama si existe).
+
+```bash
+# Opcional razonamiento local fuerte
+ollama pull llama3.2
+```

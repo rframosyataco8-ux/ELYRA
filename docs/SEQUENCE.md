@@ -1,18 +1,7 @@
 # ELYRA — Implementation sequence
 
-## Core 0.0 → 1.0 — Done
+## 0.0 → 1.6 — Done
 
-## Post-1.0
+## 1.7 Hands-free voice (no STT API key) — Done
 
-| Version | Name | Status |
-|---------|------|--------|
-| 1.1 | System database | Done |
-| 1.2 | Multi-agent | Done |
-| 1.3 | Voice + permissions | Done |
-| 1.4 | OCR / vision UI | Done |
-| 1.5 | Training foundation | Done |
-| **1.6** | **Product complete (UI + lab + BD v2)** | **Done** |
-
-## Más allá
-
-Solo mejoras bajo petición del usuario (bugs, dominio, fine-tune externo).
+Más allá: solo bugs y peticiones del usuario.
