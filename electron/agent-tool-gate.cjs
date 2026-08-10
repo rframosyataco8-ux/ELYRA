@@ -24,4 +24,6 @@ module.exports = new Set([
   'python_health',
   'training_status',
   'export_training_dataset',
+  'lab_template',
+  'list_lab_templates',
 ]);
