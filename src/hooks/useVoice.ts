@@ -57,8 +57,6 @@ function fixSpanishTranscript(raw: string) {
     [/\bvisual estudio\b/gi, 'code'],
     [/\belira\b/gi, 'elyra'],
     [/\beliara\b/gi, 'elyra'],
-    [/\beluna\b/gi, 'luna'],
-    [/\bluna\b/gi, 'luna'],
     [/\bexcelente\b/gi, 'excel'],
     [/\bpoder point\b/gi, 'powerpoint'],
     [/\byutub\b/gi, 'youtube'],
@@ -83,6 +81,15 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
+
+/** VAD 0.6 — umbrales afinados para turnos más ágiles */
+const VAD = {
+  SILENCE_THRESHOLD: 0.011,
+  SPEECH_THRESHOLD: 0.018,
+  SILENCE_MS: 1150,
+  MAX_RECORD_MS: 16000,
+  POLL_MS: 35,
+};
 
 export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const [speaking, setSpeaking] = useState(false);
@@ -113,6 +120,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
   const levelTimerRef = useRef<number | null>(null);
   const speechStartedRef = useRef(false);
   const speakStartedAtRef = useRef(0);
+  const startListeningRef = useRef<(() => Promise<void>) | null>(null);
   onCommandRef.current = onCommand;
 
   useEffect(() => {
@@ -195,7 +203,6 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     [stopAmplitudeMonitor],
   );
 
-  // LUNA V3: parada inmediata y ventana de ignore corta (conversación bidireccional)
   const stopSpeaking = useCallback(() => {
     speakTokenRef.current += 1;
     stopAmplitudeMonitor();
@@ -211,8 +218,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     speakingRef.current = false;
     setSpeaking(false);
-    // Ventana corta: el usuario puede hablar casi de inmediato tras interrumpir
-    ignoreUntilRef.current = Date.now() + 280;
+    ignoreUntilRef.current = Date.now() + 200;
   }, [stopAmplitudeMonitor]);
 
   function speakBrowser(text: string, token: number) {
@@ -241,12 +247,12 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         speakingRef.current = false;
         setSpeaking(false);
         setAmplitude(0);
-        ignoreUntilRef.current = Date.now() + 450;
+        ignoreUntilRef.current = Date.now() + 350;
       }
     };
     setTimeout(() => {
       if (token === speakTokenRef.current) window.speechSynthesis.speak(utterance);
-    }, 15);
+    }, 10);
   }
 
   const speak = useCallback(
@@ -268,8 +274,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
 
       stopSpeaking();
       const token = speakTokenRef.current;
-      // Mientras genera TTS bloqueamos eco; se libera al empezar a reproducir o al interrumpir
-      ignoreUntilRef.current = Date.now() + 12000;
+      ignoreUntilRef.current = Date.now() + 8000;
 
       if (isDesktop() && window.elyra) {
         try {
@@ -281,9 +286,8 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             speakingRef.current = true;
             setSpeaking(true);
             speakStartedAtRef.current = Date.now();
-            // Log ligero de latencia TTS (consola, no bloquea)
             try {
-              console.debug('[LUNA] TTS latency ms:', Date.now() - t0);
+              console.debug('[ELYRA] TTS latency ms:', Date.now() - t0);
             } catch {}
 
             const audio = new Audio(result.dataUrl);
@@ -295,8 +299,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
                 speakingRef.current = false;
                 setSpeaking(false);
                 audioRef.current = null;
-                // Recuperación rápida para el siguiente turno
-                ignoreUntilRef.current = Date.now() + 400;
+                ignoreUntilRef.current = Date.now() + 320;
               }
             };
             audio.onerror = () => {
@@ -304,13 +307,12 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
                 stopAmplitudeMonitor();
                 speakingRef.current = false;
                 setSpeaking(false);
-                ignoreUntilRef.current = Date.now() + 350;
+                ignoreUntilRef.current = Date.now() + 280;
                 speakBrowser(text, token);
               }
             };
             startAmplitudeMonitor(audio);
-            // Al empezar a sonar, reducimos el bloqueo de eco
-            ignoreUntilRef.current = Date.now() + 800;
+            ignoreUntilRef.current = Date.now() + 600;
             await audio.play();
             return;
           }
@@ -338,10 +340,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
 
   const startWhisperListening = useCallback(async () => {
     try {
-      // LUNA V3: si está hablando, interrumpimos y escuchamos (barge-in natural)
-      if (speakingRef.current) {
-        stopSpeaking();
-      }
+      if (speakingRef.current) stopSpeaking();
       setError(null);
       setTranscribing(false);
       speechStartedRef.current = false;
@@ -383,13 +382,9 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
         const src = ctx.createMediaStreamSource(stream);
         const an = ctx.createAnalyser();
         an.fftSize = 1024;
-        an.smoothingTimeConstant = 0.35;
+        an.smoothingTimeConstant = 0.3;
         src.connect(an);
         const data = new Uint8Array(an.frequencyBinCount);
-        // Umbrales sensibles + silencio un poco más corto = turnos más ágiles
-        const SILENCE_THRESHOLD = 0.012;
-        const SPEECH_THRESHOLD = 0.020;
-        const SILENCE_MS = 1350;
 
         levelTimerRef.current = window.setInterval(() => {
           an.getByteTimeDomainData(data);
@@ -399,24 +394,24 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             sum += v * v;
           }
           const rms = Math.sqrt(sum / data.length);
-          setAmplitude(Math.min(1, rms * 5.8));
+          setAmplitude(Math.min(1, rms * 6));
 
-          if (rms >= SPEECH_THRESHOLD) {
+          if (rms >= VAD.SPEECH_THRESHOLD) {
             speechStartedRef.current = true;
             if (silenceTimerRef.current) {
               window.clearTimeout(silenceTimerRef.current);
               silenceTimerRef.current = null;
             }
-          } else if (speechStartedRef.current && rms < SILENCE_THRESHOLD && !silenceTimerRef.current) {
+          } else if (speechStartedRef.current && rms < VAD.SILENCE_THRESHOLD && !silenceTimerRef.current) {
             silenceTimerRef.current = window.setTimeout(() => {
               try {
                 if (mediaRecorderRef.current?.state === 'recording') {
                   mediaRecorderRef.current.stop();
                 }
               } catch {}
-            }, SILENCE_MS);
+            }, VAD.SILENCE_MS);
           }
-        }, 40);
+        }, VAD.POLL_MS);
         (recorder as any)._elyraCtx = ctx;
       } catch {}
 
@@ -435,7 +430,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
 
         if (speakingRef.current) return;
 
-        if (!blob.size || blob.size < 200) {
+        if (!blob.size || blob.size < 180) {
           setError('No se grabó audio. Habla un poco más cerca del micrófono.');
           return;
         }
@@ -472,7 +467,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
 
       mediaRecorderRef.current = recorder;
       listeningModeRef.current = 'whisper';
-      recorder.start(120);
+      recorder.start(100);
       setListening(true);
 
       maxTimerRef.current = window.setTimeout(() => {
@@ -481,7 +476,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
             mediaRecorderRef.current.stop();
           }
         } catch {}
-      }, 18000);
+      }, VAD.MAX_RECORD_MS);
 
       return true;
     } catch (e: any) {
@@ -509,7 +504,7 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
       setListening(true);
       setTranscribing(false);
       listeningModeRef.current = 'python';
-      const result = await window.elyra.sttListenPython(9);
+      const result = await window.elyra.sttListenPython(8);
       setListening(false);
       listeningModeRef.current = null;
       if (result.ok && result.text) {
@@ -590,6 +585,8 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     }
   }, [startWhisperListening, startPythonListening, startWebSpeechListening]);
 
+  startListeningRef.current = startListening;
+
   const stopListening = useCallback(() => {
     clearTimers();
     if (mediaRecorderRef.current?.state === 'recording') {
@@ -608,13 +605,16 @@ export function useVoice({ onCommand }: UseVoiceOptions = {}) {
     listeningModeRef.current = null;
   }, []);
 
-  // Barge-in: Ctrl+Espacio o evento → corta voz al instante y deja listo para escuchar
+  // 0.6: barge-in corta y abre mic automáticamente
   useEffect(() => {
     if (!isDesktop() || !window.elyra?.onBargeIn) return;
     return window.elyra.onBargeIn(() => {
       stopSpeaking();
       stopListening();
-      ignoreUntilRef.current = Date.now() + 200;
+      ignoreUntilRef.current = Date.now() + 180;
+      window.setTimeout(() => {
+        startListeningRef.current?.();
+      }, 220);
     });
   }, [stopSpeaking, stopListening]);
 
