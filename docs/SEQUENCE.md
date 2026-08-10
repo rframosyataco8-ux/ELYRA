@@ -7,7 +7,7 @@
 | Version | Name | Status |
 |---------|------|--------|
 | 1.1 | System database | Done |
-| **1.2** | **Multi-agent / planner** | **Done** |
-| 1.3 | Voice + UI permissions | **Next** |
-| 1.4 | OCR / vision UI | Pending |
+| 1.2 | Multi-agent | Done |
+| **1.3** | **Voice + UI permissions** | **Done** |
+| 1.4 | OCR / vision UI | **Next** |
 | 1.x | Training (con métrica) | Pending |

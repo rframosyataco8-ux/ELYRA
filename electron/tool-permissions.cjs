@@ -1,5 +1,5 @@
 /**
- * ELYRA permisos de herramientas (0.2 + 0.9 harden)
+ * ELYRA permisos (0.2 + 0.9 + 1.3 diálogo nativo)
  */
 
 const DESTRUCTIVE_TOOLS = new Set([
@@ -36,6 +36,17 @@ function isDestructiveTool(name) {
   return DESTRUCTIVE_TOOLS.has(String(name || '').toLowerCase());
 }
 
+function tryNativeConfirm(kind, payload) {
+  try {
+    const ui = require('./permission-ui.cjs');
+    if (kind === 'power') return ui.confirmPower(payload);
+    if (kind === 'kill') return ui.confirmKill(payload);
+    if (kind === 'recycle') return ui.confirmEmptyRecycle();
+    if (kind === 'shell') return ui.confirmShell(payload);
+  } catch {}
+  return null; // null = diálogo no disponible
+}
+
 function checkShellCommand(command) {
   const cmd = String(command || '');
   for (const re of BLOCKED_SHELL) {
@@ -63,10 +74,16 @@ function checkShellCommand(command) {
   return { ok: true };
 }
 
+/**
+ * @param {string} name
+ * @param {object} params
+ * @param {{ userText?: string, allowDestructive?: boolean, useDialog?: boolean }} ctx
+ */
 function authorizeTool(name, params, ctx) {
   const n = String(name || '').toLowerCase();
   const userText = (ctx && ctx.userText) || '';
   const force = !!(ctx && ctx.allowDestructive);
+  const useDialog = ctx && ctx.useDialog !== false; // por defecto sí en 1.3
 
   if (n === 'run_command' || n === 'shell') {
     const shellCheck = checkShellCommand(params?.command || params?.cmd || '');
@@ -76,21 +93,41 @@ function authorizeTool(name, params, ctx) {
   if (n === 'power') {
     const action = String(params?.action || '').toLowerCase();
     if (action === 'shutdown' || action === 'restart') {
-      if (!force && !userConfirmed(userText)) {
+      if (force || userConfirmed(userText)) {
         try {
-          require('./security-harden.cjs').auditLog('power_needs_confirm', action);
+          require('./security-harden.cjs').auditLog('power_authorized_verbal', action);
         } catch {}
-        return {
-          ok: false,
-          blocked: true,
-          needsConfirm: true,
-          result:
-            'Esa acción apaga o reinicia el PC. Di «confirma apagar» o «confirma reiniciar» si realmente lo quieres.',
-        };
+        return { ok: true };
+      }
+      if (useDialog) {
+        const accepted = tryNativeConfirm('power', action);
+        if (accepted === true) {
+          try {
+            require('./security-harden.cjs').auditLog('power_authorized_dialog', action);
+          } catch {}
+          return { ok: true, via: 'dialog' };
+        }
+        if (accepted === false) {
+          try {
+            require('./security-harden.cjs').auditLog('power_denied_dialog', action);
+          } catch {}
+          return {
+            ok: false,
+            blocked: true,
+            result: 'Cancelaste la acción desde el diálogo.',
+          };
+        }
       }
       try {
-        require('./security-harden.cjs').auditLog('power_authorized', action);
+        require('./security-harden.cjs').auditLog('power_needs_confirm', action);
       } catch {}
+      return {
+        ok: false,
+        blocked: true,
+        needsConfirm: true,
+        result:
+          'Esa acción apaga o reinicia el PC. Di «confirma apagar» o acepta el diálogo de confirmación.',
+      };
     }
   }
 
@@ -106,39 +143,58 @@ function authorizeTool(name, params, ctx) {
         result: 'No puedo terminar procesos críticos del sistema (' + proc + ').',
       };
     }
-    if (!force && !userConfirmed(userText)) {
-      return {
-        ok: false,
-        blocked: true,
-        needsConfirm: true,
-        result:
-          'Cerrar el proceso «' +
-          (params?.name || '') +
-          '» puede perder datos. Di «confirma» y el nombre del proceso para continuar.',
-      };
+    if (force || userConfirmed(userText)) return { ok: true };
+    if (useDialog) {
+      const accepted = tryNativeConfirm('kill', params?.name || proc);
+      if (accepted === true) return { ok: true, via: 'dialog' };
+      if (accepted === false) {
+        return { ok: false, blocked: true, result: 'Cancelaste cerrar el proceso.' };
+      }
     }
+    return {
+      ok: false,
+      blocked: true,
+      needsConfirm: true,
+      result:
+        'Cerrar «' +
+        (params?.name || '') +
+        '» puede perder datos. Di «confirma» o acepta el diálogo.',
+    };
   }
 
   if (n === 'empty_recycle') {
-    if (!force && !userConfirmed(userText)) {
-      return {
-        ok: false,
-        blocked: true,
-        needsConfirm: true,
-        result: 'Vaciar la papelera es irreversible. Di «confirma vaciar papelera» si lo deseas.',
-      };
+    if (force || userConfirmed(userText)) return { ok: true };
+    if (useDialog) {
+      const accepted = tryNativeConfirm('recycle');
+      if (accepted === true) return { ok: true, via: 'dialog' };
+      if (accepted === false) {
+        return { ok: false, blocked: true, result: 'Cancelaste vaciar la papelera.' };
+      }
     }
+    return {
+      ok: false,
+      blocked: true,
+      needsConfirm: true,
+      result: 'Vaciar la papelera es irreversible. Di «confirma vaciar papelera» o acepta el diálogo.',
+    };
   }
 
   if ((n === 'run_command' || n === 'shell') && !force && !userConfirmed(userText)) {
     const cmd = String(params?.command || params?.cmd || '');
     if (/remove-item|del |rmdir|rm |format |shutdown|stop-computer|restart-computer/i.test(cmd)) {
+      if (useDialog) {
+        const accepted = tryNativeConfirm('shell', cmd);
+        if (accepted === true) return { ok: true, via: 'dialog' };
+        if (accepted === false) {
+          return { ok: false, blocked: true, result: 'Cancelaste el comando.' };
+        }
+      }
       return {
         ok: false,
         blocked: true,
         needsConfirm: true,
         result:
-          'Ese comando puede modificar o borrar datos. Di «confirma» junto a la orden para autorizarlo.',
+          'Ese comando puede modificar o borrar datos. Di «confirma» o acepta el diálogo.',
       };
     }
   }

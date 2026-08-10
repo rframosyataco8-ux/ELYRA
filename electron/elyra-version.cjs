@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.2.0',
-  codename: 'MultiAgent',
-  phase: '1.2',
-  label: 'ELYRA 1.2 — Multi-Agent',
+  platform: '1.3.0',
+  codename: 'ClearVoice',
+  phase: '1.3',
+  label: 'ELYRA 1.3 — Voice & Permissions',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -27,5 +27,6 @@ module.exports = {
     trainingPipeline: false,
     systemDatabase: true,
     securityHarden: true,
+    nativePermissionDialogs: true,
   },
 };
