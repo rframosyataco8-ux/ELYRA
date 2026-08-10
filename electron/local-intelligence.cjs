@@ -1,57 +1,69 @@
 /**
- * Motor de inteligencia LOCAL de ELYRA — delega en ELYRA Brain 1.8
- * Sin API key de nube. Compatible con chat-router y agent.
+ * Motor de inteligencia LOCAL ELYRA 1.11
+ * Brain + contexto de conversación + web
  */
 const brain = require('./elyra-brain.cjs');
+const ctx = require('./conversation-context.cjs');
 const { deepWebSearch } = require('./web-search-boost.cjs');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
 const { tryLocalMath } = require('./local-math.cjs');
 
 async function runLocalIntelligence(userText, history) {
-  try {
-    const result = await brain.think(userText, history);
-    if (result && result.ok && result.response) return result;
-    // Si el brain deferió (PC), intentar web genérica
-    if (result && result.via === 'brain-defer-pc') {
-      return {
-        ok: false,
-        response: '',
-        via: 'local-defer-pc',
-      };
-    }
-  } catch (e) {
-    // fallback legacy
-  }
-
   const text = String(userText || '').trim();
   if (!text) return { ok: true, response: 'Te escucho.', via: 'local-empty' };
 
-  const math = tryLocalMath(text);
-  if (math) return { ok: true, response: math, via: 'local-math', intelligent: true };
+  ctx.noteUser(text);
+  const expanded = ctx.expandFollowUp(text);
+  const hist = (history && history.length ? history : ctx.historyForBrain()).slice(-10);
+
+  // Nombre del usuario en saludos
+  const name = ctx.getFact('user_name');
+  if (/^(hola|buenas|hey|que tal)\b/i.test(text) && text.split(/\s+/).length <= 4 && name) {
+    const r = { ok: true, response: 'Hola, ' + name + '. ¿En qué te ayudo?', via: 'ctx-greet', intelligent: true };
+    ctx.noteAssistant(r.response);
+    return r;
+  }
 
   try {
-    const deep = await deepWebSearch(text);
+    const result = await brain.think(expanded, hist);
+    if (result && result.ok && result.response) {
+      ctx.noteAssistant(result.response);
+      return result;
+    }
+    if (result && result.via === 'brain-defer-pc') {
+      return { ok: false, response: '', via: 'local-defer-pc' };
+    }
+  } catch {}
+
+  const math = tryLocalMath(text);
+  if (math) {
+    ctx.noteAssistant(math);
+    return { ok: true, response: math, via: 'local-math', intelligent: true };
+  }
+
+  try {
+    const deep = await deepWebSearch(expanded);
     if (deep.ok && deep.response) {
+      ctx.noteAssistant(deep.response);
       return { ok: true, response: deep.response, via: 'local-web', intelligent: true };
     }
-    const sk = await smartKnowledge(text);
+    const sk = await smartKnowledge(expanded);
     if (sk.ok && sk.response) {
+      ctx.noteAssistant(sk.response);
       return { ok: true, response: sk.response, via: 'local-wiki', intelligent: true };
     }
   } catch {}
 
-  return {
-    ok: true,
-    response:
-      'Puedo buscar en internet y controlar el PC sin API key. ' +
-      'Para un modelo local más fuerte: ollama pull llama3.2',
-    via: 'local-fallback',
-    intelligent: true,
-  };
+  const fallback =
+    'Puedo buscar en internet y controlar el PC sin API key. ' +
+    'Prueba «qué es…» o un comando del sistema. Opcional: ollama pull llama3.2';
+  ctx.noteAssistant(fallback);
+  return { ok: true, response: fallback, via: 'local-fallback', intelligent: true };
 }
 
 async function localStatus() {
-  return brain.brainStatus();
+  const b = await brain.brainStatus();
+  return { ...b, conversation: ctx.status() };
 }
 
 async function detectOllama() {
@@ -59,7 +71,7 @@ async function detectOllama() {
 }
 
 async function askOllama(userText, history) {
-  return brain.askOllama(userText, history, null);
+  return brain.askOllama(userText, history, ctx.contextBlock());
 }
 
 module.exports = {
