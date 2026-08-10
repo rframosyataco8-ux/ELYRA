@@ -63,6 +63,9 @@ interface ElyraAPI {
     baseUrl?: string;
     sample?: string;
   }>;
+  /** 1.4 / 1.6 visión */
+  pickAndAnalyzeImage: (prompt?: string) => Promise<{ ok: boolean; result?: string; path?: string; via?: string }>;
+  analyzeImagePath: (filePath: string, prompt?: string) => Promise<{ ok: boolean; result?: string; path?: string; via?: string }>;
   minimize: () => void;
   maximize: () => void;
   close: () => void;
