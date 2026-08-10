@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.7.2',
-  codename: 'ClearMic',
-  phase: '1.7.2',
-  label: 'ELYRA 1.7.2 — Micrófono más sensible',
+  platform: '1.8.0',
+  codename: 'Brain',
+  phase: '1.8',
+  label: 'ELYRA 1.8 — Brain local (IA sin API key)',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
@@ -12,6 +12,7 @@ module.exports = {
     voicePro: true,
     voiceHybrid: true,
     voiceNoApiKey: true,
+    brainLocal: true,
     pcControl: true,
     webSearch: true,
     localIntelligence: true,

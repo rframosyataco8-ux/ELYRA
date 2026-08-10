@@ -1,5 +1,5 @@
 /**
- * Router ELYRA — conversación + PC + web + multi-agent 1.2
+ * Router ELYRA 1.8 — conversación + PC + web + Brain local (sin API key)
  */
 const os = require('os');
 const { smartKnowledge } = require('./smart-knowledge.cjs');
@@ -53,10 +53,10 @@ function speakify(text) {
 
 function looksLikeKnowledgeQuestion(text) {
   const t = String(text || '').toLowerCase();
-  if (t.length < 6) return false;
+  if (t.length < 4) return false;
   if (/\b(abre|abrir|cierra|volumen|brillo|captura|chrome|excel|word|carpeta|minimiza|apaga|reinicia)\b/.test(t))
     return false;
-  return /\b(qué|que|quién|quien|cómo|como|por qué|porque|cuándo|cuando|dónde|donde|explica|cuéntame|cuentame|historia|guerra|pasó|paso|significa|diferencia|quién inventó|quien invento|busca información|investiga|noticias|actualidad)\b/i.test(
+  return /\b(qué|que|quién|quien|cómo|como|por qué|porque|cuándo|cuando|dónde|donde|explica|cuéntame|cuentame|historia|guerra|pasó|paso|significa|diferencia|quién inventó|quien invento|busca información|investiga|noticias|actualidad|porfa|dime)\b/i.test(
     t,
   );
 }
@@ -92,7 +92,7 @@ async function routeChat({
     if (/present/i.test(text)) {
       return {
         response:
-          'Soy ELYRA. Asistente de voz de tu escritorio. Controlo el PC, busco en internet, uso documentos y puedo coordinar tareas en varios pasos. ¿En qué te ayudo?',
+          'Soy ELYRA. Asistente inteligente de tu escritorio. Razono en local, busco en internet y controlo el PC. ¿En qué te ayudo?',
         intelligent: true,
         via: 'presence',
       };
@@ -108,7 +108,7 @@ async function routeChat({
   const quick = await tryLocal(text, helpers, pc, getSystemStats);
   if (quick) return { ...quick, response: speakify(quick.response) };
 
-  // Multi-agent: tareas compuestas (después de intents locales simples)
+  // Multi-agent tareas compuestas
   try {
     if (isComplexTask(fixed) || isComplexTask(text)) {
       const ma = await runMultiAgent(fixed, helpers);
@@ -123,7 +123,18 @@ async function routeChat({
     }
   } catch {}
 
-  if (looksLikeKnowledgeQuestion(text) || looksLikeKnowledgeQuestion(fixed)) {
+  // 1.8: Brain local PRIMERO para conocimiento (sin API key)
+  if (looksLikeKnowledgeQuestion(text) || looksLikeKnowledgeQuestion(fixed) || text.split(/\s+/).length >= 3) {
+    try {
+      const local = await runLocalIntelligence(fixed, history || []);
+      if (local && local.ok !== false && local.response && local.via !== 'local-defer-pc') {
+        return {
+          response: speakify(local.response),
+          intelligent: true,
+          via: local.via || 'elyra-brain',
+        };
+      }
+    } catch {}
     try {
       const sk = await trySmartTopic(fixed, text);
       if (sk && sk.response) {
@@ -148,25 +159,27 @@ async function routeChat({
 
   const config = getConfig();
 
+  // Sin API key → siempre Brain local
   if (!config.apiKey) {
     try {
       const local = await runLocalIntelligence(fixed, history || []);
       if (local && local.response) {
         return {
           response: speakify(local.response),
-          intelligent: !!local.intelligent || local.ok,
+          intelligent: true,
           via: local.via || 'local-intelligence',
         };
       }
     } catch {}
     return {
       response:
-        'Puedo controlar el PC y buscar en internet sin API key. Para un modelo local más fuerte instala Ollama (ollama pull llama3.2).',
-      intelligent: false,
+        'Puedo controlar el PC y buscar en internet sin API key. Para un modelo local más fuerte: ollama pull llama3.2.',
+      intelligent: true,
       via: 'no-key',
     };
   }
 
+  // Con API key → agente LLM, con fallback a Brain
   try {
     const result = await runAgent(fixed, history || [], helpers);
     const resp = result?.response || '';
@@ -191,11 +204,7 @@ async function routeChat({
       } catch {}
       const sk = await trySmartTopic(fixed, text);
       if (sk) {
-        return {
-          response: speakify(sk.response),
-          intelligent: true,
-          via: 'smart-fallback',
-        };
+        return { response: speakify(sk.response), intelligent: true, via: 'smart-fallback' };
       }
       return {
         response: speakify(
@@ -219,7 +228,7 @@ async function routeChat({
       }
     } catch {}
     return {
-      response: 'Tuve un tropiezo con el modelo. Sigo lista para el sistema y búsquedas en internet.',
+      response: 'Tuve un tropiezo. Sigo lista para el sistema y búsquedas en internet.',
       intelligent: false,
     };
   }
@@ -533,7 +542,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   if (/\b(qu[eé]\s+puedes\s+hacer|qu[eé]\s+sabes\s+hacer|tus\s+funciones|capacidades|ayuda\s+con\s+qu[eé]|c[oó]mo\s+me\s+ayudas)\b/i.test(text)) {
     return {
       response:
-        'Puedo controlar tu PC, buscar en internet, coordinar tareas en varios pasos, revisar documentos y, con API o Ollama, razonar a fondo. ¿Qué hacemos?',
+        'Puedo controlar tu PC, buscar en internet, explicar temas, recordar datos y razonar en local sin API key. ¿Qué hacemos?',
       intelligent: true,
       via: 'capabilities',
     };
@@ -542,7 +551,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
   {
     const mathReply = tryLocalMath(text);
     if (mathReply) {
-      return { response: mathReply, intelligent: false, via: 'local-math' };
+      return { response: mathReply, intelligent: true, via: 'local-math' };
     }
   }
 
@@ -552,7 +561,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
         'Son las ' +
         new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) +
         '.',
-      intelligent: false,
+      intelligent: true,
     };
   }
   if (/\b(qué día|que dia|fecha de hoy)\b/.test(text)) {
@@ -566,7 +575,7 @@ async function tryLocal(text, helpers, pc, getSystemStats) {
           day: 'numeric',
         }) +
         '.',
-      intelligent: false,
+      intelligent: true,
     };
   }
 
