@@ -1,5 +1,6 @@
 /**
- * STT — Whisper (Groq) orientado a conversación natural en español
+ * STT — Whisper (opcional) + limpio español
+ * Sin API key: el frontend usa Web Speech (gratis).
  */
 const fs = require('fs');
 const path = require('path');
@@ -8,11 +9,8 @@ const { getConfig, ensureDefaultConfig } = require('./agent.cjs');
 
 const SPANISH_PROMPT =
   'Conversación en español latino entre el usuario y ELYRA, asistente de voz del escritorio. ' +
-  'Transcribe tal como se habla: natural, con muletillas si las hay. ' +
-  'Palabras frecuentes: oye, abre, cierra, word, excel, chrome, calculadora, volumen, captura, ' +
-  'documentos, descargas, busca, crea, informe, apaga, silencia, bloquea, cadmio, plaguicidas, ' +
-  'laboratorio, cronograma, datos, proceso, ventana, escribe, haz clic, ejecuta, notepad, ' +
-  'powerpoint, youtube, google, gracias, por favor, listo, espera, dime, explícame.';
+  'Transcribe tal como se habla. Palabras: oye, abre, cierra, word, excel, chrome, volumen, ' +
+  'documentos, busca, cadmio, laboratorio, elyra.';
 
 function cleanTranscript(text) {
   if (!text) return '';
@@ -22,8 +20,6 @@ function cleanTranscript(text) {
     /^(thank you[.!]?)\s*$/i,
     /^(gracias por ver[.!]?)\s*$/i,
     /^(subtitles by.*)\s*$/i,
-    /^(amara\.org.*)\s*$/i,
-    /^(subscribe.*)\s*$/i,
     /^\s*[.…]\s*$/,
   ];
   for (const re of junk) {
@@ -32,22 +28,14 @@ function cleanTranscript(text) {
   const fixes = [
     [/\bwork\b/gi, 'word'],
     [/\bwuar\b/gi, 'word'],
-    [/\bgüord\b/gi, 'word'],
     [/\bcrom\b/gi, 'chrome'],
     [/\bgrome\b/gi, 'chrome'],
-    [/\bcrhome\b/gi, 'chrome'],
     [/\bnot pad\b/gi, 'notepad'],
-    [/\bvs code\b/gi, 'code'],
     [/\belira\b/gi, 'elyra'],
     [/\beliara\b/gi, 'elyra'],
-    [/\beliara\b/gi, 'elyra'],
     [/\byutub\b/gi, 'youtube'],
-    [/\byutube\b/gi, 'youtube'],
     [/\bcadmio\b/gi, 'cadmio'],
     [/\bexcelente\b/gi, 'excel'],
-    [/\bpoder point\b/gi, 'powerpoint'],
-    [/\bgoogol\b/gi, 'google'],
-    [/\bguagol\b/gi, 'google'],
   ];
   for (const [re, rep] of fixes) t = t.replace(re, rep);
   return t.trim();
@@ -134,28 +122,22 @@ async function transcribeBuffer(buffer, mimeType) {
   } catch {}
 
   if (!buffer || buffer.length < 200) {
-    return { ok: false, error: 'Audio demasiado corto. Habla un segundo más cerca del micrófono.' };
+    return { ok: false, error: 'Audio corto. Habla un segundo más cerca del micrófono.', code: 'SHORT' };
   }
 
   const apiKey = resolveSttKey(config);
   if (!apiKey) {
     return {
       ok: false,
-      error:
-        'Para entenderte por voz necesito una API key de Groq (gsk_…). ' +
-        'El chat puede usar NVIDIA o Gemini; la escucha usa Groq. ' +
-        'Guarda sttApiKey o define ELYRA_STT_KEY.',
+      error: 'USE_WEB_SPEECH',
       code: 'NO_STT_KEY',
+      fallback: 'webspeech',
     };
   }
 
   const provider = sttEndpointForKey(apiKey);
   if (!provider) {
-    return {
-      ok: false,
-      error: 'La clave no sirve para transcribir. Usa una clave Groq (gsk_…).',
-      code: 'BAD_STT_KEY',
-    };
+    return { ok: false, error: 'USE_WEB_SPEECH', code: 'BAD_STT_KEY', fallback: 'webspeech' };
   }
 
   let lastErr = '';
@@ -163,34 +145,25 @@ async function transcribeBuffer(buffer, mimeType) {
     try {
       const text = await transcribeWithProvider(buffer, mimeType, apiKey, provider.url, model);
       if (!text) {
-        return {
-          ok: false,
-          error: 'No capté bien lo que dijiste. Habla un poco más claro y cerca.',
-          code: 'EMPTY',
-        };
+        return { ok: false, error: 'No capté bien lo que dijiste.', code: 'EMPTY' };
       }
       return { ok: true, text, model };
     } catch (e) {
       lastErr = e.message || String(e);
       if (e.status === 429) {
-        return { ok: false, error: 'Límite de voz un momento. Espera 20 segundos.', code: 'RATE' };
+        return { ok: false, error: 'Límite de voz. Espera 20 segundos.', code: 'RATE' };
       }
       if (e.status === 401 || e.status === 403) {
-        return {
-          ok: false,
-          error: 'Clave de voz inválida. Revisa la API key Groq (gsk_…).',
-          code: 'AUTH',
-        };
+        return { ok: false, error: 'USE_WEB_SPEECH', code: 'AUTH', fallback: 'webspeech' };
       }
     }
   }
 
   return {
     ok: false,
-    error: lastErr
-      ? 'No pude transcribir: ' + lastErr.slice(0, 120)
-      : 'No pude entender el audio. Prueba otra vez.',
+    error: lastErr ? lastErr.slice(0, 120) : 'USE_WEB_SPEECH',
     code: 'FAIL',
+    fallback: 'webspeech',
   };
 }
 

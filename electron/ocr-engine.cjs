@@ -1,5 +1,5 @@
 /**
- * ELYRA 1.4 — OCR local + extract PDF inteligente
+ * ELYRA 1.4/1.7 — OCR local + extract PDF + pick image (dialog con parent)
  */
 const { spawn } = require('child_process');
 const path = require('path');
@@ -126,13 +126,13 @@ async function extractPdfSmart(params) {
   };
 }
 
-/**
- * Diálogo nativo + visión o OCR
- */
 async function pickAndAnalyze(prompt, getConfig) {
-  const { dialog } = require('electron');
-  const result = dialog.showOpenDialogSync({
+  const { dialog, BrowserWindow } = require('electron');
+  const parent =
+    BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows().find((w) => !w.isDestroyed());
+  const result = dialog.showOpenDialogSync(parent || undefined, {
     title: 'ELYRA — Seleccionar imagen',
+    defaultPath: path.join(os.homedir(), 'Pictures'),
     filters: [
       { name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] },
       { name: 'Todos', extensions: ['*'] },
@@ -140,7 +140,7 @@ async function pickAndAnalyze(prompt, getConfig) {
     properties: ['openFile'],
   });
   if (!result || !result[0]) {
-    return { ok: false, result: 'No se seleccionó imagen.' };
+    return { ok: false, result: 'Cancelaste la selección de imagen. Vuelve a pulsar el icono y elige un archivo.' };
   }
   return analyzePath(result[0], prompt, getConfig);
 }
@@ -164,7 +164,7 @@ async function analyzePath(filePath, prompt, getConfig) {
     ok: false,
     result:
       (o.result || 'No pude analizar la imagen.') +
-      (cfg.apiKey ? '' : ' Configura API key multimodal o instala Tesseract.'),
+      (cfg.apiKey ? '' : ' Sin API multimodal: instala Tesseract para OCR local, o configura una clave con visión.'),
     path: filePath,
   };
 }

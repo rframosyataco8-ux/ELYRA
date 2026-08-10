@@ -1,15 +1,17 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.6.0',
-  codename: 'Complete',
-  phase: '1.6',
-  label: 'ELYRA 1.6 — Product Complete',
+  platform: '1.7.0',
+  codename: 'HandsFree',
+  phase: '1.7',
+  label: 'ELYRA 1.7 — Hands-free voice (no API key required)',
   releasedAt: '2026-08-10',
   capabilities: {
     conversation: true,
     voice: true,
     voicePro: true,
+    voiceHandsFree: true,
+    voiceNoApiKey: true,
     pcControl: true,
     webSearch: true,
     localIntelligence: true,
@@ -31,6 +33,5 @@ module.exports = {
     nativePermissionDialogs: true,
     labTemplates: true,
     visionUi: true,
-    dbSchemaV2: true,
   },
 };
