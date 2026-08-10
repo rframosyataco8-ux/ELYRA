@@ -75,12 +75,14 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+/** VAD 1.7.2 — más sensible al habla, espera pausas naturales */
 const VAD = {
-  SILENCE_THRESHOLD: 0.011,
-  SPEECH_THRESHOLD: 0.018,
-  SILENCE_MS: 1200,
-  MAX_RECORD_MS: 16000,
-  POLL_MS: 40,
+  SILENCE_THRESHOLD: 0.008,
+  SPEECH_THRESHOLD: 0.012,
+  SILENCE_MS: 1450,
+  MAX_RECORD_MS: 20000,
+  POLL_MS: 30,
+  MIN_SPEECH_MS: 280,
 };
 
 export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}) {
@@ -109,6 +111,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
   const silenceTimerRef = useRef<number | null>(null);
   const levelTimerRef = useRef<number | null>(null);
   const speechStartedRef = useRef(false);
+  const speechStartedAtRef = useRef(0);
   const startListeningRef = useRef<(() => Promise<void>) | null>(null);
   const ampRafRef = useRef(0);
   const ampCtxRef = useRef<AudioContext | null>(null);
@@ -190,7 +193,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
       if (speakingRef.current) return;
       if (!continuousRef.current) return;
       startListeningRef.current?.();
-    }, 700);
+    }, 650);
   }, []);
 
   const stopSpeaking = useCallback(() => {
@@ -207,7 +210,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
     speakingRef.current = false;
     setSpeaking(false);
-    ignoreUntilRef.current = Date.now() + 250;
+    ignoreUntilRef.current = Date.now() + 280;
   }, [stopAmplitudeMonitor]);
 
   function speakBrowser(text: string, token: number) {
@@ -235,7 +238,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
         speakingRef.current = false;
         setSpeaking(false);
         setAmplitude(0);
-        ignoreUntilRef.current = Date.now() + 400;
+        ignoreUntilRef.current = Date.now() + 420;
         scheduleRelisten();
       }
     };
@@ -256,7 +259,8 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
         if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
       } catch {}
       try {
-        recognitionRef.current?.stop();
+        recognitionRef.current?.abort?.();
+        recognitionRef.current?.stop?.();
       } catch {}
       stopMediaTracks();
       clearTimers();
@@ -265,7 +269,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
 
       stopSpeaking();
       const token = speakTokenRef.current;
-      ignoreUntilRef.current = Date.now() + 9000;
+      ignoreUntilRef.current = Date.now() + 10000;
 
       if (isDesktop() && window.elyra) {
         try {
@@ -284,7 +288,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
                 speakingRef.current = false;
                 setSpeaking(false);
                 audioRef.current = null;
-                ignoreUntilRef.current = Date.now() + 400;
+                ignoreUntilRef.current = Date.now() + 420;
                 scheduleRelisten();
               }
             };
@@ -297,7 +301,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
               }
             };
             startAmplitudeMonitor(audio);
-            ignoreUntilRef.current = Date.now() + 600;
+            ignoreUntilRef.current = Date.now() + 700;
             await audio.play();
             return;
           }
@@ -321,7 +325,6 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
     onCommandRef.current?.(text);
   }, []);
 
-  /** Web Speech (sin API key) */
   const startWebSpeechListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return false;
@@ -334,40 +337,51 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
     const recognition = new SR();
     recognition.lang = 'es-MX';
     recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 3;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 5;
+
+    let finalText = '';
 
     recognition.onstart = () => {
       setListening(true);
       setError(null);
       setTranscribing(false);
       listeningModeRef.current = 'webspeech';
-      setAmplitude(0.22);
+      setAmplitude(0.28);
     };
 
     recognition.onresult = (event: RecognitionEvent) => {
-      const row = event.results?.[0];
-      if (!row) return;
-      let best = '';
-      let bestScore = -1;
-      for (let i = 0; i < row.length; i++) {
-        const conf = row[i].confidence ?? 0.5;
-        if (conf > bestScore) {
-          bestScore = conf;
-          best = row[i].transcript;
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const row = event.results[i];
+        let best = '';
+        let bestScore = -1;
+        for (let j = 0; j < row.length; j++) {
+          const conf = row[j].confidence ?? 0.55;
+          if (conf > bestScore) {
+            bestScore = conf;
+            best = row[j].transcript;
+          }
         }
+        if (row.isFinal) finalText += (best || '') + ' ';
+        else interim = best;
       }
-      if (best) acceptTranscript(String(best));
+      if (interim) setAmplitude(0.45);
     };
 
     recognition.onerror = (event: RecognitionEvent) => {
       const code = event.error || '';
-      if (code === 'no-speech' || code === 'aborted') return;
+      if (code === 'no-speech') {
+        setError('No te oí. Habla más cerca del micrófono y vuelve a pulsar el mic.');
+        return;
+      }
+      if (code === 'aborted') return;
       if (code === 'not-allowed') {
-        setError('Permite el micrófono en Windows → Privacidad → Micrófono.');
+        setError('Permite el micrófono: Windows → Privacidad → Micrófono → ELYRA.');
       } else if (code === 'network') {
-        // Web Speech needs network — silent, try whisper next time
-        setError(null);
+        setError('Sin red para reconocer voz. Conéctate a internet o usa una API key de voz.');
+      } else if (code === 'audio-capture') {
+        setError('No hay acceso al micrófono. Cierra otras apps que lo usen.');
       }
     };
 
@@ -375,7 +389,9 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
       setListening(false);
       setAmplitude(0);
       listeningModeRef.current = null;
-      scheduleRelisten();
+      const text = finalText.trim();
+      if (text) acceptTranscript(text);
+      else scheduleRelisten();
     };
 
     recognitionRef.current = recognition;
@@ -387,7 +403,6 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
     }
   }, [acceptTranscript, stopSpeaking, scheduleRelisten]);
 
-  /** Whisper vía MediaRecorder (si hay API key STT) */
   const startWhisperListening = useCallback(async () => {
     if (!isDesktop() || !window.elyra?.sttTranscribe) return false;
     try {
@@ -395,6 +410,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
       setError(null);
       setTranscribing(false);
       speechStartedRef.current = false;
+      speechStartedAtRef.current = 0;
 
       let stream: MediaStream;
       try {
@@ -404,6 +420,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
             noiseSuppression: true,
             autoGainControl: true,
             channelCount: 1,
+            sampleRate: 48000,
           },
         });
       } catch {
@@ -414,7 +431,7 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
       const mimeCandidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
       const mimeType = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
       const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 })
+        ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 160000 })
         : new MediaRecorder(stream);
 
       chunksRef.current = [];
@@ -426,8 +443,8 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
         const ctx = new AudioContext();
         const src = ctx.createMediaStreamSource(stream);
         const an = ctx.createAnalyser();
-        an.fftSize = 1024;
-        an.smoothingTimeConstant = 0.3;
+        an.fftSize = 2048;
+        an.smoothingTimeConstant = 0.25;
         src.connect(an);
         const data = new Uint8Array(an.frequencyBinCount);
 
@@ -439,15 +456,23 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
             sum += v * v;
           }
           const rms = Math.sqrt(sum / data.length);
-          setAmplitude(Math.min(1, rms * 6));
+          setAmplitude(Math.min(1, rms * 8));
 
           if (rms >= VAD.SPEECH_THRESHOLD) {
-            speechStartedRef.current = true;
+            if (!speechStartedRef.current) {
+              speechStartedRef.current = true;
+              speechStartedAtRef.current = Date.now();
+            }
             if (silenceTimerRef.current) {
               window.clearTimeout(silenceTimerRef.current);
               silenceTimerRef.current = null;
             }
-          } else if (speechStartedRef.current && rms < VAD.SILENCE_THRESHOLD && !silenceTimerRef.current) {
+          } else if (
+            speechStartedRef.current &&
+            rms < VAD.SILENCE_THRESHOLD &&
+            !silenceTimerRef.current &&
+            Date.now() - speechStartedAtRef.current >= VAD.MIN_SPEECH_MS
+          ) {
             silenceTimerRef.current = window.setTimeout(() => {
               try {
                 if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
@@ -471,7 +496,8 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
         } catch {}
 
         if (speakingRef.current) return;
-        if (!blob.size || blob.size < 180) {
+        if (!blob.size || blob.size < 120) {
+          setError('No capté audio. Habla más cerca y un poco más alto.');
           scheduleRelisten();
           return;
         }
@@ -484,12 +510,18 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
           if (result.ok && result.text) {
             setError(null);
             acceptTranscript(result.text);
-          } else if (result.fallback === 'webspeech' || result.code === 'NO_STT_KEY' || /USE_WEB_SPEECH/i.test(result.error || '')) {
-            // Sin clave: reintentar con Web Speech en el próximo turno
+            return;
+          }
+          if (
+            result.fallback === 'webspeech' ||
+            result.code === 'NO_STT_KEY' ||
+            /USE_WEB_SPEECH/i.test(result.error || '')
+          ) {
             setError(null);
             startWebSpeechListening();
             return;
-          } else if (result.error && !/USE_WEB_SPEECH/i.test(result.error)) {
+          }
+          if (result.error && !/USE_WEB_SPEECH/i.test(result.error)) {
             setError(result.error);
           }
           scheduleRelisten();
@@ -502,8 +534,9 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
 
       mediaRecorderRef.current = recorder;
       listeningModeRef.current = 'whisper';
-      recorder.start(100);
+      recorder.start(80);
       setListening(true);
+      setError(null);
 
       maxTimerRef.current = window.setTimeout(() => {
         try {
@@ -519,30 +552,39 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
       listeningModeRef.current = null;
       const name = e?.name || '';
       if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-        setError('Micrófono bloqueado. Windows → Privacidad → Micrófono.');
+        setError('Micrófono bloqueado. Windows → Privacidad → Micrófono → permitir ELYRA.');
       } else if (name === 'NotFoundError') {
         setError('No hay micrófono detectado.');
+      } else {
+        setError(e?.message || 'No pude abrir el micrófono.');
       }
       return false;
     }
   }, [acceptTranscript, stopSpeaking, scheduleRelisten, startWebSpeechListening]);
 
   const startListening = useCallback(async () => {
-    if (speakingRef.current || listeningModeRef.current) return;
+    if (speakingRef.current) stopSpeaking();
+    if (listeningModeRef.current) {
+      try {
+        recognitionRef.current?.abort?.();
+        if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop();
+      } catch {}
+      listeningModeRef.current = null;
+    }
     setError(null);
 
-    // 1) Web Speech primero (sin API key)
-    if (startWebSpeechListening()) return;
-
-    // 2) Whisper si hay motor STT de escritorio
+    // 1) Grabación local (VAD) — mejor control del mic
     if (isDesktop() && window.elyra?.sttTranscribe) {
       const ok = await startWhisperListening();
       if (ok) return;
     }
 
-    setError('No pude activar el micrófono. Revisa permisos del sistema.');
+    // 2) Web Speech del sistema (sin API key)
+    if (startWebSpeechListening()) return;
+
+    setError('No pude activar el micrófono. Revisa permisos de Windows.');
     setSupported(false);
-  }, [startWebSpeechListening, startWhisperListening]);
+  }, [startWhisperListening, startWebSpeechListening, stopSpeaking]);
 
   startListeningRef.current = startListening;
 
@@ -569,17 +611,16 @@ export function useVoice({ onCommand, continuous = false }: UseVoiceOptions = {}
     return window.elyra.onBargeIn(() => {
       stopSpeaking();
       stopListening();
-      ignoreUntilRef.current = Date.now() + 200;
-      window.setTimeout(() => startListeningRef.current?.(), 250);
+      ignoreUntilRef.current = Date.now() + 180;
+      window.setTimeout(() => startListeningRef.current?.(), 220);
     });
   }, [stopSpeaking, stopListening]);
 
-  // Solo reescucha automática si continuous está activo (icono oreja / modo escritorio)
   useEffect(() => {
     if (!continuous) return;
     const id = window.setTimeout(() => {
       if (!speakingRef.current && !listeningModeRef.current) startListeningRef.current?.();
-    }, 800);
+    }, 900);
     return () => clearTimeout(id);
   }, [continuous]);
 
