@@ -1,5 +1,5 @@
 /**
- * Hooks cognitivos — memoria + RAG + files + vision + system DB 1.1
+ * Hooks cognitivos — memoria + RAG + files + vision + OCR 1.4 + DB
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
@@ -7,6 +7,7 @@ const fsSkills = require('./fs-skills.cjs');
 const rag = require('./rag-local.cjs');
 const files = require('./files-reliability.cjs');
 const vision = require('./vision-engine.cjs');
+const ocr = require('./ocr-engine.cjs');
 const { getConfig } = require('./agent.cjs');
 
 let db;
@@ -20,22 +21,18 @@ const REACT_ADDENDUM = `
 
 [IDENTIDAD — ELYRA]
 Eres ELYRA. Nunca digas que te llamas Luna.
-Control real del escritorio + internet + documentos + visión + memoria de sistema.
+Desktop + internet + documentos + visión + OCR + memoria de sistema.
 Nunca inventes que una tool funcionó si falló.
 
 [AUTONOMÍA]
 - Mundo real → web_search.
-- Archivos → rag_search / analyze_excel / summarize_pdf / read_docx.
-- Imágenes → analyze_image o analyze_screenshot.
-- Encadena tools hasta terminar.
-
-[CÓMO PENSAR]
-THOUGHT → ACTION → OBSERVATION → respuesta hablable.
+- Archivos → rag_search / analyze_excel / summarize_pdf / extract_pdf_smart.
+- Imágenes → analyze_image, ocr_image o analyze_screenshot.
+- PDF escaneado sin texto → extract_pdf_smart u ocr_pdf.
 
 [CALIDAD HABLADA]
 - 1 frase si fue orden simple.
 - Sin markdown ni URLs largas en voz.
-- Si una tool falló: dilo y propone alternativa.
 `;
 
 async function extendExecute(name, params, helpers, baseExecute) {
@@ -75,7 +72,12 @@ async function extendExecute(name, params, helpers, baseExecute) {
         });
         if (r.ok && (r.path || params.path)) {
           mem.noteFile(r.path || params.path, (r.result || '').slice(0, 200));
-          if (db) db.logFileEvent({ path: r.path || params.path, action: 'analyze_excel', summary: (r.result || '').slice(0, 200) });
+          if (db)
+            db.logFileEvent({
+              path: r.path || params.path,
+              action: 'analyze_excel',
+              summary: (r.result || '').slice(0, 200),
+            });
         }
         return r;
       }
@@ -84,6 +86,12 @@ async function extendExecute(name, params, helpers, baseExecute) {
           path: params.path,
           max_pages: params.max_pages,
         });
+      case 'ocr_image':
+        return ocr.ocrImage(params);
+      case 'ocr_pdf':
+        return ocr.ocrPdf(params);
+      case 'extract_pdf_smart':
+        return ocr.extractPdfSmart(params);
       case 'read_docx':
         return files.readDocxSafe({ path: params.path });
       case 'write_docx':
@@ -179,15 +187,15 @@ function enrichSystemPrompt(base, userText) {
   }
   if (/qué|quien|cómo|historia|guerra|explica|por qué|significa|noticias|actualidad|cuándo|cuando/.test(t)) {
     extra +=
-      '\n\n[CONTEXTO: INTERNET] Usa web_search de forma autónoma. Resume en lenguaje hablable. No inventes.';
+      '\n\n[CONTEXTO: INTERNET] Usa web_search de forma autónoma. Resume en lenguaje hablable.';
   }
-  if (rag.looksLikeDocQuery(userText) || /excel|pdf|docx|informe|csv/.test(t)) {
+  if (rag.looksLikeDocQuery(userText) || /excel|pdf|docx|informe|csv|escaneado|ocr/.test(t)) {
     extra +=
-      '\n\n[CONTEXTO: ARCHIVOS] Usa analyze_excel / summarize_pdf / read_docx / rag_search.';
+      '\n\n[CONTEXTO: ARCHIVOS] analyze_excel / extract_pdf_smart / ocr_pdf / rag_search.';
   }
-  if (/imagen|foto|captura|screenshot|pantalla|describe.*\.(png|jpg|jpeg|webp)|qué ves|que ves|analiza la (foto|imagen)/.test(t)) {
+  if (/imagen|foto|captura|screenshot|ocr|texto de la (foto|imagen)|transcribe/.test(t)) {
     extra +=
-      '\n\n[CONTEXTO: VISIÓN] Usa analyze_image (path) o analyze_screenshot. Requiere modelo multimodal en Configuración.';
+      '\n\n[CONTEXTO: VISIÓN/OCR] analyze_image (API) u ocr_image (local Tesseract).';
   }
   return (base || '') + extra;
 }
@@ -204,7 +212,10 @@ function noteInteraction(userText, reply) {
       if (userText && userText.length > 12) {
         db.addMemoryItem({
           kind: 'episode',
-          text: ('U: ' + String(userText).slice(0, 180) + ' | A: ' + String(reply || '').slice(0, 180)).slice(0, 400),
+          text: ('U: ' + String(userText).slice(0, 180) + ' | A: ' + String(reply || '').slice(0, 180)).slice(
+            0,
+            400,
+          ),
           domain: mem.detectDomain ? mem.detectDomain(userText) : 'general',
           source: 'chat',
         });
