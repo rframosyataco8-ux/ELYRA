@@ -1,8 +1,9 @@
 /**
- * ELYRA Tool Schemas — PC + RAG + vision 0.8 + laboratorio
+ * ELYRA Tool Schemas — PC + RAG + vision + OCR 1.4
  */
 const FS_EXTRA = require('./tools-fs-extra.cjs');
 const VISION_EXTRA = require('./tools-vision-extra.cjs');
+const OCR_EXTRA = require('./tools-ocr-extra.cjs');
 
 const TOOL_DEFINITIONS = [
   {
@@ -18,12 +19,12 @@ const TOOL_DEFINITIONS = [
     },
   },
   ...VISION_EXTRA,
+  ...OCR_EXTRA,
   {
     type: 'function',
     function: {
       name: 'rag_search',
-      description:
-        'Busca en el índice local de documentos del usuario (Documentos, Informes, Escritorio, Descargas).',
+      description: 'Busca en documentos locales indexados (RAG).',
       parameters: {
         type: 'object',
         properties: {
@@ -38,7 +39,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'reindex_docs',
-      description: 'Reconstruye el índice RAG local. force=true relee todos los archivos.',
+      description: 'Reconstruye el índice RAG local.',
       parameters: {
         type: 'object',
         properties: { force: { type: 'boolean' } },
@@ -49,7 +50,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'scan_folder',
-      description: 'Escanea Documentos buscando Excel, PDF, Word, PPT, texto.',
+      description: 'Escanea carpetas de documentos.',
       parameters: {
         type: 'object',
         properties: {
@@ -64,7 +65,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'analyze_excel',
-      description: 'Analiza CSV/Excel: columnas, stats, muestra. Opcional export.',
+      description: 'Analiza CSV/Excel.',
       parameters: {
         type: 'object',
         properties: {
@@ -79,7 +80,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'summarize_pdf',
-      description: 'Extrae texto de un PDF.',
+      description: 'Extrae texto nativo de un PDF.',
       parameters: {
         type: 'object',
         properties: { path: { type: 'string' } },
@@ -91,7 +92,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'read_docx',
-      description: 'Lee un documento Word (.docx).',
+      description: 'Lee Word .docx.',
       parameters: {
         type: 'object',
         properties: { path: { type: 'string' } },
@@ -103,7 +104,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'write_docx',
-      description: 'Redacta informe Word en Documentos/Informes.',
+      description: 'Crea informe Word.',
       parameters: {
         type: 'object',
         properties: {
@@ -119,7 +120,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'write_pptx',
-      description: 'Crea presentación PowerPoint.',
+      description: 'Crea PowerPoint.',
       parameters: {
         type: 'object',
         properties: {
@@ -136,7 +137,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'html_dashboard',
-      description: 'Dashboard HTML en Informes/.',
+      description: 'Dashboard HTML.',
       parameters: {
         type: 'object',
         properties: {
@@ -152,7 +153,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'create_file',
-      description: 'Crea archivo de texto en Documentos.',
+      description: 'Crea archivo de texto.',
       parameters: {
         type: 'object',
         properties: {
@@ -167,7 +168,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'create_html_report',
-      description: 'Informe HTML simple en Informes/.',
+      description: 'Informe HTML simple.',
       parameters: {
         type: 'object',
         properties: {
@@ -221,7 +222,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_app',
-      description: 'Abre aplicación del PC.',
+      description: 'Abre aplicación.',
       parameters: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -233,7 +234,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_folder',
-      description: 'Abre carpeta del usuario.',
+      description: 'Abre carpeta.',
       parameters: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -245,7 +246,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'open_url',
-      description: 'Abre URL en el navegador.',
+      description: 'Abre URL.',
       parameters: {
         type: 'object',
         properties: { url: { type: 'string' } },
@@ -257,7 +258,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'run_command',
-      description: 'Ejecuta comando de shell (sujeto a permisos 0.2).',
+      description: 'Shell (con permisos).',
       parameters: {
         type: 'object',
         properties: { command: { type: 'string' } },
@@ -269,7 +270,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'input',
-      description: 'Teclado/mouse: type, click, move, hotkey, etc.',
+      description: 'Teclado/mouse.',
       parameters: {
         type: 'object',
         properties: {
@@ -287,7 +288,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'remember',
-      description: 'Guarda hecho en memoria.',
+      description: 'Guarda en memoria.',
       parameters: {
         type: 'object',
         properties: {
@@ -302,7 +303,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'recall',
-      description: 'Recupera memoria contextual.',
+      description: 'Recupera memoria.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -326,7 +327,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'network_info',
-      description: 'Red e IPs.',
+      description: 'Red.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -334,7 +335,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'disk_space',
-      description: 'Espacio en disco.',
+      description: 'Disco.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -409,7 +410,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'screenshot',
-      description: 'Captura de pantalla completa.',
+      description: 'Captura de pantalla.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -417,7 +418,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'list_processes',
-      description: 'Procesos top RAM.',
+      description: 'Procesos.',
       parameters: { type: 'object', properties: {} },
     },
   },
@@ -425,7 +426,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'kill_process',
-      description: 'Cierra proceso (requiere confirma).',
+      description: 'Cierra proceso (confirma).',
       parameters: {
         type: 'object',
         properties: { name: { type: 'string' } },
@@ -437,7 +438,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'windows',
-      description: 'minimize_all, lock, screen_off, list, focus, close.',
+      description: 'Control de ventanas.',
       parameters: {
         type: 'object',
         properties: {
@@ -452,7 +453,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'notify',
-      description: 'Notificación al usuario.',
+      description: 'Notificación.',
       parameters: {
         type: 'object',
         properties: {
@@ -486,7 +487,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'power',
-      description: 'shutdown|restart|sleep|cancel (confirma).',
+      description: 'shutdown|restart|sleep|cancel.',
       parameters: {
         type: 'object',
         properties: {
