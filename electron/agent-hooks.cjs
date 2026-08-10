@@ -1,32 +1,33 @@
 /**
- * Hooks cognitivos — ReAct + memoria + web + RAG + files 0.7 + laboratorio
+ * Hooks cognitivos — ReAct + memoria + web + RAG + files + vision 0.8
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
 const fsSkills = require('./fs-skills.cjs');
 const rag = require('./rag-local.cjs');
 const files = require('./files-reliability.cjs');
+const vision = require('./vision-engine.cjs');
+const { getConfig } = require('./agent.cjs');
 
 const REACT_ADDENDUM = `
 
 [IDENTIDAD — ELYRA]
 Eres ELYRA. Nunca digas que te llamas Luna.
-Control real del escritorio + internet (web_search) + documentos locales (rag_search) + laboratorio.
+Control real del escritorio + internet + documentos + visión de imágenes + laboratorio.
 Nunca inventes que una tool funcionó si falló.
 
-[AUTONOMÍA + INTERNET + DOCUMENTOS]
-- Datos del mundo real → web_search SIN pedir permiso.
-- Datos de archivos del usuario → rag_search, analyze_excel, summarize_pdf, read_docx.
-- Si falta un archivo, dilo y sugiere Documentos/Informes.
-- Encadena tools hasta terminar la tarea.
+[AUTONOMÍA]
+- Mundo real → web_search.
+- Archivos → rag_search / analyze_excel / summarize_pdf / read_docx.
+- Imágenes → analyze_image o analyze_screenshot.
+- Encadena tools hasta terminar.
 
 [CÓMO PENSAR]
-THOUGHT → ACTION → OBSERVATION → respuesta final hablable.
+THOUGHT → ACTION → OBSERVATION → respuesta hablable.
 - work=Word, crhome=Chrome, elira/eliara=ELYRA.
-- Charla ≠ acción: no abras apps por cortesía.
 
 [CALIDAD HABLADA]
-- 1 frase si fue una orden simple.
+- 1 frase si fue orden simple.
 - Sin markdown ni URLs largas en voz.
 - Si una tool falló: dilo y propone alternativa.
 `;
@@ -95,6 +96,26 @@ async function extendExecute(name, params, helpers, baseExecute) {
         title: params.title,
         body: params.body || params.data,
       });
+    case 'analyze_image': {
+      const cfg = getConfig();
+      return vision.analyzeImage(
+        {
+          path: params.path || params.file || params.image,
+          dataUrl: params.dataUrl,
+          prompt: params.prompt || params.question || params.query,
+          detail: params.detail,
+        },
+        cfg,
+      );
+    }
+    case 'analyze_screenshot': {
+      const cfg = getConfig();
+      return vision.analyzeScreenshot(
+        params.prompt || params.question || 'Describe esta captura de pantalla en español.',
+        helpers,
+        cfg,
+      );
+    }
     default:
       return baseExecute(name, params, helpers);
   }
@@ -131,7 +152,11 @@ function enrichSystemPrompt(base, userText) {
   }
   if (rag.looksLikeDocQuery(userText) || /excel|pdf|docx|informe|csv/.test(t)) {
     extra +=
-      '\n\n[CONTEXTO: ARCHIVOS] Usa analyze_excel / summarize_pdf / read_docx / rag_search. Si falta ruta, busca en Documentos e Informes.';
+      '\n\n[CONTEXTO: ARCHIVOS] Usa analyze_excel / summarize_pdf / read_docx / rag_search.';
+  }
+  if (/imagen|foto|captura|screenshot|pantalla|describe.*\.(png|jpg|jpeg|webp)|qué ves|que ves|analiza la (foto|imagen)/.test(t)) {
+    extra +=
+      '\n\n[CONTEXTO: VISIÓN] Usa analyze_image (path) o analyze_screenshot. Requiere modelo multimodal en Configuración.';
   }
   return (base || '') + extra;
 }
