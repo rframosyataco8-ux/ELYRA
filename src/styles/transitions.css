@@ -1,6 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   ELYRA Advanced Transitions
-   Page · Surface · Reveal · Crossfade · Motion tokens
+   ELYRA Advanced Transitions + Sidebar collapse + Buttons
    ═══════════════════════════════════════════════════════════ */
 
 :root,
@@ -16,9 +15,240 @@
   --ely-ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
   --ely-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ely-ease-bounce: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ely-sidebar-w: 256px;
+  --ely-sidebar-w-collapsed: 72px;
 }
 
-/* ── Page shell: content region ── */
+/* ═══════════════════════════════════════════════════════════
+   SIDEBAR COLLAPSE (CSS)
+   Ancho, labels, padding y footer se adaptan con transición
+   (Framer Motion anima width; estas reglas pulen el resto)
+   ═══════════════════════════════════════════════════════════ */
+
+.ely-sidebar {
+  /* width lo controla Framer Motion; fallback CSS: */
+  width: var(--ely-sidebar-w);
+  will-change: width;
+}
+
+.ely-sidebar.is-collapsed {
+  width: var(--ely-sidebar-w-collapsed);
+}
+
+/* Labels de sección: se ocultan al colapsar */
+.ely-sidebar .ely-nav-section-label {
+  transition:
+    opacity var(--ely-motion-fast) var(--ely-ease-standard),
+    max-height var(--ely-motion) var(--ely-ease-emphasized),
+    margin var(--ely-motion-fast) ease,
+    padding var(--ely-motion-fast) ease;
+  max-height: 2rem;
+  overflow: hidden;
+}
+
+.ely-sidebar.is-collapsed .ely-nav-section-label {
+  opacity: 0;
+  max-height: 0;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  pointer-events: none;
+}
+
+/* Texto de marca y labels de nav */
+.ely-sidebar .ely-brand-text,
+.ely-sidebar .ely-nav-label {
+  transition:
+    opacity var(--ely-motion-fast) ease,
+    transform var(--ely-motion) var(--ely-ease-emphasized);
+}
+
+.ely-sidebar.is-collapsed .ely-brand-text,
+.ely-sidebar.is-collapsed .ely-nav-label {
+  opacity: 0;
+  transform: translateX(-6px);
+  pointer-events: none;
+}
+
+/* Nav items: centrar iconos al colapsar */
+.ely-sidebar.is-collapsed .ely-nav-item {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Collapse interno (grupo laboratorio) — complementa Framer */
+.ely-nav-collapse,
+.ely-nav-collapse-fm {
+  overflow: hidden;
+}
+
+/* Fallback CSS-only collapse (sin FM) */
+.ely-nav-collapse {
+  transition:
+    height var(--ely-motion-med) var(--ely-ease-emphasized),
+    opacity var(--ely-motion) ease;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MICROINTERACCIONES — BOTONES
+   ═══════════════════════════════════════════════════════════ */
+
+.ely-btn-primary,
+.ely-btn-secondary,
+.ely-btn-ghost,
+.ely-btn-danger {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    transform var(--ely-motion-fast) var(--ely-ease-standard),
+    box-shadow var(--ely-motion) var(--ely-ease-standard),
+    background var(--ely-motion-fast) ease,
+    border-color var(--ely-motion-fast) ease,
+    color var(--ely-motion-fast) ease,
+    opacity var(--ely-motion-fast) ease;
+}
+
+/* Ripple sutil al pulsar */
+.ely-btn-primary::after,
+.ely-btn-secondary::after,
+.ely-btn-ghost::after,
+.ely-btn-danger::after,
+.ely-icon-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at var(--rx, 50%) var(--ry, 50%),
+    var(--ely-accent-soft) 0%,
+    transparent 65%
+  );
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 0.35s ease,
+    transform 0.35s var(--ely-ease-decelerate);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ely-btn-primary:active::after,
+.ely-btn-secondary:active::after,
+.ely-btn-ghost:active::after,
+.ely-btn-danger:active::after,
+.ely-icon-btn:active::after {
+  opacity: 1;
+  transform: scale(1.4);
+  transition-duration: 0s;
+}
+
+.ely-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--ely-accent-soft);
+}
+
+.ely-btn-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+
+.ely-btn-secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ely-btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ely-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: transparent;
+  color: var(--ely-text-muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.ely-btn-ghost:hover:not(:disabled) {
+  background: var(--ely-nav-hover);
+  color: var(--ely-text);
+}
+
+.ely-btn-ghost:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ely-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--ely-danger);
+  border: 1px solid rgba(248, 81, 73, 0.25);
+  cursor: pointer;
+}
+
+.ely-btn-danger:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.2);
+  transform: translateY(-1px);
+}
+
+.ely-btn-danger:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Icon buttons */
+.ely-icon-btn {
+  transition:
+    transform var(--ely-motion-fast) var(--ely-ease-bounce),
+    background var(--ely-motion-fast) ease,
+    color var(--ely-motion-fast) ease,
+    box-shadow var(--ely-motion-fast) ease;
+}
+
+.ely-icon-btn:hover:not(:disabled) {
+  transform: scale(1.08);
+  background: var(--ely-nav-hover);
+}
+
+.ely-icon-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+/* Chip / pill botones (proveedores) */
+.ely-chip-btn {
+  transition:
+    transform var(--ely-motion-fast) var(--ely-ease-standard),
+    background var(--ely-motion-fast) ease,
+    border-color var(--ely-motion-fast) ease,
+    color var(--ely-motion-fast) ease,
+    box-shadow var(--ely-motion-fast) ease;
+}
+
+.ely-chip-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.ely-chip-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.ely-chip-btn.is-active {
+  box-shadow: 0 0 0 1px var(--ely-accent);
+}
+
+/* ── Page views (CSS fallback; FM puede sustituir) ── */
 .ely-page-shell {
   position: relative;
   flex: 1;
@@ -27,7 +257,6 @@
   flex-direction: column;
 }
 
-/* Enter animations keyed by route */
 .ely-page-view {
   animation: ely-page-in var(--ely-motion-med) var(--ely-ease-decelerate) both;
   will-change: opacity, transform, filter;
@@ -83,7 +312,6 @@
   }
 }
 
-/* ── Surface lift (cards / panels) ── */
 .ely-surface-lift {
   transition:
     transform var(--ely-motion) var(--ely-ease-standard),
@@ -102,7 +330,6 @@
   transition-duration: 0.1s;
 }
 
-/* ── Reveal on scroll / mount (stagger-friendly) ── */
 .ely-reveal {
   opacity: 0;
   transform: translateY(12px);
@@ -123,7 +350,6 @@
   }
 }
 
-/* ── Crossfade helper ── */
 .ely-crossfade {
   animation: ely-crossfade var(--ely-motion) var(--ely-ease-standard) both;
 }
@@ -133,7 +359,6 @@
   to { opacity: 1; }
 }
 
-/* ── Soft expand (height + fade) ── */
 .ely-expand {
   display: grid;
   grid-template-rows: 0fr;
@@ -155,7 +380,6 @@
   opacity: 1;
 }
 
-/* ── Focus ring motion ── */
 .ely-focus-ring {
   transition: box-shadow var(--ely-motion-fast) var(--ely-ease-standard),
               border-color var(--ely-motion-fast) ease;
@@ -167,14 +391,12 @@
   border-color: var(--ely-accent);
 }
 
-/* ── Toggle switch thumb ── */
 .ely-switch-thumb {
   transition:
     transform 0.28s var(--ely-ease-bounce),
     background 0.2s ease;
 }
 
-/* ── Chat bar appear ── */
 .ely-chatbar-enter {
   animation: ely-chatbar-in var(--ely-motion-med) var(--ely-ease-decelerate) both;
 }
@@ -190,7 +412,6 @@
   }
 }
 
-/* ── Status chip pulse on change ── */
 .ely-status-pop {
   animation: ely-status-pop 0.45s var(--ely-ease-bounce) both;
 }
@@ -201,16 +422,6 @@
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* ── Sidebar width already transitioned; content fade ── */
-.ely-sidebar .ely-nav-section-label {
-  transition: opacity var(--ely-motion-fast) ease;
-}
-
-.ely-sidebar.is-collapsed .ely-nav-section-label {
-  opacity: 0;
-}
-
-/* ── Hud glass hover polish ── */
 .hud-glass,
 .hud-glass-strong {
   transition:
@@ -220,7 +431,6 @@
     transform 0.28s var(--ely-ease-standard);
 }
 
-/* ── Input underline grow (optional accent) ── */
 .ely-input-grow {
   position: relative;
 }
@@ -242,7 +452,6 @@
   width: 100%;
 }
 
-/* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   .ely-page-view,
   .ely-reveal,
@@ -250,9 +459,19 @@
   .ely-chatbar-enter,
   .ely-status-pop,
   .ely-expand,
-  .ely-expand > .ely-expand-inner {
+  .ely-expand > .ely-expand-inner,
+  .ely-sidebar,
+  .ely-btn-primary,
+  .ely-btn-secondary,
+  .ely-btn-ghost,
+  .ely-btn-danger,
+  .ely-icon-btn {
     animation: none !important;
     transition: none !important;
+  }
+
+  .ely-page-view,
+  .ely-reveal {
     opacity: 1 !important;
     transform: none !important;
     filter: none !important;
