@@ -13,6 +13,7 @@ import {
   EyeOff,
   Search,
   ArrowRight,
+  ScanFace,
 } from 'lucide-react';
 import {
   listActiveUsers,
@@ -28,6 +29,8 @@ import {
   getSession,
   getUserById,
 } from '@/lib/users';
+import { hasFaceRegistered } from '@/lib/faceAuth';
+import { FaceAuthPanel } from '@/components/FaceAuthPanel';
 import { elyTransition } from '@/lib/motion';
 import { captureError } from '@/lib/errors';
 
@@ -43,6 +46,8 @@ export type AuthPayload = {
 interface LoginGateProps {
   onAuthenticated: (payload: AuthPayload) => void;
 }
+
+type LoginStep = 'pick' | 'pin' | 'change' | 'face' | 'face-register';
 
 const stepVariants = {
   initial: { opacity: 0, y: 12, filter: 'blur(4px)' },
@@ -71,8 +76,7 @@ function PinDots({ length, max = 6 }: { length: number; max?: number }) {
           initial={false}
           animate={{
             scale: i < length ? 1.15 : 1,
-            background:
-              i < length ? 'var(--ely-accent)' : 'var(--ely-border)',
+            background: i < length ? 'var(--ely-accent)' : 'var(--ely-border)',
           }}
           transition={elyTransition.spring}
         />
@@ -97,11 +101,12 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [shake, setShake] = useState(false);
-  const [step, setStep] = useState<'pick' | 'pin' | 'change'>('pick');
+  const [step, setStep] = useState<LoginStep>('pick');
   const [pendingUser, setPendingUser] = useState<LabUser | null>(null);
   const [query, setQuery] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [faceTick, setFaceTick] = useState(0);
 
   useEffect(() => {
     try {
@@ -122,7 +127,7 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
     } catch (err) {
       console.warn('[elyra] login init', captureError(err, 'init failed'));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredUsers = useMemo(() => {
@@ -146,6 +151,23 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
     onAuthenticated({ user, operator: user.displayName });
   };
 
+  const afterPasswordOk = (user: LabUser) => {
+    if (mustChangePassword(user.id)) {
+      setPendingUser(user);
+      setStep('change');
+      setPin('');
+      return;
+    }
+    // Ofrecer registro facial si aún no hay plantilla
+    if (!hasFaceRegistered(user.id)) {
+      setPendingUser(user);
+      setStep('face-register');
+      setPin('');
+      return;
+    }
+    finishLogin(user);
+  };
+
   const submitPin = async () => {
     setError('');
     if (!selected) return;
@@ -162,13 +184,7 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
         setPin('');
         return;
       }
-      if (mustChangePassword(user.id)) {
-        setPendingUser(user);
-        setStep('change');
-        setPin('');
-        return;
-      }
-      finishLogin(user);
+      afterPasswordOk(user);
     } catch (err) {
       fail(captureError(err, 'No se pudo iniciar sesión'));
     } finally {
@@ -195,7 +211,11 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
     try {
       await new Promise((r) => setTimeout(r, 280));
       setPassword(pendingUser.id, newPin, true);
-      finishLogin(pendingUser);
+      if (!hasFaceRegistered(pendingUser.id)) {
+        setStep('face-register');
+      } else {
+        finishLogin(pendingUser);
+      }
     } catch (err) {
       fail(captureError(err, 'No se pudo cambiar la contraseña'));
     } finally {
@@ -206,10 +226,17 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
   const changeLater = () => {
     if (!pendingUser) return;
     deferPasswordChange(pendingUser.id);
-    finishLogin(pendingUser);
+    if (!hasFaceRegistered(pendingUser.id)) {
+      setStep('face-register');
+    } else {
+      finishLogin(pendingUser);
+    }
   };
 
   const selectedUser = selected ? getUserById(selected) : null;
+  const selectedHasFace = selected ? hasFaceRegistered(selected) : false;
+  // faceTick fuerza re-lectura tras registrar
+  void faceTick;
 
   const goPick = () => {
     setStep('pick');
@@ -223,7 +250,6 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
       className="h-screen w-screen flex flex-col relative overflow-hidden select-none"
       style={{ background: 'var(--ely-bg)', color: 'var(--ely-text)' }}
     >
-      {/* Ambiente */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
         <div
           className="absolute -top-32 -left-24 w-[28rem] h-[28rem] rounded-full opacity-40 blur-3xl"
@@ -233,17 +259,8 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
           className="absolute -bottom-40 -right-20 w-[32rem] h-[32rem] rounded-full opacity-30 blur-3xl"
           style={{ background: 'radial-gradient(circle, rgba(167,139,250,0.25) 0%, transparent 70%)' }}
         />
-        <div
-          className="absolute inset-0 opacity-[0.035]"
-          style={{
-            backgroundImage:
-              'linear-gradient(var(--ely-border) 1px, transparent 1px), linear-gradient(90deg, var(--ely-border) 1px, transparent 1px)',
-            backgroundSize: '48px 48px',
-          }}
-        />
       </div>
 
-      {/* Title bar */}
       <div
         className="h-10 flex items-center justify-between px-3 shrink-0 drag-region relative z-20"
         style={{
@@ -253,35 +270,18 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
         }}
       >
         <div className="flex items-center gap-2 text-[12px] pl-1" style={{ color: 'var(--ely-text-muted)' }}>
-          <span className="font-medium" style={{ color: 'var(--ely-text)' }}>
-            ELYRA
-          </span>
+          <span className="font-medium" style={{ color: 'var(--ely-text)' }}>ELYRA</span>
           <span>· Acceso al sistema</span>
         </div>
         {isDesktop && (
           <div className="flex items-center gap-0.5 no-drag">
-            <button
-              type="button"
-              onClick={() => window.elyra?.minimize?.()}
-              className="w-8 h-8 flex items-center justify-center rounded-full ely-icon-btn"
-              style={{ color: 'var(--ely-text-muted)' }}
-            >
+            <button type="button" onClick={() => window.elyra?.minimize?.()} className="w-8 h-8 flex items-center justify-center rounded-full ely-icon-btn" style={{ color: 'var(--ely-text-muted)' }}>
               <Minus className="w-3.5 h-3.5" />
             </button>
-            <button
-              type="button"
-              onClick={() => window.elyra?.maximize?.()}
-              className="w-8 h-8 flex items-center justify-center rounded-full ely-icon-btn"
-              style={{ color: 'var(--ely-text-muted)' }}
-            >
+            <button type="button" onClick={() => window.elyra?.maximize?.()} className="w-8 h-8 flex items-center justify-center rounded-full ely-icon-btn" style={{ color: 'var(--ely-text-muted)' }}>
               <Square className="w-3 h-3" />
             </button>
-            <button
-              type="button"
-              onClick={() => window.elyra?.close?.()}
-              className="w-8 h-8 flex items-center justify-center rounded-full ely-icon-btn hover:text-red-400"
-              style={{ color: 'var(--ely-text-muted)' }}
-            >
+            <button type="button" onClick={() => window.elyra?.close?.()} className="w-8 h-8 flex items-center justify-center rounded-full ely-icon-btn hover:text-red-400" style={{ color: 'var(--ely-text-muted)' }}>
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -290,13 +290,7 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
 
       <div className="flex-1 flex items-center justify-center overflow-auto py-8 px-4 relative z-10">
         <div className="w-full max-w-[440px]">
-          {/* Brand */}
-          <motion.div
-            className="text-center mb-8 space-y-3"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={elyTransition.emphasized}
-          >
+          <motion.div className="text-center mb-8 space-y-3" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={elyTransition.emphasized}>
             <motion.div
               className="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center"
               style={{
@@ -305,7 +299,6 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                 boxShadow: '0 0 40px color-mix(in srgb, var(--ely-accent) 25%, transparent)',
               }}
               whileHover={{ scale: 1.04 }}
-              transition={elyTransition.spring}
             >
               <svg viewBox="0 0 40 40" className="w-8 h-8">
                 <circle cx="20" cy="20" r="8" fill="none" stroke="var(--ely-accent)" strokeWidth="2" />
@@ -313,11 +306,9 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
               </svg>
             </motion.div>
             <div>
-              <h1 className="text-2xl font-medium tracking-tight" style={{ color: 'var(--ely-text)' }}>
-                ELYRA
-              </h1>
+              <h1 className="text-2xl font-medium tracking-tight" style={{ color: 'var(--ely-text)' }}>ELYRA</h1>
               <p className="text-sm mt-1" style={{ color: 'var(--ely-text-muted)' }}>
-                Laboratorio · Acceso seguro por usuario
+                Laboratorio · PIN y biometría facial
               </p>
             </div>
           </motion.div>
@@ -335,48 +326,18 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
           >
             <AnimatePresence mode="wait">
               {step === 'pick' && (
-                <motion.div
-                  key="pick"
-                  variants={stepVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="space-y-4"
-                >
+                <motion.div key="pick" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-4">
                   <div className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
                     <Shield className="w-4 h-4" style={{ color: 'var(--ely-accent)' }} />
                     <span>Seleccione su usuario</span>
                   </div>
-
                   {users.length > 4 && (
                     <div className="relative">
-                      <Search
-                        className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
-                        style={{ color: 'var(--ely-text-dim)' }}
-                      />
-                      <input
-                        type="search"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Buscar por nombre o rol…"
-                        className="w-full rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none ely-focus-ring"
-                        style={{
-                          background: 'var(--ely-input-bg)',
-                          border: '1px solid var(--ely-border)',
-                          color: 'var(--ely-text)',
-                        }}
-                      />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: 'var(--ely-text-dim)' }} />
+                      <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar…" className="w-full rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none ely-focus-ring" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
                     </div>
                   )}
-
                   <div className="space-y-2 max-h-[46vh] overflow-y-auto pr-1">
-                    {filteredUsers.length === 0 && (
-                      <p className="text-sm text-center py-6" style={{ color: 'var(--ely-text-muted)' }}>
-                        {users.length === 0
-                          ? 'No hay usuarios activos.'
-                          : 'Ningún usuario coincide con la búsqueda.'}
-                      </p>
-                    )}
                     {filteredUsers.map((u, i) => (
                       <motion.button
                         key={u.id}
@@ -392,42 +353,26 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                           setShowPin(false);
                         }}
                         className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-left group"
-                        style={{
-                          border: '1px solid var(--ely-border)',
-                          background: 'var(--ely-bg-soft)',
-                        }}
-                        whileHover={{
-                          borderColor: 'var(--ely-accent)',
-                          background: 'var(--ely-accent-soft)',
-                        }}
+                        style={{ border: '1px solid var(--ely-border)', background: 'var(--ely-bg-soft)' }}
+                        whileHover={{ borderColor: 'var(--ely-accent)', background: 'var(--ely-accent-soft)' }}
                         whileTap={{ scale: 0.985 }}
                       >
-                        <div
-                          className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold shrink-0"
-                          style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
-                        >
+                        <div className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold shrink-0" style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}>
                           {u.displayName.charAt(0).toUpperCase()}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium truncate" style={{ color: 'var(--ely-text)' }}>
-                            {u.displayName}
-                          </p>
+                          <p className="text-sm font-medium truncate" style={{ color: 'var(--ely-text)' }}>{u.displayName}</p>
                           <p className="text-[11px] truncate" style={{ color: 'var(--ely-text-muted)' }}>
                             {u.roleLabel}
+                            {hasFaceRegistered(u.id) ? ' · Rostro' : ''}
                           </p>
                         </div>
-                        {u.isAdmin && (
-                          <span
-                            className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0"
-                            style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
-                          >
-                            Admin
-                          </span>
+                        {hasFaceRegistered(u.id) && (
+                          <ScanFace className="w-4 h-4 shrink-0" style={{ color: 'var(--ely-accent)' }} />
                         )}
-                        <ArrowRight
-                          className="w-3.5 h-3.5 opacity-0 group-hover:opacity-60 transition-opacity shrink-0"
-                          style={{ color: 'var(--ely-accent)' }}
-                        />
+                        {u.isAdmin && (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full shrink-0" style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}>Admin</span>
+                        )}
                       </motion.button>
                     ))}
                   </div>
@@ -435,45 +380,43 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
               )}
 
               {step === 'pin' && selectedUser && (
-                <motion.div
-                  key="pin"
-                  variants={stepVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="space-y-5"
-                >
+                <motion.div key="pin" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-5">
                   <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={goPick}
-                      className="ely-icon-btn shrink-0"
-                      style={{ color: 'var(--ely-text-muted)' }}
-                      title="Volver"
-                    >
+                    <button type="button" onClick={goPick} className="ely-icon-btn shrink-0" style={{ color: 'var(--ely-text-muted)' }} title="Volver">
                       <ChevronLeft className="w-4 h-4" />
                     </button>
-                    <div
-                      className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold"
-                      style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
-                    >
+                    <div className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold" style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}>
                       {selectedUser.displayName.charAt(0).toUpperCase()}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
-                        {selectedUser.displayName}
-                      </p>
-                      <p className="text-[11px]" style={{ color: 'var(--ely-text-muted)' }}>
-                        {selectedUser.roleLabel}
-                      </p>
+                      <p className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>{selectedUser.displayName}</p>
+                      <p className="text-[11px]" style={{ color: 'var(--ely-text-muted)' }}>{selectedUser.roleLabel}</p>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label
-                      className="text-xs font-medium flex items-center gap-1.5"
-                      style={{ color: 'var(--ely-text-muted)' }}
+                  {selectedHasFace && (
+                    <motion.button
+                      type="button"
+                      onClick={() => { setError(''); setStep('face'); }}
+                      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full text-sm font-medium"
+                      style={{ background: 'var(--ely-accent)', color: '#fff' }}
+                      whileHover={{ scale: 1.015 }}
+                      whileTap={{ scale: 0.98 }}
                     >
+                      <ScanFace className="w-4 h-4" /> Entrar con el rostro
+                    </motion.button>
+                  )}
+
+                  {selectedHasFace && (
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-px" style={{ background: 'var(--ely-border)' }} />
+                      <span className="text-[11px]" style={{ color: 'var(--ely-text-dim)' }}>o contraseña</span>
+                      <div className="flex-1 h-px" style={{ background: 'var(--ely-border)' }} />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium flex items-center gap-1.5" style={{ color: 'var(--ely-text-muted)' }}>
                       <Lock className="w-3 h-3" /> Contraseña
                     </label>
                     <div className="relative">
@@ -491,18 +434,9 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                           color: 'var(--ely-text)',
                         }}
                         placeholder="······"
-                        autoFocus
-                        aria-invalid={!!error}
-                        aria-describedby={error ? 'login-error' : undefined}
+                        autoFocus={!selectedHasFace}
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowPin((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg"
-                        style={{ color: 'var(--ely-text-dim)' }}
-                        tabIndex={-1}
-                        aria-label={showPin ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                      >
+                      <button type="button" onClick={() => setShowPin((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg" style={{ color: 'var(--ely-text-dim)' }} tabIndex={-1}>
                         {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
@@ -513,167 +447,90 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                   </div>
 
                   {error && (
-                    <motion.p
-                      id="login-error"
-                      role="alert"
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="text-[13px] rounded-xl px-3 py-2.5 text-center"
-                      style={{
-                        color: 'var(--ely-danger)',
-                        background: 'rgba(248, 81, 73, 0.1)',
-                        border: '1px solid rgba(248, 81, 73, 0.2)',
-                      }}
-                    >
+                    <motion.p id="login-error" role="alert" initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-[13px] rounded-xl px-3 py-2.5 text-center" style={{ color: 'var(--ely-danger)', background: 'rgba(248, 81, 73, 0.1)', border: '1px solid rgba(248, 81, 73, 0.2)' }}>
                       {error}
                     </motion.p>
                   )}
 
-                  <motion.button
-                    type="button"
-                    onClick={submitPin}
-                    disabled={loading || pin.length < 4}
-                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full text-sm font-medium disabled:opacity-45"
-                    style={{ background: 'var(--ely-accent)', color: '#fff' }}
-                    whileHover={{ scale: loading ? 1 : 1.015 }}
-                    whileTap={{ scale: loading ? 1 : 0.98 }}
-                  >
-                    {loading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        Acceder <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
+                  <motion.button type="button" onClick={submitPin} disabled={loading || pin.length < 4} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full text-sm font-medium disabled:opacity-45" style={{ background: selectedHasFace ? 'var(--ely-bg-soft)' : 'var(--ely-accent)', color: selectedHasFace ? 'var(--ely-text)' : '#fff', border: selectedHasFace ? '1px solid var(--ely-border)' : undefined }} whileTap={{ scale: 0.98 }}>
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Acceder con contraseña <ArrowRight className="w-4 h-4" /></>}
                   </motion.button>
                 </motion.div>
               )}
 
+              {step === 'face' && selectedUser && (
+                <motion.div key="face" variants={stepVariants} initial="initial" animate="animate" exit="exit">
+                  <FaceAuthPanel
+                    userId={selectedUser.id}
+                    userName={selectedUser.displayName}
+                    mode="verify"
+                    onSuccess={() => finishLogin(selectedUser)}
+                    onCancel={() => { setStep('pin'); setError(''); }}
+                  />
+                </motion.div>
+              )}
+
+              {step === 'face-register' && pendingUser && (
+                <motion.div key="face-register" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-3">
+                  <FaceAuthPanel
+                    userId={pendingUser.id}
+                    userName={pendingUser.displayName}
+                    mode="register"
+                    onSuccess={() => {
+                      setFaceTick((t) => t + 1);
+                      finishLogin(pendingUser);
+                    }}
+                    onCancel={() => finishLogin(pendingUser)}
+                  />
+                  <p className="text-[11px] text-center" style={{ color: 'var(--ely-text-dim)' }}>
+                    Cancelar omite el registro y entra solo con contraseña.
+                  </p>
+                </motion.div>
+              )}
+
               {step === 'change' && pendingUser && (
-                <motion.div
-                  key="change"
-                  variants={stepVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  className="space-y-4"
-                >
+                <motion.div key="change" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-4">
                   <div className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
                     <KeyRound className="w-4 h-4" style={{ color: 'var(--ely-accent)' }} />
                     <span>Cambiar contraseña</span>
                   </div>
                   <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
-                    Hola <strong style={{ color: 'var(--ely-text)' }}>{pendingUser.displayName}</strong>.
-                    Por seguridad debe cambiar la contraseña temporal (123456).
+                    Hola <strong style={{ color: 'var(--ely-text)' }}>{pendingUser.displayName}</strong>. Cambie la contraseña temporal.
                   </p>
                   <div className="space-y-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium" style={{ color: 'var(--ely-text-muted)' }}>
-                        Nueva contraseña
-                      </label>
+                      <label className="text-xs font-medium" style={{ color: 'var(--ely-text-muted)' }}>Nueva contraseña</label>
                       <div className="relative">
-                        <input
-                          type={showNew ? 'text' : 'password'}
-                          inputMode="numeric"
-                          value={newPin}
-                          onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                          className="w-full rounded-2xl px-4 py-3 pr-12 text-center text-base outline-none tracking-[0.3em] ely-focus-ring"
-                          style={{
-                            background: 'var(--ely-input-bg)',
-                            border: '1px solid var(--ely-border)',
-                            color: 'var(--ely-text)',
-                          }}
-                          placeholder="····"
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowNew((v) => !v)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5"
-                          style={{ color: 'var(--ely-text-dim)' }}
-                          tabIndex={-1}
-                        >
+                        <input type={showNew ? 'text' : 'password'} inputMode="numeric" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 12))} className="w-full rounded-2xl px-4 py-3 pr-12 text-center text-base outline-none tracking-[0.3em] ely-focus-ring" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} placeholder="····" autoFocus />
+                        <button type="button" onClick={() => setShowNew((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5" style={{ color: 'var(--ely-text-dim)' }} tabIndex={-1}>
                           {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
                       </div>
                       <PinDots length={newPin.length} max={6} />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium" style={{ color: 'var(--ely-text-muted)' }}>
-                        Confirmar
-                      </label>
-                      <input
-                        type={showNew ? 'text' : 'password'}
-                        inputMode="numeric"
-                        value={newPin2}
-                        onChange={(e) => setNewPin2(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                        onKeyDown={(e) => e.key === 'Enter' && !loading && submitChange()}
-                        className="w-full rounded-2xl px-4 py-3 text-center text-base outline-none tracking-[0.3em] ely-focus-ring"
-                        style={{
-                          background: 'var(--ely-input-bg)',
-                          border: `1px solid ${
-                            newPin2.length > 0 && newPin !== newPin2
-                              ? 'rgba(248,81,73,0.5)'
-                              : newPin2.length >= 4 && newPin === newPin2
-                                ? 'rgba(63,185,80,0.45)'
-                                : 'var(--ely-border)'
-                          }`,
-                          color: 'var(--ely-text)',
-                        }}
-                        placeholder="····"
-                      />
+                      <label className="text-xs font-medium" style={{ color: 'var(--ely-text-muted)' }}>Confirmar</label>
+                      <input type={showNew ? 'text' : 'password'} inputMode="numeric" value={newPin2} onChange={(e) => setNewPin2(e.target.value.replace(/\D/g, '').slice(0, 12))} onKeyDown={(e) => e.key === 'Enter' && !loading && submitChange()} className="w-full rounded-2xl px-4 py-3 text-center text-base outline-none tracking-[0.3em] ely-focus-ring" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} placeholder="····" />
                     </div>
                   </div>
-
                   {error && (
-                    <p
-                      role="alert"
-                      className="text-[13px] rounded-xl px-3 py-2.5 text-center"
-                      style={{
-                        color: 'var(--ely-danger)',
-                        background: 'rgba(248, 81, 73, 0.1)',
-                        border: '1px solid rgba(248, 81, 73, 0.2)',
-                      }}
-                    >
-                      {error}
-                    </p>
+                    <p role="alert" className="text-[13px] rounded-xl px-3 py-2.5 text-center" style={{ color: 'var(--ely-danger)', background: 'rgba(248, 81, 73, 0.1)', border: '1px solid rgba(248, 81, 73, 0.2)' }}>{error}</p>
                   )}
-
                   <div className="flex flex-col gap-2 pt-1">
-                    <motion.button
-                      type="button"
-                      onClick={submitChange}
-                      disabled={loading}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full text-sm font-medium disabled:opacity-50"
-                      style={{ background: 'var(--ely-accent)', color: '#fff' }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Guardar y acceder'}
+                    <motion.button type="button" onClick={submitChange} disabled={loading} className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full text-sm font-medium disabled:opacity-50" style={{ background: 'var(--ely-accent)', color: '#fff' }} whileTap={{ scale: 0.98 }}>
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Guardar y continuar'}
                     </motion.button>
-                    <button
-                      type="button"
-                      onClick={changeLater}
-                      className="w-full py-2.5 rounded-full text-sm font-medium"
-                      style={{
-                        background: 'var(--ely-bg-soft)',
-                        color: 'var(--ely-text-muted)',
-                        border: '1px solid var(--ely-border)',
-                      }}
-                    >
+                    <button type="button" onClick={changeLater} className="w-full py-2.5 rounded-full text-sm font-medium" style={{ background: 'var(--ely-bg-soft)', color: 'var(--ely-text-muted)', border: '1px solid var(--ely-border)' }}>
                       Cambiar en otro momento
                     </button>
                   </div>
-                  <p className="text-[11px] text-center" style={{ color: 'var(--ely-text-dim)' }}>
-                    Si elige «otro momento», se le pedirá de nuevo al iniciar sesión.
-                  </p>
                 </motion.div>
               )}
             </AnimatePresence>
           </motion.div>
 
           <p className="text-center text-[11px] mt-6" style={{ color: 'var(--ely-text-dim)' }}>
-            Acceso local · {users.length} usuario{users.length === 1 ? '' : 's'} activo
-            {users.length === 1 ? '' : 's'}
+            Acceso local · Rostro solo en este equipo
           </p>
         </div>
       </div>
