@@ -14,10 +14,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Path alias — Vite resuelve @ en runtime; TS usa paths para el IDE */
-    "baseUrl": ".",
+    /*
+     * Alias @ → src (sin baseUrl: deprecado en TS 6 / 7).
+     * Vite resuelve lo mismo en vite.config.ts.
+     */
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
 
     /* Linting */
