@@ -7,10 +7,9 @@ import {
   extractDescriptorFromVideo,
   captureThumbFromVideo,
   registerFace,
-  verifyFace,
+  verifyFaceMulti,
 } from '@/lib/faceAuth';
 import { captureError } from '@/lib/errors';
-import { elyTransition } from '@/lib/motion';
 
 type Mode = 'register' | 'verify';
 
@@ -28,11 +27,13 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const samplesRef = useRef<number[][]>([]);
+  const lastBoxRef = useRef<{ x: number; y: number; width: number; height: number } | undefined>();
 
   const [phase, setPhase] = useState<'permission' | 'ready' | 'working' | 'done' | 'error'>('permission');
   const [message, setMessage] = useState('Solicitando permiso de cámara…');
   const [sampleCount, setSampleCount] = useState(0);
   const [error, setError] = useState('');
+  const [confidence, setConfidence] = useState<number | null>(null);
 
   const cleanup = useCallback(() => {
     stopStream(streamRef.current);
@@ -57,8 +58,8 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         setPhase('ready');
         setMessage(
           mode === 'register'
-            ? 'Centre su rostro y pulse Registrar (se tomarán 3 muestras).'
-            : 'Centre su rostro y pulse Verificar.',
+            ? 'Centre el rostro en el óvalo. Se capturarán 3 muestras con ligero movimiento.'
+            : 'Centre el rostro. Se tomarán 3 lecturas para confirmar identidad.',
         );
       } catch (e) {
         setPhase('error');
@@ -71,32 +72,30 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     };
   }, [mode, cleanup]);
 
-  const captureSample = (): number[] => {
-    const video = videoRef.current;
-    if (!video || video.readyState < 2) throw new Error('La cámara aún no está lista.');
-    return extractDescriptorFromVideo(video);
-  };
-
   const handleRegister = async () => {
     setError('');
     setPhase('working');
     try {
-      const desc = captureSample();
-      samplesRef.current.push(desc);
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) throw new Error('La cámara aún no está lista.');
+
+      const { descriptor, box } = await extractDescriptorFromVideo(video);
+      lastBoxRef.current = box;
+      samplesRef.current.push(descriptor);
       const n = samplesRef.current.length;
       setSampleCount(n);
-      setMessage(`Muestra ${n} de ${REGISTER_SAMPLES} capturada.`);
+      setMessage(`Muestra ${n}/${REGISTER_SAMPLES} · calidad OK`);
 
       if (n < REGISTER_SAMPLES) {
         setPhase('ready');
-        setMessage(`Mueva ligeramente la cabeza y pulse de nuevo (${n}/${REGISTER_SAMPLES}).`);
+        setMessage(`Gire un poco la cabeza y pulse Capturar (${n}/${REGISTER_SAMPLES}).`);
         return;
       }
 
-      const thumb = videoRef.current ? captureThumbFromVideo(videoRef.current) : undefined;
+      const thumb = captureThumbFromVideo(video, lastBoxRef.current);
       registerFace(userId, samplesRef.current, thumb);
       setPhase('done');
-      setMessage('Rostro registrado y guardado en este equipo.');
+      setMessage('Rostro registrado de forma segura en este equipo.');
       cleanup();
       window.setTimeout(() => onSuccess(), 700);
     } catch (e) {
@@ -107,20 +106,28 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
 
   const handleVerify = async () => {
     setError('');
+    setConfidence(null);
     setPhase('working');
+    setMessage('Escaneando rostro…');
     try {
-      await new Promise((r) => setTimeout(r, 200));
-      const live = captureSample();
-      const result = verifyFace(userId, live);
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) throw new Error('La cámara aún no está lista.');
+
+      const result = await verifyFaceMulti(userId, video, 3);
+      setConfidence(result.confidence);
+
       if (!result.ok) {
         setPhase('ready');
-        setError('Rostro no reconocido. Intente de nuevo con buena luz o use la contraseña.');
+        setError(
+          `No coincide (confianza ${result.confidence}%). Mejor luz, mire de frente o use PIN.`,
+        );
         return;
       }
+
       setPhase('done');
-      setMessage('Identidad verificada.');
+      setMessage(`Identidad verificada · confianza ${result.confidence}%`);
       cleanup();
-      window.setTimeout(() => onSuccess(), 500);
+      window.setTimeout(() => onSuccess(), 550);
     } catch (e) {
       setPhase('ready');
       setError(captureError(e, 'Error al verificar.'));
@@ -129,23 +136,41 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--ely-text)' }}>
-        <ScanFace className="w-4 h-4" style={{ color: 'var(--ely-accent)' }} />
-        <span>{mode === 'register' ? 'Registrar rostro' : 'Acceso facial'} · {userName}</span>
+      <div className="flex items-center gap-2 text-sm font-medium text-white">
+        <ScanFace className="w-4 h-4 text-sky-400" />
+        <span>
+          {mode === 'register' ? 'Registrar rostro' : 'Acceso facial'} · {userName}
+        </span>
       </div>
 
       <div
         className="relative mx-auto rounded-2xl overflow-hidden bg-black"
-        style={{ width: '100%', maxWidth: 320, aspectRatio: '4/3', border: '1px solid var(--ely-border)' }}
+        style={{
+          width: '100%',
+          maxWidth: 320,
+          aspectRatio: '4/3',
+          border: '1px solid rgba(56,180,255,0.35)',
+          boxShadow: '0 0 32px rgba(56,180,255,0.15)',
+        }}
       >
         <video
           ref={videoRef}
-          className="w-full h-full object-cover mirror"
+          className="w-full h-full object-cover"
           playsInline
           muted
           style={{ transform: 'scaleX(-1)' }}
         />
-        {/* Guía oval */}
+
+        {/* Barrido de escaneo */}
+        {phase === 'working' && (
+          <motion.div
+            className="absolute left-0 right-0 h-0.5 z-10"
+            style={{ background: 'linear-gradient(90deg, transparent, #38bdf8, transparent)' }}
+            animate={{ top: ['15%', '85%', '15%'] }}
+            transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
+
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div
             className="rounded-full border-2"
@@ -154,62 +179,57 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
               height: '72%',
               borderColor:
                 phase === 'done'
-                  ? 'var(--ely-success)'
+                  ? '#3fb950'
                   : phase === 'error'
-                    ? 'var(--ely-danger)'
-                    : 'var(--ely-accent)',
-              boxShadow: '0 0 0 9999px rgba(0,0,0,0.35)',
+                    ? '#f85149'
+                    : '#38bdf8',
+              boxShadow: '0 0 0 9999px rgba(0,0,0,0.4)',
             }}
           />
         </div>
+
         {phase === 'permission' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70">
-            <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--ely-accent)' }} />
+            <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
             <p className="text-xs text-white/80">Permiso de cámara…</p>
           </div>
         )}
+
         {phase === 'done' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
             <motion.div
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              className="w-14 h-14 rounded-full flex items-center justify-center"
-              style={{ background: 'var(--ely-success)' }}
+              className="w-14 h-14 rounded-full flex items-center justify-center bg-emerald-500"
             >
               <Check className="w-7 h-7 text-white" />
             </motion.div>
           </div>
         )}
+
+        {confidence != null && phase !== 'done' && (
+          <div className="absolute bottom-2 left-0 right-0 text-center text-[11px] text-sky-200/90">
+            Confianza estimada: {confidence}%
+          </div>
+        )}
       </div>
 
-      <p className="text-[13px] text-center leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
-        {message}
-      </p>
+      <p className="text-[13px] text-center leading-relaxed text-sky-100/55">{message}</p>
 
       {mode === 'register' && sampleCount > 0 && phase !== 'done' && (
         <div className="flex justify-center gap-1.5">
           {Array.from({ length: REGISTER_SAMPLES }).map((_, i) => (
             <span
               key={i}
-              className="w-2 h-2 rounded-full"
-              style={{
-                background: i < sampleCount ? 'var(--ely-accent)' : 'var(--ely-border)',
-              }}
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ background: i < sampleCount ? '#38bdf8' : 'rgba(255,255,255,0.15)' }}
             />
           ))}
         </div>
       )}
 
       {error && (
-        <p
-          role="alert"
-          className="text-[12px] rounded-xl px-3 py-2 text-center"
-          style={{
-            color: 'var(--ely-danger)',
-            background: 'rgba(248,81,73,0.1)',
-            border: '1px solid rgba(248,81,73,0.2)',
-          }}
-        >
+        <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300 bg-red-500/10 border border-red-400/20">
           {error}
         </p>
       )}
@@ -221,56 +241,47 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
             cleanup();
             onCancel();
           }}
-          className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1.5"
-          style={{
-            background: 'var(--ely-bg-soft)',
-            color: 'var(--ely-text-muted)',
-            border: '1px solid var(--ely-border)',
-          }}
+          className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1.5 text-sky-100/60 border border-white/10 bg-white/5"
         >
           <X className="w-3.5 h-3.5" /> Cancelar
         </button>
         {mode === 'register' ? (
-          <motion.button
+          <button
             type="button"
             disabled={phase !== 'ready'}
             onClick={handleRegister}
-            className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-45"
-            style={{ background: 'var(--ely-accent)', color: '#fff' }}
-            whileTap={{ scale: 0.98 }}
-            transition={elyTransition.fast}
+            className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-45 text-white"
+            style={{ background: 'linear-gradient(90deg,#0c5ebd,#38bdf8)' }}
           >
             {phase === 'working' ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <>
-                <Camera className="w-4 h-4" />
-                {sampleCount >= REGISTER_SAMPLES ? 'Guardar' : 'Capturar'}
+                <Camera className="w-4 h-4" /> Capturar
               </>
             )}
-          </motion.button>
+          </button>
         ) : (
-          <motion.button
+          <button
             type="button"
             disabled={phase !== 'ready'}
             onClick={handleVerify}
-            className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-45"
-            style={{ background: 'var(--ely-accent)', color: '#fff' }}
-            whileTap={{ scale: 0.98 }}
+            className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-45 text-white"
+            style={{ background: 'linear-gradient(90deg,#0c5ebd,#38bdf8)' }}
           >
             {phase === 'working' ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <>
-                <ScanFace className="w-4 h-4" /> Verificar
+                <ScanFace className="w-4 h-4" /> Verificar identidad
               </>
             )}
-          </motion.button>
+          </button>
         )}
       </div>
 
-      <p className="text-[10px] text-center" style={{ color: 'var(--ely-text-dim)' }}>
-        Los datos del rostro se guardan solo en este equipo (localStorage). No se suben a internet.
+      <p className="text-[10px] text-center text-sky-100/30">
+        Detección local del rostro · datos solo en este equipo · no se suben a internet
       </p>
     </div>
   );
