@@ -56,22 +56,21 @@ interface LoginGateProps {
 type LoginStep = 'pick' | 'pin' | 'change' | 'face' | 'face-register';
 
 const stepVariants = {
-  initial: { opacity: 0, y: 10 },
-  animate: { opacity: 1, y: 0, transition: elyTransition.emphasized },
-  exit: { opacity: 0, y: -6, transition: elyTransition.fast },
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0, transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] } },
+  exit: { opacity: 0, y: -4, transition: { duration: 0.18 } },
 };
 
 function PinDots({ length, max = 6 }: { length: number; max?: number }) {
   const n = Math.max(max, Math.min(12, length || max));
   return (
-    <div className="flex justify-center gap-2 py-1" aria-hidden>
+    <div className="flex justify-center gap-1.5 py-1" aria-hidden>
       {Array.from({ length: n }).map((_, i) => (
         <span
           key={i}
-          className="w-2 h-2 rounded-full transition-all"
+          className="w-1.5 h-1.5 rounded-full transition-all duration-200"
           style={{
-            background: i < length ? '#38bdf8' : 'rgba(56,189,248,0.22)',
-            transform: i < length ? 'scale(1.15)' : 'scale(1)',
+            background: i < length ? '#38bdf8' : 'rgba(56,189,248,0.2)',
           }}
         />
       ))}
@@ -101,7 +100,7 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
   const [showNew, setShowNew] = useState(false);
   const [faceTick, setFaceTick] = useState(0);
   const [theme, setTheme] = useState<ThemeId>(() => getStoredTheme());
-  const [scanPct, setScanPct] = useState(72);
+  const [scanPct, setScanPct] = useState(88);
 
   useEffect(() => {
     try {
@@ -125,30 +124,26 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* Porcentaje de escaneo animado en el HUD */
+  /* HUD de demostración visual (no backend de escaneo continuo) */
   useEffect(() => {
-    const active = step === 'pick' || step === 'face' || step === 'face-register';
-    if (!active) return;
+    if (step !== 'pick') return;
     const id = window.setInterval(() => {
       setScanPct((p) => {
-        if (step === 'face' || step === 'face-register') {
-          return Math.min(99, p + (Math.random() > 0.5 ? 1 : 0));
-        }
-        const next = p + (Math.random() * 3 - 1.2);
-        return Math.max(68, Math.min(98, next));
+        const next = p + (Math.random() * 1.6 - 0.7);
+        return Math.max(82, Math.min(98, next));
       });
-    }, 400);
+    }, 900);
     return () => clearInterval(id);
   }, [step]);
 
   useEffect(() => {
-    if (step === 'face' || step === 'face-register') setScanPct(45);
+    if (step === 'face' || step === 'face-register') setScanPct(52);
   }, [step]);
 
   const fail = (msg: string) => {
     setError(msg);
     setShake(true);
-    window.setTimeout(() => setShake(false), 480);
+    window.setTimeout(() => setShake(false), 420);
   };
 
   const finishLogin = (user: LabUser) => {
@@ -181,7 +176,7 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
     }
     setLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 320));
+      await new Promise((r) => setTimeout(r, 280));
       const user = getUserById(selected);
       if (!user || user.active === false || !verifyPassword(user.id, pin)) {
         fail('Contraseña incorrecta');
@@ -213,7 +208,7 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
     }
     setLoading(true);
     try {
-      await new Promise((r) => setTimeout(r, 280));
+      await new Promise((r) => setTimeout(r, 240));
       setPassword(pendingUser.id, newPin, true);
       if (!hasFaceRegistered(pendingUser.id)) setStep('face-register');
       else finishLogin(pendingUser);
@@ -256,64 +251,60 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
     applyTheme(next);
   };
 
-  const cardStyle = {
-    background: 'rgba(10, 20, 42, 0.78)',
-    border: '1px solid rgba(56,180,255,0.22)',
-    boxShadow:
-      '0 24px 64px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.02), inset 0 1px 0 rgba(255,255,255,0.04)',
-    backdropFilter: 'blur(22px)',
-  } as const;
-
   return (
     <div
       className="h-screen w-screen flex flex-col relative overflow-hidden select-none"
       style={{
-        background: 'linear-gradient(150deg, #030810 0%, #071428 42%, #050d1c 100%)',
+        background: 'linear-gradient(155deg, #040a14 0%, #071428 48%, #050f1c 100%)',
         color: '#e8f1ff',
+        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
       }}
     >
+      {/* Ambiente: grid sutil + profundidad */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div
-          className="absolute inset-0 opacity-[0.055]"
+          className="absolute inset-0"
           style={{
+            opacity: 0.04,
             backgroundImage:
-              'linear-gradient(rgba(56,180,255,0.55) 1px, transparent 1px), linear-gradient(90deg, rgba(56,180,255,0.55) 1px, transparent 1px)',
-            backgroundSize: '52px 52px',
+              'linear-gradient(rgba(56,180,255,0.9) 1px, transparent 1px), linear-gradient(90deg, rgba(56,180,255,0.9) 1px, transparent 1px)',
+            backgroundSize: '48px 48px',
+            maskImage: 'radial-gradient(ellipse at 40% 45%, black 20%, transparent 75%)',
           }}
         />
         <div
-          className="absolute left-0 top-0 w-[55%] h-full"
+          className="absolute left-0 top-0 w-[58%] h-full"
           style={{
             background:
-              'radial-gradient(ellipse at 28% 48%, rgba(20,90,200,0.32) 0%, transparent 62%)',
+              'radial-gradient(ellipse at 30% 48%, rgba(16,80,170,0.22) 0%, transparent 60%)',
           }}
         />
         <div
-          className="absolute right-0 bottom-0 w-[40%] h-[50%]"
+          className="absolute right-[8%] top-[20%] w-[28%] h-[40%]"
           style={{
             background:
-              'radial-gradient(ellipse at 80% 80%, rgba(14,60,140,0.2) 0%, transparent 70%)',
+              'radial-gradient(ellipse at center, rgba(20,70,150,0.08) 0%, transparent 70%)',
           }}
         />
       </div>
 
-      {/* Barra superior */}
-      <div className="h-10 flex items-center justify-between px-3 shrink-0 drag-region relative z-30">
-        <div className="flex items-center gap-2 text-[11px] pl-1 text-sky-100/40">
-          <span className="font-medium text-sky-100/70">ELYRA</span>
+      {/* Title bar Electron */}
+      <div className="h-9 flex items-center justify-between px-3 shrink-0 drag-region relative z-30">
+        <div className="flex items-center gap-2 text-[11px] pl-1 text-sky-100/35">
+          <span className="font-medium text-sky-100/65">ELYRA</span>
           <span>· Acceso</span>
         </div>
         <div className="flex items-center gap-1.5 no-drag">
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
           {isDesktop && (
             <>
-              <button type="button" onClick={() => window.elyra?.minimize?.()} className="w-8 h-8 flex items-center justify-center rounded-full text-sky-200/50 hover:bg-white/5">
+              <button type="button" onClick={() => window.elyra?.minimize?.()} className="w-8 h-8 flex items-center justify-center rounded-full text-sky-200/45 hover:bg-white/5" aria-label="Minimizar">
                 <Minus className="w-3.5 h-3.5" />
               </button>
-              <button type="button" onClick={() => window.elyra?.maximize?.()} className="w-8 h-8 flex items-center justify-center rounded-full text-sky-200/50 hover:bg-white/5">
+              <button type="button" onClick={() => window.elyra?.maximize?.()} className="w-8 h-8 flex items-center justify-center rounded-full text-sky-200/45 hover:bg-white/5" aria-label="Maximizar">
                 <Square className="w-3 h-3" />
               </button>
-              <button type="button" onClick={() => window.elyra?.close?.()} className="w-8 h-8 flex items-center justify-center rounded-full text-sky-200/50 hover:bg-red-500/20 hover:text-red-300">
+              <button type="button" onClick={() => window.elyra?.close?.()} className="w-8 h-8 flex items-center justify-center rounded-full text-sky-200/45 hover:bg-red-500/15 hover:text-red-300" aria-label="Cerrar">
                 <X className="w-3.5 h-3.5" />
               </button>
             </>
@@ -321,31 +312,39 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
         </div>
       </div>
 
-      <div className="flex-1 flex items-stretch justify-center relative z-10 px-5 pb-5 pt-1 min-h-0">
-        <div className="w-full max-w-[1100px] flex gap-10 items-center">
+      <div className="flex-1 flex items-stretch justify-center relative z-10 px-6 pb-4 pt-1 min-h-0">
+        <div className="w-full max-w-[1180px] flex gap-8 xl:gap-12 items-center">
+          {/* ~60% biometría */}
           <BiometricScanner
             progress={scanPct}
             active={step === 'pick' || step === 'face' || step === 'face-register'}
           />
 
-          <div className="w-full max-w-[400px] mx-auto lg:mx-0 flex flex-col shrink-0">
+          {/* ~40% acceso */}
+          <div className="w-full max-w-[380px] mx-auto lg:mx-0 flex flex-col shrink-0">
             <LoginLogo />
 
             <motion.div
-              className="rounded-[18px] p-5 sm:p-6 space-y-4"
-              style={cardStyle}
-              animate={shake ? { x: [0, -6, 6, -4, 4, 0] } : { x: 0 }}
-              transition={{ duration: 0.42 }}
+              className="rounded-[20px] px-5 py-5 space-y-3.5"
+              style={{
+                background: 'rgba(10, 18, 38, 0.72)',
+                border: '1px solid rgba(56,180,255,0.16)',
+                boxShadow:
+                  '0 16px 48px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.03)',
+                backdropFilter: 'blur(16px)',
+              }}
+              animate={shake ? { x: [0, -5, 5, -3, 3, 0] } : { x: 0 }}
+              transition={{ duration: 0.38 }}
             >
               <AnimatePresence mode="wait">
                 {step === 'pick' && (
-                  <motion.div key="pick" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-4">
+                  <motion.div key="pick" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-3.5">
                     <div>
-                      <div className="flex items-center gap-2 text-[15px] font-medium text-white">
-                        <Shield className="w-4 h-4 text-sky-400" />
+                      <div className="flex items-center gap-2 text-[14px] font-medium text-white">
+                        <Shield className="w-3.5 h-3.5 text-sky-400" strokeWidth={1.75} />
                         Iniciar sesión
                       </div>
-                      <p className="text-[12px] mt-1 text-sky-100/42">
+                      <p className="text-[12px] mt-1 text-sky-100/40">
                         Seleccione su usuario para continuar
                       </p>
                     </div>
@@ -358,24 +357,24 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                       }}
                     />
 
-                    <p className="text-[11px] text-center text-sky-100/32 flex items-center justify-center gap-1.5 pt-0.5">
-                      <Lock className="w-3 h-3" /> Acceso local · Solo en este equipo
+                    <p className="text-[11px] text-center text-sky-100/28 flex items-center justify-center gap-1.5 pt-0.5">
+                      <Lock className="w-3 h-3" strokeWidth={1.75} /> Acceso local · Solo en este equipo
                     </p>
                   </motion.div>
                 )}
 
                 {step === 'pin' && selectedUser && (
-                  <motion.div key="pin" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-4">
+                  <motion.div key="pin" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-3.5">
                     <div className="flex items-center gap-3">
-                      <button type="button" onClick={goPick} className="w-9 h-9 rounded-full flex items-center justify-center bg-white/5 text-sky-100/55 hover:bg-white/10">
+                      <button type="button" onClick={goPick} className="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 text-sky-100/50 hover:bg-white/8 transition-colors" aria-label="Volver">
                         <ChevronLeft className="w-4 h-4" />
                       </button>
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold bg-sky-500/25 text-sky-300">
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-[12.5px] font-semibold bg-sky-500/20 text-sky-300">
                         {selectedUser.displayName.charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-white">{selectedUser.displayName}</p>
-                        <p className="text-[11px] text-sky-100/42">{selectedUser.roleLabel}</p>
+                        <p className="text-[13px] font-medium text-white">{selectedUser.displayName}</p>
+                        <p className="text-[11px] text-sky-100/40">{selectedUser.roleLabel}</p>
                       </div>
                     </div>
 
@@ -383,10 +382,10 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                       <button
                         type="button"
                         onClick={() => { setError(''); setStep('face'); }}
-                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium text-white"
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium text-white transition-opacity hover:opacity-95"
                         style={{
-                          background: 'linear-gradient(90deg,#0c5ebd,#38bdf8)',
-                          boxShadow: '0 0 28px rgba(56,180,255,0.35)',
+                          background: 'linear-gradient(90deg,#0c5ebd,#2a9ae0)',
+                          boxShadow: '0 0 20px rgba(56,180,255,0.2)',
                         }}
                       >
                         <ScanFace className="w-4 h-4" /> Entrar con el rostro
@@ -395,14 +394,14 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
 
                     {selectedHasFace && (
                       <div className="flex items-center gap-3">
-                        <div className="flex-1 h-px bg-white/10" />
-                        <span className="text-[11px] text-sky-100/32">o contraseña</span>
-                        <div className="flex-1 h-px bg-white/10" />
+                        <div className="flex-1 h-px bg-white/8" />
+                        <span className="text-[10px] text-sky-100/28">o contraseña</span>
+                        <div className="flex-1 h-px bg-white/8" />
                       </div>
                     )}
 
-                    <div className="space-y-2">
-                      <label className="text-xs text-sky-100/45 flex items-center gap-1.5">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-sky-100/40 flex items-center gap-1.5">
                         <Lock className="w-3 h-3" /> Contraseña
                       </label>
                       <div className="relative">
@@ -413,21 +412,21 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                           value={pin}
                           onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
                           onKeyDown={(e) => e.key === 'Enter' && !loading && submitPin()}
-                          className="w-full rounded-xl px-4 py-3.5 pr-12 text-center text-lg outline-none tracking-[0.35em] bg-white/5 border text-white"
-                          style={{ borderColor: error ? 'rgba(248,81,73,0.55)' : 'rgba(56,180,255,0.22)' }}
+                          className="w-full rounded-xl px-4 py-3 pr-11 text-center text-base outline-none tracking-[0.32em] bg-white/[0.04] border text-white transition-colors"
+                          style={{ borderColor: error ? 'rgba(248,81,73,0.45)' : 'rgba(56,180,255,0.16)' }}
                           placeholder="······"
                           autoFocus={!selectedHasFace}
                         />
-                        <button type="button" onClick={() => setShowPin((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-sky-100/35" tabIndex={-1}>
-                          {showPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        <button type="button" onClick={() => setShowPin((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-sky-100/30" tabIndex={-1} aria-label={showPin ? 'Ocultar' : 'Mostrar'}>
+                          {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       </div>
                       <PinDots length={pin.length} />
-                      <p className="text-[11px] text-center text-sky-100/32">Primera vez: use 123456</p>
+                      <p className="text-[10px] text-center text-sky-100/28">Primera vez: use 123456</p>
                     </div>
 
                     {error && (
-                      <p role="alert" className="text-[13px] rounded-xl px-3 py-2.5 text-center text-red-300 bg-red-500/10 border border-red-400/20">
+                      <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300/90 bg-red-500/10 border border-red-400/15">
                         {error}
                       </p>
                     )}
@@ -436,15 +435,15 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                       type="button"
                       onClick={submitPin}
                       disabled={loading || pin.length < 4}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium disabled:opacity-40 text-white"
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium disabled:opacity-40 text-white transition-opacity"
                       style={{
                         background: selectedHasFace
-                          ? 'rgba(255,255,255,0.06)'
-                          : 'linear-gradient(90deg,#0c5ebd,#38bdf8)',
-                        border: selectedHasFace ? '1px solid rgba(255,255,255,0.1)' : undefined,
+                          ? 'rgba(255,255,255,0.05)'
+                          : 'linear-gradient(90deg,#0c5ebd,#2a9ae0)',
+                        border: selectedHasFace ? '1px solid rgba(255,255,255,0.08)' : undefined,
                       }}
                     >
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Acceder <ArrowRight className="w-4 h-4" /></>}
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Acceder <ArrowRight className="w-3.5 h-3.5" /></>}
                     </button>
                   </motion.div>
                 )}
@@ -473,19 +472,19 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                       }}
                       onCancel={() => finishLogin(pendingUser)}
                     />
-                    <p className="text-[11px] text-center text-sky-100/32">
+                    <p className="text-[10px] text-center text-sky-100/28">
                       Cancelar omite el registro facial y entra con contraseña.
                     </p>
                   </motion.div>
                 )}
 
                 {step === 'change' && pendingUser && (
-                  <motion.div key="change" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-4">
-                    <div className="flex items-center gap-2 text-sm font-medium text-white">
-                      <KeyRound className="w-4 h-4 text-sky-400" />
+                  <motion.div key="change" variants={stepVariants} initial="initial" animate="animate" exit="exit" className="space-y-3.5">
+                    <div className="flex items-center gap-2 text-[13px] font-medium text-white">
+                      <KeyRound className="w-3.5 h-3.5 text-sky-400" />
                       Cambiar contraseña
                     </div>
-                    <p className="text-[13px] text-sky-100/50">
+                    <p className="text-[12px] text-sky-100/45">
                       Hola <strong className="text-white">{pendingUser.displayName}</strong>. Cambie la contraseña temporal.
                     </p>
                     <input
@@ -493,7 +492,7 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                       inputMode="numeric"
                       value={newPin}
                       onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                      className="w-full rounded-xl px-4 py-3 text-center tracking-[0.3em] bg-white/5 border border-sky-400/20 text-white outline-none"
+                      className="w-full rounded-xl px-4 py-2.5 text-center tracking-[0.28em] bg-white/[0.04] border border-sky-400/15 text-white outline-none text-[13px]"
                       placeholder="Nueva ····"
                       autoFocus
                     />
@@ -503,19 +502,19 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                       value={newPin2}
                       onChange={(e) => setNewPin2(e.target.value.replace(/\D/g, '').slice(0, 12))}
                       onKeyDown={(e) => e.key === 'Enter' && !loading && submitChange()}
-                      className="w-full rounded-xl px-4 py-3 text-center tracking-[0.3em] bg-white/5 border border-sky-400/20 text-white outline-none"
+                      className="w-full rounded-xl px-4 py-2.5 text-center tracking-[0.28em] bg-white/[0.04] border border-sky-400/15 text-white outline-none text-[13px]"
                       placeholder="Confirmar ····"
                     />
-                    <button type="button" onClick={() => setShowNew((v) => !v)} className="text-[11px] text-sky-300/55">
+                    <button type="button" onClick={() => setShowNew((v) => !v)} className="text-[10px] text-sky-300/50">
                       {showNew ? 'Ocultar' : 'Mostrar'} dígitos
                     </button>
                     {error && (
-                      <p role="alert" className="text-[13px] rounded-xl px-3 py-2 text-center text-red-300 bg-red-500/10 border border-red-400/20">{error}</p>
+                      <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300/90 bg-red-500/10 border border-red-400/15">{error}</p>
                     )}
-                    <button type="button" onClick={submitChange} disabled={loading} className="w-full py-3 rounded-xl text-sm font-medium text-white disabled:opacity-50" style={{ background: 'linear-gradient(90deg,#0c5ebd,#38bdf8)' }}>
+                    <button type="button" onClick={submitChange} disabled={loading} className="w-full py-2.5 rounded-xl text-[13px] font-medium text-white disabled:opacity-50" style={{ background: 'linear-gradient(90deg,#0c5ebd,#2a9ae0)' }}>
                       {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Guardar y continuar'}
                     </button>
-                    <button type="button" onClick={changeLater} className="w-full py-2.5 rounded-xl text-sm text-sky-100/45 border border-white/10">
+                    <button type="button" onClick={changeLater} className="w-full py-2 rounded-xl text-[12px] text-sky-100/40 border border-white/8">
                       Cambiar en otro momento
                     </button>
                   </motion.div>
