@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Shield, Fingerprint, Lock, Zap } from 'lucide-react';
 
@@ -7,55 +6,43 @@ interface BiometricScannerProps {
   active?: boolean;
 }
 
-/** Punto dentro del perfil (aprox. cabeza humana de lado) */
 function insideProfile(x: number, y: number): boolean {
-  // Sistema normalizado en viewBox 0–300 x 0–400, centro ~150,180
-  const nx = (x - 145) / 95;
-  const ny = (y - 175) / 145;
-  // Elipse frontal + restricción de perfil (más volumen a la izquierda)
-  const ellipse = nx * nx * 1.15 + ny * ny * 0.95;
-  if (ellipse > 1) return false;
-  // Recorte perfil (lado derecho más hacia atrás = menos puntos)
-  if (x > 195 && y < 120) return false;
-  if (x > 210) return false;
-  if (y < 40 || y > 340) return false;
+  const nx = (x - 145) / 90;
+  const ny = (y - 175) / 140;
+  if (nx * nx * 1.2 + ny * ny > 1) return false;
+  if (x > 208) return false;
+  if (y < 42 || y > 335) return false;
   return true;
 }
 
 function buildMesh() {
   const nodes: { x: number; y: number }[] = [];
-  const step = 14;
-  for (let y = 48; y <= 330; y += step) {
-    for (let x = 55; x <= 205; x += step) {
-      // jitter orgánico
-      const jx = x + ((y * 13) % 7) - 3;
-      const jy = y + ((x * 11) % 7) - 3;
+  const step = 18;
+  for (let y = 52; y <= 320; y += step) {
+    for (let x = 60; x <= 200; x += step) {
+      const jx = x + ((y * 7) % 5) - 2;
+      const jy = y + ((x * 5) % 5) - 2;
       if (insideProfile(jx, jy)) nodes.push({ x: jx, y: jy });
     }
   }
-
-  // Contorno más denso
-  for (let t = 0; t < Math.PI * 2; t += 0.12) {
-    const rx = 88 + Math.sin(t * 2) * 6;
-    const ry = 130 + Math.cos(t * 3) * 8;
-    const x = 145 + Math.cos(t) * rx * (t > 1.2 && t < 4.5 ? 0.85 : 1);
-    const y = 175 + Math.sin(t) * ry;
-    if (x > 50 && x < 215 && y > 40 && y < 345) nodes.push({ x, y });
+  for (let t = 0; t < Math.PI * 2; t += 0.22) {
+    const x = 145 + Math.cos(t) * (82 + Math.sin(t * 2) * 4);
+    const y = 175 + Math.sin(t) * (122 + Math.cos(t * 2) * 5);
+    if (insideProfile(x, y)) nodes.push({ x, y });
   }
 
   const edges: [number, number][] = [];
-  const maxDist = 22;
   for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const dx = nodes[i].x - nodes[j].x;
-      const dy = nodes[i].y - nodes[j].y;
-      const d = Math.hypot(dx, dy);
-      if (d > 6 && d < maxDist) edges.push([i, j]);
+    let linked = 0;
+    for (let j = i + 1; j < nodes.length && linked < 3; j++) {
+      const d = Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y);
+      if (d > 8 && d < 26) {
+        edges.push([i, j]);
+        linked++;
+      }
     }
   }
-  // limitar aristas por rendimiento visual
-  const limited = edges.length > 900 ? edges.filter((_, i) => i % 2 === 0) : edges;
-  return { nodes, edges: limited };
+  return { nodes, edges };
 }
 
 const MESH = buildMesh();
@@ -63,59 +50,43 @@ const MESH = buildMesh();
 export function BiometricScanner({ progress, active = true }: BiometricScannerProps) {
   const pct = Math.max(0, Math.min(100, Math.round(progress)));
 
-  const scanY = useMemo(() => 80 + (pct / 100) * 220, [pct]);
-
   return (
-    <div className="relative hidden lg:flex flex-col justify-between h-full min-h-[580px] flex-[1.2] pr-2 select-none">
-      {/* Profundidad tipo laboratorio */}
+    <div className="relative hidden lg:flex flex-col justify-between h-full min-h-0 flex-[1.45] max-w-none pr-2 select-none">
       <div
-        className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none"
+        className="absolute inset-0 rounded-3xl pointer-events-none"
         style={{
           background:
-            'radial-gradient(ellipse at 35% 45%, rgba(20,90,180,0.22) 0%, transparent 55%), linear-gradient(160deg, rgba(4,12,28,0.2) 0%, rgba(2,8,20,0.85) 100%)',
+            'radial-gradient(ellipse at 38% 48%, rgba(18,80,160,0.2) 0%, transparent 58%)',
         }}
-      >
-        <div
-          className="absolute inset-0 opacity-[0.12]"
-          style={{
-            backgroundImage:
-              'linear-gradient(rgba(56,180,255,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(56,180,255,0.4) 1px, transparent 1px)',
-            backgroundSize: '36px 36px',
-          }}
-        />
-        {/* Bokeh lab sutil */}
-        <div className="absolute bottom-16 left-10 w-24 h-24 rounded-full opacity-20 blur-2xl bg-sky-500" />
-        <div className="absolute top-20 right-16 w-32 h-32 rounded-full opacity-10 blur-3xl bg-blue-400" />
-      </div>
+      />
 
-      <div className="relative flex-1 flex items-center justify-center z-10">
+      <div className="relative flex-1 flex items-center justify-center z-10 min-h-0">
         <div
-          className="absolute w-[420px] h-[420px] rounded-full"
+          className="absolute w-[360px] h-[360px] rounded-full"
           style={{
-            background: 'radial-gradient(circle, rgba(40,140,255,0.4) 0%, transparent 65%)',
-            filter: 'blur(32px)',
+            background: 'radial-gradient(circle, rgba(40,130,240,0.22) 0%, transparent 68%)',
+            filter: 'blur(28px)',
           }}
         />
 
-        <div className="absolute w-[280px] h-[280px] rounded-full border border-sky-400/20" />
-        <div className="absolute w-[330px] h-[330px] rounded-full border border-sky-400/10" />
+        <div className="absolute w-[260px] h-[260px] rounded-full border border-sky-400/12" />
+        <div className="absolute w-[300px] h-[300px] rounded-full border border-sky-400/8" />
         <motion.div
-          className="absolute w-[390px] h-[390px] rounded-full border border-dashed border-sky-400/15"
+          className="absolute w-[340px] h-[340px] rounded-full border border-dashed border-sky-400/10"
           animate={{ rotate: 360 }}
-          transition={{ duration: 50, repeat: Infinity, ease: 'linear' }}
+          transition={{ duration: 80, repeat: Infinity, ease: 'linear' }}
         />
 
-        {/* Malla facial densa */}
         <svg
           viewBox="0 0 300 400"
-          className="relative z-10 w-[320px] h-[420px]"
-          style={{ filter: 'drop-shadow(0 0 24px rgba(56,180,255,0.5))' }}
+          className="relative z-10 w-[min(300px,32vw)] h-auto max-h-[420px]"
+          style={{ filter: 'drop-shadow(0 0 18px rgba(56,180,255,0.35))' }}
           aria-hidden
         >
           <defs>
             <linearGradient id="meshStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#7dd3fc" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="#0284c7" stopOpacity="0.55" />
+              <stop offset="0%" stopColor="#7dd3fc" stopOpacity="0.75" />
+              <stop offset="100%" stopColor="#0284c7" stopOpacity="0.4" />
             </linearGradient>
           </defs>
 
@@ -127,8 +98,8 @@ export function BiometricScanner({ progress, active = true }: BiometricScannerPr
               x2={MESH.nodes[b].x}
               y2={MESH.nodes[b].y}
               stroke="url(#meshStroke)"
-              strokeWidth="0.55"
-              opacity="0.55"
+              strokeWidth="0.5"
+              opacity="0.45"
             />
           ))}
 
@@ -137,93 +108,76 @@ export function BiometricScanner({ progress, active = true }: BiometricScannerPr
               key={`n${i}`}
               cx={n.x}
               cy={n.y}
-              r={i % 5 === 0 ? 1.8 : 1.1}
+              r={i % 6 === 0 ? 1.5 : 1}
               fill="#7dd3fc"
-              opacity={i % 5 === 0 ? 0.95 : 0.55}
+              opacity={i % 6 === 0 ? 0.85 : 0.4}
             />
           ))}
 
-          {/* Contorno perfil reforzado */}
           <path
-            d="M155 42
-               C 100 48, 58 100, 54 160
-               C 50 215, 66 265, 98 308
-               C 118 332, 138 348, 158 358
-               L 168 312
-               C 148 290, 132 255, 128 210
-               C 124 155, 145 105, 182 84
-               C 200 72, 214 58, 212 46
-               C 198 36, 175 38, 155 42 Z"
-            fill="rgba(56,180,255,0.06)"
+            d="M155 44
+               C 102 50, 60 102, 56 160
+               C 52 214, 68 262, 100 304
+               C 120 328, 140 344, 158 354
+               L 168 308
+               C 148 286, 132 252, 128 208
+               C 124 154, 146 106, 182 86
+               C 200 74, 212 58, 210 48
+               C 196 38, 174 40, 155 44 Z"
+            fill="rgba(56,180,255,0.05)"
             stroke="#38bdf8"
-            strokeWidth="1.4"
-            opacity="0.85"
+            strokeWidth="1.2"
+            opacity="0.75"
           />
 
-          {/* Ojo + rayo */}
-          <circle cx="152" cy="160" r="5" fill="#e0f2fe" />
-          <circle cx="152" cy="160" r="9" fill="none" stroke="#38bdf8" strokeWidth="0.9" opacity="0.6" />
+          <circle cx="152" cy="160" r="4" fill="#e0f2fe" opacity="0.9" />
+          <circle cx="152" cy="160" r="8" fill="none" stroke="#38bdf8" strokeWidth="0.7" opacity="0.45" />
           <motion.line
             x1="152"
             y1="160"
-            x2="298"
+            x2="290"
             y2="160"
             stroke="#38bdf8"
-            strokeWidth="2.4"
+            strokeWidth="1.8"
             strokeLinecap="round"
-            animate={{
-              opacity: active ? [0.4, 1, 0.4] : 0.5,
-            }}
-            transition={{ duration: 1.7, repeat: Infinity }}
-            style={{ filter: 'drop-shadow(0 0 8px #38bdf8)' }}
-          />
-
-          {/* Línea de barrido vertical sutil */}
-          <motion.line
-            x1="70"
-            x2="210"
-            y1={scanY}
-            y2={scanY}
-            stroke="#7dd3fc"
-            strokeWidth="1"
-            opacity="0.35"
+            animate={{ opacity: active ? [0.35, 0.85, 0.35] : 0.4 }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
           />
         </svg>
 
-        {/* Panel % */}
         <div
-          className="absolute left-1 top-[24%] z-20 rounded-xl px-4 py-3.5"
+          className="absolute left-2 top-[22%] z-20 rounded-xl px-3.5 py-3"
           style={{
-            background: 'rgba(6, 16, 36, 0.88)',
-            border: '1px solid rgba(56,180,255,0.45)',
-            boxShadow: '0 0 32px rgba(56,180,255,0.2)',
-            backdropFilter: 'blur(14px)',
-            minWidth: 152,
+            background: 'rgba(6, 16, 36, 0.82)',
+            border: '1px solid rgba(56,180,255,0.32)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+            backdropFilter: 'blur(12px)',
+            minWidth: 140,
           }}
         >
-          <p className="text-[10px] font-medium tracking-[0.16em] uppercase text-sky-300/90 mb-1">
+          <p className="text-[9px] font-medium tracking-[0.14em] uppercase text-sky-300/85 mb-1">
             Escaneando rostro
           </p>
-          <p className="text-[28px] font-semibold text-white tabular-nums leading-none">{pct}%</p>
-          <div className="mt-2.5 h-[5px] w-[124px] rounded-full overflow-hidden bg-white/10">
+          <p className="text-[24px] font-semibold text-white tabular-nums leading-none">{pct}%</p>
+          <div className="mt-2 h-1 w-[112px] rounded-full overflow-hidden bg-white/10">
             <div
-              className="h-full rounded-full transition-all duration-300"
+              className="h-full rounded-full transition-[width] duration-500 ease-out"
               style={{
                 width: `${pct}%`,
-                background: 'linear-gradient(90deg,#0369a1,#38bdf8,#7dd3fc)',
+                background: 'linear-gradient(90deg,#0369a1,#38bdf8)',
               }}
             />
           </div>
-          <div className="flex items-center gap-1.5 mt-2.5">
-            <Shield className="w-3 h-3 text-sky-400" />
-            <span className="text-[10px] tracking-[0.12em] uppercase text-sky-100/75">
+          <div className="flex items-center gap-1.5 mt-2">
+            <Shield className="w-2.5 h-2.5 text-sky-400/90" />
+            <span className="text-[9px] tracking-[0.1em] uppercase text-sky-100/65">
               Verificando identidad…
             </span>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-2.5 pb-1 relative z-10">
+      <div className="grid grid-cols-4 gap-2 pb-0 relative z-10">
         {[
           { Icon: Shield, label: 'Seguridad', sub: 'Avanzada' },
           { Icon: Fingerprint, label: 'Biometría', sub: 'Facial' },
@@ -232,15 +186,15 @@ export function BiometricScanner({ progress, active = true }: BiometricScannerPr
         ].map(({ Icon, label, sub }) => (
           <div
             key={label}
-            className="rounded-xl px-2 py-3.5 text-center"
+            className="rounded-xl px-1.5 py-3 text-center"
             style={{
-              background: 'rgba(8, 18, 40, 0.78)',
-              border: '1px solid rgba(56,180,255,0.22)',
+              background: 'rgba(8, 18, 40, 0.7)',
+              border: '1px solid rgba(56,180,255,0.16)',
             }}
           >
-            <Icon className="w-4 h-4 mx-auto mb-1.5 text-sky-400" />
-            <p className="text-[10px] font-semibold tracking-[0.1em] uppercase text-sky-100/95">{label}</p>
-            <p className="text-[9px] text-sky-200/45 mt-0.5">{sub}</p>
+            <Icon className="w-3.5 h-3.5 mx-auto mb-1 text-sky-400/90" strokeWidth={1.75} />
+            <p className="text-[9px] font-semibold tracking-[0.08em] uppercase text-sky-100/90">{label}</p>
+            <p className="text-[8px] text-sky-200/40 mt-0.5">{sub}</p>
           </div>
         ))}
       </div>
