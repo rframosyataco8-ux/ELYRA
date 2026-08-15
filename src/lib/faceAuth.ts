@@ -2,14 +2,22 @@
  * Biometría facial local avanzada (estilo Face ID, sin hardware TrueDepth).
  * - Descriptor normalizado + gradientes (textura)
  * - Liveness por micro-movimiento entre fotogramas
+ * - Anti-spoofing 3D (pantalla, foto, movimiento rígido)
  * - Control de calidad (nitidez, tamaño, centrado)
  * - Plantilla multi-muestra + matching híbrido L2/coseno
  */
 
+import {
+  analyzeSpoofFrame,
+  resetAntiSpoofState,
+  resetSpoofGray,
+  hasEnoughSpoofHistory,
+  type SpoofSignals,
+} from '@/lib/faceAntiSpoof';
+
 export type FaceTemplate = {
   userId: string;
   descriptor: number[];
-  /** Variantes adicionales para robustez ante ángulo/luz */
   variants?: number[][];
   thumb?: string;
   registeredAt: string;
@@ -22,9 +30,7 @@ type FaceStore = Record<string, FaceTemplate>;
 const STORAGE_KEY = 'elyra_face_templates_v3';
 const LEGACY_KEYS = ['elyra_face_templates_v2', 'elyra_face_templates_v1'];
 const GRID = 28;
-/** Umbral L2 normalizado (más bajo = más estricto) */
 const MATCH_THRESHOLD = 0.088;
-/** Similitud coseno mínima */
 const COSINE_MIN = 0.82;
 
 function loadStore(): FaceStore {
@@ -35,7 +41,6 @@ function loadStore(): FaceStore {
       const legacy = localStorage.getItem(key);
       if (legacy) {
         const parsed = JSON.parse(legacy) as FaceStore;
-        // migrar suavemente
         const migrated: FaceStore = {};
         for (const [id, t] of Object.entries(parsed)) {
           migrated[id] = { ...t, version: 3, variants: t.variants ?? [] };
@@ -161,7 +166,6 @@ function luminanceVariance(data: Uint8ClampedArray): number {
   return sum2 / n - mean * mean;
 }
 
-/** Gradiente medio ≈ nitidez (Laplacian aproximado) */
 function sharpnessScore(data: Uint8ClampedArray, size: number): number {
   let acc = 0;
   let n = 0;
@@ -184,10 +188,7 @@ export function assessFraming(box: FaceBox, videoW: number, videoH: number): Qua
   const cy = box.y + box.height / 2;
   const centered =
     1 -
-    Math.min(
-      1,
-      Math.hypot(cx / videoW - 0.5, cy / videoH - 0.48) / 0.35,
-    );
+    Math.min(1, Math.hypot(cx / videoW - 0.5, cy / videoH - 0.48) / 0.35);
 
   if (faceRatio < 0.06) {
     return { ok: false, sharpness: 0, faceRatio, centered, message: 'Acérquese a la cámara' };
@@ -201,11 +202,12 @@ export function assessFraming(box: FaceBox, videoW: number, videoH: number): Qua
   return { ok: true, sharpness: 0, faceRatio, centered };
 }
 
-/** Buffer de frames previos para liveness (micro-movimiento). */
 let prevFrameGray: Float32Array | null = null;
 
 export function resetLivenessState() {
   prevFrameGray = null;
+  resetAntiSpoofState();
+  resetSpoofGray();
 }
 
 function frameMotionEnergy(data: Uint8ClampedArray, size: number): number {
@@ -234,11 +236,17 @@ export type ExtractResult = {
   box: FaceBox;
   motion: number;
   framing: QualityReport;
+  spoof: SpoofSignals;
 };
 
 export async function extractDescriptorFromVideo(
   video: HTMLVideoElement,
-  opts?: { requireMotion?: boolean; minMotion?: number },
+  opts?: {
+    requireMotion?: boolean;
+    minMotion?: number;
+    /** Si true, exige pasar anti-spoof cuando hay historial suficiente */
+    enforceSpoof?: boolean;
+  },
 ): Promise<ExtractResult> {
   const w = video.videoWidth || 640;
   const h = video.videoHeight || 480;
@@ -263,6 +271,7 @@ export async function extractDescriptorFromVideo(
   const variance = luminanceVariance(data);
   const sharp = sharpnessScore(data, size);
   const motion = frameMotionEnergy(data, size);
+  const spoof = analyzeSpoofFrame(data, size, box, motion);
 
   if (variance < 160 || sharp < 4.5) {
     throw new Error('Rostro poco nítido. Mejore la iluminación.');
@@ -270,6 +279,10 @@ export async function extractDescriptorFromVideo(
 
   if (opts?.requireMotion && motion < (opts.minMotion ?? 1.2)) {
     throw new Error('Mueva ligeramente la cabeza (prueba de vida).');
+  }
+
+  if (opts?.enforceSpoof && hasEnoughSpoofHistory() && !spoof.ok) {
+    throw new Error(spoof.reason || 'Detección anti-spoofing: gire la cabeza (3D).');
   }
 
   const cell = size / GRID;
@@ -311,7 +324,6 @@ export async function extractDescriptorFromVideo(
     }
   }
 
-  // Histograma local de bordes (4 cuadrantes) — más robustez a luz
   const hist: number[] = [0, 0, 0, 0];
   for (let gy = 0; gy < GRID - 1; gy++) {
     for (let gx = 0; gx < GRID - 1; gx++) {
@@ -327,9 +339,10 @@ export async function extractDescriptorFromVideo(
 
   const quality = Math.min(
     1,
-    (Math.min(variance, 2500) / 2500) * 0.45 +
-      (Math.min(sharp, 40) / 40) * 0.35 +
-      framing.centered * 0.2,
+    (Math.min(variance, 2500) / 2500) * 0.4 +
+      (Math.min(sharp, 40) / 40) * 0.3 +
+      framing.centered * 0.15 +
+      spoof.livenessScore * 0.15,
   );
 
   return {
@@ -338,6 +351,7 @@ export async function extractDescriptorFromVideo(
     box,
     motion,
     framing: { ...framing, sharpness: sharp },
+    spoof,
   };
 }
 
@@ -411,10 +425,9 @@ export function registerFace(
 ): FaceTemplate {
   if (descriptors.length < 3) throw new Error('Se requieren al menos 3 muestras del rostro.');
   if (!samplesAreDiverse(descriptors)) {
-    throw new Error('Mueva ligeramente la cabeza entre capturas (prueba de vida).');
+    throw new Error('Mueva ligeramente la cabeza entre capturas (prueba de vida 3D).');
   }
   const primary = averageDescriptors(descriptors);
-  // Guardar hasta 3 variantes (primera, media, última) para matching robusto
   const variants = [
     descriptors[0],
     descriptors[Math.floor(descriptors.length / 2)],
@@ -486,13 +499,17 @@ export async function verifyFaceMulti(
   userId: string,
   video: HTMLVideoElement,
   shots = 3,
-): Promise<FaceMatchResult & { avgQuality: number }> {
+): Promise<FaceMatchResult & { avgQuality: number; spoofOk: boolean }> {
   const results: FaceMatchResult[] = [];
   let qualitySum = 0;
+  let spoofOk = true;
   for (let i = 0; i < shots; i++) {
     await new Promise((r) => setTimeout(r, 180));
-    const { descriptor, quality } = await extractDescriptorFromVideo(video);
+    const { descriptor, quality, spoof } = await extractDescriptorFromVideo(video, {
+      enforceSpoof: true,
+    });
     qualitySum += quality;
+    if (!spoof.ok && hasEnoughSpoofHistory()) spoofOk = false;
     results.push(verifyFace(userId, descriptor));
   }
   const okCount = results.filter((r) => r.ok).length;
@@ -500,11 +517,15 @@ export async function verifyFaceMulti(
   const avgCos = results.reduce((a, r) => a + r.cosine, 0) / results.length;
   const confidence = Math.round(results.reduce((a, r) => a + r.confidence, 0) / results.length);
   return {
-    ok: okCount >= Math.ceil(shots * 0.66),
+    ok: spoofOk && okCount >= Math.ceil(shots * 0.66),
     distance: avgDist,
     cosine: avgCos,
     confidence,
     threshold: MATCH_THRESHOLD,
     avgQuality: qualitySum / shots,
+    spoofOk,
   };
 }
+
+export type { SpoofSignals };
+export { hasEnoughSpoofHistory };
