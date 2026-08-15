@@ -9,6 +9,7 @@ import {
   registerFace,
   verifyFace,
   resetLivenessState,
+  hasEnoughSpoofHistory,
 } from '@/lib/faceAuth';
 import { FaceMeshOverlay } from '@/components/FaceMeshOverlay';
 import { captureError } from '@/lib/errors';
@@ -25,7 +26,7 @@ interface FaceAuthPanelProps {
 
 type Phase = 'permission' | 'looking' | 'scanning' | 'done' | 'fail' | 'error';
 
-/** Desbloqueo facial tipo smartphone con liveness y UI premium. */
+/** Desbloqueo facial con liveness + anti-spoofing 3D. */
 export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: FaceAuthPanelProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -39,6 +40,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
   const [hint, setHint] = useState('');
   const [progress, setProgress] = useState(0);
   const [confidence, setConfidence] = useState<number | null>(null);
+  const [depthPct, setDepthPct] = useState<number | null>(null);
   const [error, setError] = useState('');
 
   const cleanup = useCallback(() => {
@@ -71,15 +73,18 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     resetLivenessState();
     setPhase('looking');
     setMessage('Mire a la cámara');
-    setHint('Mantenga el rostro dentro del círculo');
+    setHint('Gire un poco la cabeza para validar profundidad 3D');
     setProgress(6);
     setError('');
     setConfidence(null);
+    setDepthPct(null);
 
-    const maxAttempts = 32;
+    const maxAttempts = 36;
     let matched = 0;
+    let spoofPasses = 0;
     let attempts = 0;
     const needMatch = 2;
+    const needSpoof = 2;
 
     while (aliveRef.current && loopRef.current && attempts < maxAttempts) {
       attempts++;
@@ -90,36 +95,53 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       }
 
       setPhase('scanning');
-      setProgress(Math.min(90, 8 + attempts * 2.5));
+      setProgress(Math.min(90, 8 + attempts * 2.2));
 
       try {
-        const { descriptor, quality } = await extractDescriptorFromVideo(video);
+        const { descriptor, quality, spoof } = await extractDescriptorFromVideo(video, {
+          enforceSpoof: true,
+        });
         const result = verifyFace(userId, descriptor);
         setConfidence(result.confidence);
+        setDepthPct(Math.round(spoof.depthProxy * 100));
 
-        if (result.ok && quality > 0.35) {
+        if (hasEnoughSpoofHistory() && spoof.ok) {
+          spoofPasses++;
+        } else if (hasEnoughSpoofHistory() && !spoof.ok) {
+          spoofPasses = Math.max(0, spoofPasses - 1);
+          matched = 0;
+          setMessage('Verificando profundidad');
+          setHint(spoof.reason || 'Gire ligeramente la cabeza');
+          await new Promise((r) => setTimeout(r, 200));
+          continue;
+        }
+
+        if (result.ok && quality > 0.35 && spoofPasses >= needSpoof) {
           matched++;
-          setProgress(Math.min(99, 50 + matched * 22));
-          setMessage(matched >= needMatch ? 'Identidad confirmada' : 'Un momento…');
-          setHint(matched >= needMatch ? '' : 'No se mueva');
+          setProgress(Math.min(99, 55 + matched * 20));
+          setMessage(matched >= needMatch ? 'Identidad confirmada' : 'Validando…');
+          setHint('Rostro 3D verificado');
           if (matched >= needMatch) {
             finishOk('Desbloqueado');
             loopRef.current = false;
             return;
           }
+        } else if (result.ok && quality > 0.35) {
+          setMessage('Comprobando que es real…');
+          setHint('Mueva un poco la cabeza');
         } else {
           if (matched > 0 && result.confidence < 42) matched = 0;
           if (result.confidence > 50) {
             setMessage('Casi…');
-            setHint('Centre el rostro y mire de frente');
+            setHint('Centre el rostro de frente');
           } else {
             setMessage('Buscando rostro');
-            setHint('Acérquese y mejore la luz');
+            setHint('Acérquese · buena luz · leve movimiento');
           }
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Ajuste la posición';
-        setMessage('Ajuste el rostro');
+        setMessage('Anti-spoofing');
         setHint(msg);
       }
 
@@ -130,7 +152,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       loopRef.current = false;
       setPhase('fail');
       setProgress(0);
-      setError('No se pudo verificar. Reintente o use el PIN.');
+      setError('No se pudo verificar (identidad o profundidad 3D). Use el PIN.');
       setMessage('No reconocido');
       setHint('');
     }
@@ -143,15 +165,15 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     resetLivenessState();
     setPhase('scanning');
     setMessage('Registre su rostro');
-    setHint('Gire un poco la cabeza entre capturas');
+    setHint('Gire la cabeza — se valida profundidad 3D');
     setError('');
     setConfidence(null);
+    setDepthPct(null);
 
     const need = 5;
     let tries = 0;
-    let motionGate = false;
 
-    while (aliveRef.current && loopRef.current && samplesRef.current.length < need && tries < 48) {
+    while (aliveRef.current && loopRef.current && samplesRef.current.length < need && tries < 52) {
       tries++;
       const video = videoRef.current;
       if (!video || video.readyState < 2) {
@@ -160,14 +182,14 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       }
 
       try {
-        // Tras 2 muestras, exigir micro-movimiento (anti-foto)
-        const requireMotion = samplesRef.current.length >= 2 || motionGate;
-        const { descriptor, box, motion, quality } = await extractDescriptorFromVideo(video, {
+        const requireMotion = samplesRef.current.length >= 1;
+        const { descriptor, box, quality, spoof } = await extractDescriptorFromVideo(video, {
           requireMotion: requireMotion && samplesRef.current.length < need - 1,
-          minMotion: 1.1,
+          minMotion: 1.05,
+          enforceSpoof: samplesRef.current.length >= 2,
         });
 
-        if (motion > 1.5) motionGate = true;
+        setDepthPct(Math.round(spoof.depthProxy * 100));
 
         if (quality < 0.28) {
           setHint('Mejore la iluminación');
@@ -179,14 +201,20 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         samplesRef.current.push(descriptor);
         const n = samplesRef.current.length;
         setProgress(Math.round((n / need) * 100));
-        setMessage(n < need ? `Escaneando ${n}/${need}` : 'Guardando plantilla…');
-        setHint(n === 1 ? 'Ahora gire ligeramente a la izquierda' : n === 3 ? 'Ahora un poco a la derecha' : 'Mantenga la mirada');
+        setMessage(n < need ? `Escaneando 3D ${n}/${need}` : 'Guardando plantilla…');
+        setHint(
+          n === 1
+            ? 'Gire un poco a la izquierda'
+            : n === 3
+              ? 'Ahora un poco a la derecha'
+              : 'Mantenga movimiento natural',
+        );
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Centre el rostro';
         setHint(msg);
       }
 
-      await new Promise((r) => setTimeout(r, 280));
+      await new Promise((r) => setTimeout(r, 260));
     }
 
     if (!aliveRef.current || !loopRef.current) return;
@@ -247,6 +275,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     setError('');
     setProgress(0);
     setConfidence(null);
+    setDepthPct(null);
     samplesRef.current = [];
     resetLivenessState();
     if (mode === 'verify') void runVerifyLoop();
@@ -265,14 +294,12 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       <div className="text-center space-y-0.5">
         <div className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-sky-300/50 font-medium">
           <ShieldCheck className="w-3 h-3" />
-          {mode === 'register' ? 'Registro biométrico' : 'Face Unlock'}
+          {mode === 'register' ? 'Registro 3D' : 'Face Unlock · Anti-spoof'}
         </div>
         <p className="text-[15px] font-semibold text-white tracking-tight">{userName}</p>
       </div>
 
-      {/* Escáner circular premium */}
       <div className="relative mx-auto" style={{ width: 236, height: 236 }}>
-        {/* Halo exterior */}
         <div
           className="absolute inset-[-6px] rounded-full pointer-events-none"
           style={{
@@ -305,7 +332,6 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
             <FaceMeshOverlay videoRef={videoRef} active mirrored />
           )}
 
-          {/* Viñeta suave */}
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
@@ -344,7 +370,6 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           </AnimatePresence>
         </div>
 
-        {/* Anillo de progreso SVG */}
         {(phase === 'scanning' || phase === 'looking') && (
           <svg
             className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] -rotate-90 pointer-events-none"
@@ -371,7 +396,6 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           </svg>
         )}
 
-        {/* Pulso suave al buscar */}
         {phase === 'looking' && (
           <motion.div
             className="absolute inset-0 rounded-full border border-sky-400/30 pointer-events-none"
@@ -384,9 +408,10 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       <div className="text-center space-y-1 min-h-[3rem]">
         <p className="text-[15px] font-medium text-white tracking-tight">{message}</p>
         {hint && <p className="text-[12px] text-sky-100/45">{hint}</p>}
-        {confidence != null && phase === 'scanning' && (
-          <p className="text-[11px] text-sky-200/50 tabular-nums">Confianza {confidence}%</p>
-        )}
+        <div className="flex items-center justify-center gap-3 text-[11px] text-sky-200/45 tabular-nums pt-0.5">
+          {confidence != null && phase === 'scanning' && <span>ID {confidence}%</span>}
+          {depthPct != null && phase === 'scanning' && <span>Profundidad {depthPct}%</span>}
+        </div>
       </div>
 
       {error && (
@@ -432,7 +457,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       </div>
 
       <p className="text-[10px] text-center text-sky-100/22 leading-relaxed">
-        Liveness · multi-plantilla · matching híbrido · datos solo en este equipo
+        Anti-spoof 3D · textura · parallax · flujo regional · solo en este equipo
       </p>
     </div>
   );
