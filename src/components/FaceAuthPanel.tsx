@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, ScanFace, Check, X } from 'lucide-react';
+import { Loader2, Check, X, Lock } from 'lucide-react';
 import {
   requestCameraStream,
   stopStream,
@@ -22,31 +22,154 @@ interface FaceAuthPanelProps {
   onCancel: () => void;
 }
 
-const REGISTER_SAMPLES = 4;
-const VERIFY_SAMPLES = 5;
-
+/** Desbloqueo facial tipo smartphone: abre cámara y escanea solo hasta reconocer. */
 export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: FaceAuthPanelProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const samplesRef = useRef<number[][]>([]);
   const lastBoxRef = useRef<{ x: number; y: number; width: number; height: number } | undefined>();
-  const scanningRef = useRef(false);
+  const aliveRef = useRef(true);
+  const loopRef = useRef(false);
 
-  const [phase, setPhase] = useState<'permission' | 'ready' | 'scanning' | 'done' | 'error'>('permission');
-  const [message, setMessage] = useState('Solicitando permiso de cámara…');
+  const [phase, setPhase] = useState<'permission' | 'looking' | 'scanning' | 'done' | 'fail' | 'error'>('permission');
+  const [message, setMessage] = useState('Activando cámara…');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
-  const [confidence, setConfidence] = useState<number | null>(null);
 
   const cleanup = useCallback(() => {
-    scanningRef.current = false;
+    aliveRef.current = false;
+    loopRef.current = false;
     stopStream(streamRef.current);
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
   }, []);
 
+  const finishOk = useCallback(
+    (msg: string) => {
+      setPhase('done');
+      setMessage(msg);
+      setProgress(100);
+      stopStream(streamRef.current);
+      streamRef.current = null;
+      window.setTimeout(() => {
+        if (aliveRef.current) onSuccess();
+      }, 480);
+    },
+    [onSuccess],
+  );
+
+  /** Bucle continuo de verificación (como Face ID). */
+  const runVerifyLoop = useCallback(async () => {
+    if (loopRef.current) return;
+    loopRef.current = true;
+    setPhase('looking');
+    setMessage('Mire a la cámara');
+    setProgress(8);
+    setError('');
+
+    const maxAttempts = 28; // ~8–10 s
+    let matched = 0;
+    let attempts = 0;
+    const needMatch = 2;
+
+    while (aliveRef.current && loopRef.current && attempts < maxAttempts) {
+      attempts++;
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+
+      setPhase('scanning');
+      setProgress(Math.min(92, 10 + attempts * 3));
+
+      try {
+        const { descriptor } = await extractDescriptorFromVideo(video);
+        const result = verifyFace(userId, descriptor);
+
+        if (result.ok) {
+          matched++;
+          setProgress(Math.min(99, 55 + matched * 20));
+          setMessage(matched >= needMatch ? 'Reconocido' : 'Mantenga la mirada…');
+          if (matched >= needMatch) {
+            finishOk('Desbloqueado');
+            loopRef.current = false;
+            return;
+          }
+        } else {
+          // no resetear matched a 0 del todo: tolerancia ligera
+          if (matched > 0 && result.confidence < 40) matched = 0;
+          setMessage(result.confidence > 45 ? 'Casi… centre el rostro' : 'Mire a la cámara');
+        }
+      } catch {
+        setMessage('Acerque el rostro y mejore la luz');
+      }
+
+      await new Promise((r) => setTimeout(r, 220));
+    }
+
+    if (aliveRef.current && loopRef.current) {
+      loopRef.current = false;
+      setPhase('fail');
+      setProgress(0);
+      setError('No se pudo verificar el rostro. Use el PIN o reintente.');
+      setMessage('No reconocido');
+    }
+  }, [userId, finishOk]);
+
+  /** Registro: varias capturas automáticas. */
+  const runRegisterLoop = useCallback(async () => {
+    if (loopRef.current) return;
+    loopRef.current = true;
+    samplesRef.current = [];
+    setPhase('scanning');
+    setMessage('Gire un poco la cabeza…');
+    setError('');
+
+    const need = 4;
+    let tries = 0;
+
+    while (aliveRef.current && loopRef.current && samplesRef.current.length < need && tries < 40) {
+      tries++;
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+
+      try {
+        const { descriptor, box } = await extractDescriptorFromVideo(video);
+        lastBoxRef.current = box;
+        samplesRef.current.push(descriptor);
+        const n = samplesRef.current.length;
+        setProgress(Math.round((n / need) * 100));
+        setMessage(n < need ? `Registrando… ${n}/${need}` : 'Guardando…');
+      } catch {
+        setMessage('Centre el rostro con buena luz');
+      }
+
+      await new Promise((r) => setTimeout(r, 320));
+    }
+
+    if (!aliveRef.current || !loopRef.current) return;
+
+    try {
+      const video = videoRef.current;
+      const thumb = video ? captureThumbFromVideo(video, lastBoxRef.current) : undefined;
+      registerFace(userId, samplesRef.current, thumb);
+      finishOk('Rostro guardado');
+    } catch (e) {
+      loopRef.current = false;
+      setPhase('fail');
+      setError(captureError(e, 'No se pudo registrar el rostro.'));
+      setMessage('Error al registrar');
+    }
+  }, [userId, finishOk]);
+
   useEffect(() => {
+    aliveRef.current = true;
     let cancelled = false;
+
     (async () => {
       try {
         const stream = await requestCameraStream();
@@ -59,212 +182,156 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
-        setPhase('ready');
-        setMessage(
-          mode === 'register'
-            ? 'Mire a la cámara. El sistema escaneará su rostro en varios fotogramas.'
-            : 'Centre el rostro. Se realizará un escaneo continuo para verificar identidad.',
-        );
+        // Pequeña pausa para estabilizar el stream (como el teléfono)
+        await new Promise((r) => setTimeout(r, 350));
+        if (cancelled || !aliveRef.current) return;
+
+        if (mode === 'verify') {
+          void runVerifyLoop();
+        } else {
+          setPhase('looking');
+          setMessage('Centre el rostro para registrar');
+          void runRegisterLoop();
+        }
       } catch (e) {
         setPhase('error');
         setError(captureError(e, 'No se pudo acceder a la cámara.'));
+        setMessage('Cámara no disponible');
       }
     })();
+
     return () => {
       cancelled = true;
       cleanup();
     };
-  }, [mode, cleanup]);
+  }, [mode, cleanup, runVerifyLoop, runRegisterLoop]);
 
-  /** Escaneo real: varias capturas en el tiempo, no una sola foto */
-  const runScan = async () => {
-    if (scanningRef.current) return;
-    const video = videoRef.current;
-    if (!video || video.readyState < 2) {
-      setError('La cámara aún no está lista.');
-      return;
-    }
-
-    scanningRef.current = true;
+  const retry = () => {
     setError('');
-    setConfidence(null);
-    setPhase('scanning');
-    samplesRef.current = [];
     setProgress(0);
-
-    const total = mode === 'register' ? REGISTER_SAMPLES : VERIFY_SAMPLES;
-
-    try {
-      for (let i = 0; i < total; i++) {
-        if (!scanningRef.current) return;
-        setMessage(
-          mode === 'register'
-            ? `Escaneando rostro… muestra ${i + 1}/${total}`
-            : `Verificando identidad… lectura ${i + 1}/${total}`,
-        );
-        setProgress(Math.round(((i + 0.35) / total) * 100));
-
-        // pequeña variación temporal (movimiento natural)
-        await new Promise((r) => setTimeout(r, 280 + i * 40));
-
-        const { descriptor, box } = await extractDescriptorFromVideo(video);
-        lastBoxRef.current = box;
-        samplesRef.current.push(descriptor);
-        setProgress(Math.round(((i + 1) / total) * 100));
-      }
-
-      if (mode === 'register') {
-        const thumb = captureThumbFromVideo(video, lastBoxRef.current);
-        registerFace(userId, samplesRef.current, thumb);
-        setPhase('done');
-        setMessage('Rostro registrado con escaneo multi-fotograma.');
-        cleanup();
-        window.setTimeout(() => onSuccess(), 650);
-        return;
-      }
-
-      // Verificación: mayoría de lecturas deben coincidir
-      const results = samplesRef.current.map((d) => verifyFace(userId, d));
-      const okCount = results.filter((r) => r.ok).length;
-      const avgConf = Math.round(
-        results.reduce((a, r) => a + r.confidence, 0) / Math.max(1, results.length),
-      );
-      setConfidence(avgConf);
-
-      if (okCount < Math.ceil(total * 0.6)) {
-        setPhase('ready');
-        setProgress(0);
-        setError(
-          `Rostro no reconocido (confianza ${avgConf}%). Mejore la luz o use el PIN.`,
-        );
-        scanningRef.current = false;
-        return;
-      }
-
-      setPhase('done');
-      setMessage(`Identidad verificada · confianza ${avgConf}%`);
-      cleanup();
-      window.setTimeout(() => onSuccess(), 550);
-    } catch (e) {
-      setPhase('ready');
-      setProgress(0);
-      setError(captureError(e, 'Error durante el escaneo facial.'));
-      scanningRef.current = false;
-    }
+    samplesRef.current = [];
+    if (mode === 'verify') void runVerifyLoop();
+    else void runRegisterLoop();
   };
 
   return (
-    <div className="space-y-3.5">
-      <div className="flex items-center gap-2 text-sm font-medium text-white">
-        <ScanFace className="w-4 h-4 text-sky-400" />
-        <span>
-          {mode === 'register' ? 'Registrar rostro' : 'Acceso facial'} · {userName}
-        </span>
+    <div className="space-y-4">
+      <div className="text-center">
+        <p className="text-[13px] font-medium text-white">{userName}</p>
+        <p className="text-[11px] text-sky-100/40 mt-0.5">
+          {mode === 'register' ? 'Registrar Face ID' : 'Desbloqueo facial'}
+        </p>
       </div>
 
-      <div
-        className="relative mx-auto rounded-2xl overflow-hidden bg-black"
-        style={{
-          width: '100%',
-          maxWidth: 320,
-          aspectRatio: '4/3',
-          border: '1px solid rgba(56,180,255,0.35)',
-          boxShadow: '0 0 28px rgba(56,180,255,0.12)',
-        }}
-      >
-        <video
-          ref={videoRef}
-          className="w-full h-full object-cover"
-          playsInline
-          muted
-          style={{ transform: 'scaleX(-1)' }}
-        />
+      {/* Vista circular tipo móvil */}
+      <div className="relative mx-auto" style={{ width: 220, height: 220 }}>
+        <div
+          className="absolute inset-0 rounded-full overflow-hidden"
+          style={{
+            border:
+              phase === 'done'
+                ? '2.5px solid #3fb950'
+                : phase === 'fail' || phase === 'error'
+                  ? '2.5px solid rgba(248,81,73,0.7)'
+                  : '2.5px solid rgba(56,180,255,0.55)',
+            boxShadow:
+              phase === 'done'
+                ? '0 0 32px rgba(63,185,80,0.35)'
+                : '0 0 28px rgba(56,180,255,0.2)',
+          }}
+        >
+          <video
+            ref={videoRef}
+            className="w-full h-full object-cover"
+            playsInline
+            muted
+            style={{ transform: 'scaleX(-1)' }}
+          />
+          {(phase === 'looking' || phase === 'scanning') && (
+            <FaceMeshOverlay videoRef={videoRef} active mirrored />
+          )}
 
-        {/* Malla de landmarks en vivo */}
-        {(phase === 'ready' || phase === 'scanning') && (
-          <FaceMeshOverlay videoRef={videoRef} active mirrored />
-        )}
-
-        {phase === 'permission' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70">
-            <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
-            <p className="text-xs text-white/80">Permiso de cámara…</p>
-          </div>
-        )}
-
-        {phase === 'done' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/45">
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="w-14 h-14 rounded-full flex items-center justify-center bg-emerald-500"
-            >
-              <Check className="w-7 h-7 text-white" />
-            </motion.div>
-          </div>
-        )}
-
-        {phase === 'scanning' && (
-          <div className="absolute bottom-0 left-0 right-0 px-3 pb-2.5 pt-6 bg-gradient-to-t from-black/80 to-transparent">
-            <div className="h-1 rounded-full bg-white/15 overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-300"
-                style={{
-                  width: `${progress}%`,
-                  background: 'linear-gradient(90deg,#0369a1,#38bdf8)',
-                }}
-              />
+          {phase === 'permission' && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/75">
+              <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
             </div>
-            <p className="text-[10px] text-center text-sky-100/80 mt-1.5 tabular-nums">
-              Escaneando {progress}%
-            </p>
-          </div>
+          )}
+
+          {phase === 'done' && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+              <motion.div
+                initial={{ scale: 0.6, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 18 }}
+                className="w-14 h-14 rounded-full flex items-center justify-center bg-emerald-500"
+              >
+                <Check className="w-8 h-8 text-white" strokeWidth={2.5} />
+              </motion.div>
+            </div>
+          )}
+        </div>
+
+        {/* Anillo de progreso sutil */}
+        {(phase === 'scanning' || phase === 'looking') && (
+          <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(56,180,255,0.12)" strokeWidth="1.5" />
+            <circle
+              cx="50"
+              cy="50"
+              r="48"
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeDasharray={`${(progress / 100) * 301} 301`}
+              style={{ transition: 'stroke-dasharray 0.25s ease' }}
+            />
+          </svg>
         )}
       </div>
 
-      <p className="text-[13px] text-center leading-relaxed text-sky-100/55">{message}</p>
-
-      {confidence != null && phase !== 'done' && (
-        <p className="text-[11px] text-center text-sky-200/70">Confianza: {confidence}%</p>
-      )}
+      <p className="text-[14px] text-center font-medium text-white/90 min-h-[1.25rem]">{message}</p>
 
       {error && (
-        <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300 bg-red-500/10 border border-red-400/20">
+        <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300/90 bg-red-500/10 border border-red-400/15">
           {error}
         </p>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2">
+        {(phase === 'fail' || phase === 'error') && (
+          <button
+            type="button"
+            onClick={retry}
+            className="w-full py-2.5 rounded-full text-[13px] font-medium text-white"
+            style={{ background: 'linear-gradient(90deg,#0c5ebd,#2a9ae0)' }}
+          >
+            Reintentar
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {
             cleanup();
             onCancel();
           }}
-          className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1.5 text-sky-100/60 border border-white/10 bg-white/5"
+          className="w-full py-2.5 rounded-full text-[13px] font-medium flex items-center justify-center gap-1.5 text-sky-100/55 border border-white/10 bg-white/[0.04]"
         >
-          <X className="w-3.5 h-3.5" /> Cancelar
-        </button>
-        <button
-          type="button"
-          disabled={phase !== 'ready'}
-          onClick={runScan}
-          className="flex-1 py-2.5 rounded-full text-sm font-medium flex items-center justify-center gap-1.5 disabled:opacity-45 text-white"
-          style={{ background: 'linear-gradient(90deg,#0c5ebd,#38bdf8)' }}
-        >
-          {phase === 'scanning' ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+          {mode === 'verify' ? (
+            <>
+              <Lock className="w-3.5 h-3.5" /> Usar PIN
+            </>
           ) : (
             <>
-              <ScanFace className="w-4 h-4" />
-              {mode === 'register' ? 'Iniciar escaneo' : 'Escanear y verificar'}
+              <X className="w-3.5 h-3.5" /> Omitir
             </>
           )}
         </button>
       </div>
 
-      <p className="text-[10px] text-center text-sky-100/28">
-        Escaneo multi-fotograma local · malla facial en vivo · datos solo en este equipo
+      <p className="text-[10px] text-center text-sky-100/25">
+        Desbloqueo local · sin enviar datos a internet
       </p>
     </div>
   );
