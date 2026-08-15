@@ -13,9 +13,11 @@
     "build:electron": "vite build && electron-builder",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "typecheck:watch": "tsc --noEmit -p tsconfig.app.json --watch",
     "lint": "eslint ."
   },
   "dependencies": {
+    "@react-spring/web": "^9.7.5",
     "@supabase/supabase-js": "^2.57.4",
     "framer-motion": "^11.15.0",
     "lucide-react": "^0.344.0",
