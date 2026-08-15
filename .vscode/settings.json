@@ -4,5 +4,7 @@
   "less.lint.unknownAtRules": "ignore",
   "css.customData": [],
   "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.enablePromptUseWorkspaceTsdk": true
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.tsserver.useSyntaxServer": "auto",
+  "typescript.validate.enable": true
 }
