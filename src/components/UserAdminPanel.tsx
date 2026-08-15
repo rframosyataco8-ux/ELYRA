@@ -5,6 +5,7 @@ import {
   Pencil,
   Trash2,
   KeyRound,
+  ScanFace,
   Shield,
   Check,
   X,
@@ -26,6 +27,7 @@ import {
   type RoleId,
   type AppPage,
 } from '@/lib/users';
+import { hasFaceRegistered, removeFace } from '@/lib/faceAuth';
 
 interface Props {
   currentUserId: string;
@@ -170,6 +172,12 @@ export function UserAdminPanel({ currentUserId }: Props) {
     refresh();
   };
 
+  const doResetFace = (id: string) => {
+    removeFace(id);
+    flash('Biometría facial eliminada');
+    refresh();
+  };
+
   const toggleActive = (u: LabUser) => {
     setError('');
     try {
@@ -302,9 +310,6 @@ export function UserAdminPanel({ currentUserId }: Props) {
                 }}
                 placeholder="Ej. Supervisión calidad, Turno noche…"
               />
-              <p className="text-[11px]" style={{ color: 'var(--ely-text-dim)' }}>
-                Si lo deja vacío, se generará a partir de los módulos elegidos.
-              </p>
             </div>
           )}
 
@@ -343,11 +348,6 @@ export function UserAdminPanel({ currentUserId }: Props) {
                 );
               })}
             </div>
-            {form.isAdmin && (
-              <p className="text-[11px]" style={{ color: 'var(--ely-text-dim)' }}>
-                El administrador tiene acceso a todos los módulos.
-              </p>
-            )}
           </div>
 
           <div
@@ -424,14 +424,6 @@ export function UserAdminPanel({ currentUserId }: Props) {
                           Admin
                         </span>
                       )}
-                      {u.role === 'custom' && !u.isAdmin && (
-                        <span
-                          className="text-[10px] px-1.5 py-0.5 rounded-full"
-                          style={{ background: 'var(--ely-nav-hover)', color: 'var(--ely-text-muted)' }}
-                        >
-                          Personalizado
-                        </span>
-                      )}
                       {isSelf && (
                         <span className="text-[10px]" style={{ color: 'var(--ely-text-dim)' }}>
                           (usted)
@@ -440,6 +432,14 @@ export function UserAdminPanel({ currentUserId }: Props) {
                       {u.active === false && (
                         <span className="text-[10px]" style={{ color: 'var(--ely-warning)' }}>
                           Inactivo
+                        </span>
+                      )}
+                      {hasFaceRegistered(u.id) && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded-full"
+                          style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
+                        >
+                          Rostro
                         </span>
                       )}
                     </div>
@@ -457,6 +457,11 @@ export function UserAdminPanel({ currentUserId }: Props) {
                   <button type="button" title={`Restablecer a ${DEFAULT_PIN}`} onClick={() => doReset(u.id)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: 'var(--ely-text-muted)' }}>
                     <KeyRound className="w-3.5 h-3.5" />
                   </button>
+                  {hasFaceRegistered(u.id) && (
+                    <button type="button" title="Restablecer biometría facial" onClick={() => doResetFace(u.id)} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ color: 'var(--ely-text-muted)' }}>
+                      <ScanFace className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   <button type="button" title={u.active === false ? 'Activar' : 'Desactivar'} onClick={() => toggleActive(u)} disabled={isSelf} className="w-8 h-8 rounded-full flex items-center justify-center disabled:opacity-30" style={{ color: 'var(--ely-text-muted)' }}>
                     {u.active === false ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
                   </button>
