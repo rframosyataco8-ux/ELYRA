@@ -14,14 +14,11 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Path alias — depth-invariant imports for src (@/foo === src/foo from any file) */
+    /* Path alias — Vite resuelve @ en runtime; TS usa paths para el IDE */
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
     },
-
-    /* TS 6.x: baseUrl sigue soportado; silenciar aviso hasta migración a TS 7 */
-    "ignoreDeprecations": "6.0",
 
     /* Linting */
     "strict": true,
