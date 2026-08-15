@@ -13,6 +13,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ['lucide-react'],
+    include: ['@mediapipe/tasks-vision'],
   },
   server: {
     port: 5173,
