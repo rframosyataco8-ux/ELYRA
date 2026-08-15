@@ -36,7 +36,6 @@ import { ThemeToggle } from '@/components/login/ThemeToggle';
 import { UserSelector } from '@/components/login/UserSelector';
 import { LoginMethods } from '@/components/login/LoginMethods';
 import { LoginFooter } from '@/components/login/LoginFooter';
-import { elyTransition } from '@/lib/motion';
 import { captureError } from '@/lib/errors';
 import { applyTheme, getStoredTheme, type ThemeId } from '@/lib/theme';
 
@@ -124,7 +123,6 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* HUD de demostración visual (no backend de escaneo continuo) */
   useEffect(() => {
     if (step !== 'pick') return;
     const id = window.setInterval(() => {
@@ -239,10 +237,12 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
 
   const selectUser = (u: LabUser) => {
     setSelected(u.id);
-    setStep('pin');
     setPin('');
     setError('');
     setShowPin(false);
+    // Como un móvil: si hay rostro registrado, abrir Face ID al instante
+    if (hasFaceRegistered(u.id)) setStep('face');
+    else setStep('pin');
   };
 
   const toggleTheme = () => {
@@ -260,7 +260,6 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
         fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
       }}
     >
-      {/* Ambiente: grid sutil + profundidad */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div
           className="absolute inset-0"
@@ -279,16 +278,8 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
               'radial-gradient(ellipse at 30% 48%, rgba(16,80,170,0.22) 0%, transparent 60%)',
           }}
         />
-        <div
-          className="absolute right-[8%] top-[20%] w-[28%] h-[40%]"
-          style={{
-            background:
-              'radial-gradient(ellipse at center, rgba(20,70,150,0.08) 0%, transparent 70%)',
-          }}
-        />
       </div>
 
-      {/* Title bar Electron */}
       <div className="h-9 flex items-center justify-between px-3 shrink-0 drag-region relative z-30">
         <div className="flex items-center gap-2 text-[11px] pl-1 text-sky-100/35">
           <span className="font-medium text-sky-100/65">ELYRA</span>
@@ -314,13 +305,11 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
 
       <div className="flex-1 flex items-stretch justify-center relative z-10 px-6 pb-4 pt-1 min-h-0">
         <div className="w-full max-w-[1180px] flex gap-8 xl:gap-12 items-center">
-          {/* ~60% biometría */}
           <BiometricScanner
             progress={scanPct}
             active={step === 'pick' || step === 'face' || step === 'face-register'}
           />
 
-          {/* ~40% acceso */}
           <div className="w-full max-w-[380px] mx-auto lg:mx-0 flex flex-col shrink-0">
             <LoginLogo />
 
@@ -353,7 +342,12 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
 
                     <LoginMethods
                       onPin={() => {
-                        if (users[0]) selectUser(users[0]);
+                        const u = users[0];
+                        if (!u) return;
+                        setSelected(u.id);
+                        setStep('pin');
+                        setPin('');
+                        setError('');
                       }}
                     />
 
@@ -382,20 +376,20 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                       <button
                         type="button"
                         onClick={() => { setError(''); setStep('face'); }}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium text-white transition-opacity hover:opacity-95"
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium text-white"
                         style={{
                           background: 'linear-gradient(90deg,#0c5ebd,#2a9ae0)',
                           boxShadow: '0 0 20px rgba(56,180,255,0.2)',
                         }}
                       >
-                        <ScanFace className="w-4 h-4" /> Entrar con el rostro
+                        <ScanFace className="w-4 h-4" /> Desbloquear con el rostro
                       </button>
                     )}
 
                     {selectedHasFace && (
                       <div className="flex items-center gap-3">
                         <div className="flex-1 h-px bg-white/8" />
-                        <span className="text-[10px] text-sky-100/28">o contraseña</span>
+                        <span className="text-[10px] text-sky-100/28">o PIN</span>
                         <div className="flex-1 h-px bg-white/8" />
                       </div>
                     )}
@@ -412,12 +406,12 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                           value={pin}
                           onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
                           onKeyDown={(e) => e.key === 'Enter' && !loading && submitPin()}
-                          className="w-full rounded-xl px-4 py-3 pr-11 text-center text-base outline-none tracking-[0.32em] bg-white/[0.04] border text-white transition-colors"
+                          className="w-full rounded-xl px-4 py-3 pr-11 text-center text-base outline-none tracking-[0.32em] bg-white/[0.04] border text-white"
                           style={{ borderColor: error ? 'rgba(248,81,73,0.45)' : 'rgba(56,180,255,0.16)' }}
                           placeholder="······"
                           autoFocus={!selectedHasFace}
                         />
-                        <button type="button" onClick={() => setShowPin((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-sky-100/30" tabIndex={-1} aria-label={showPin ? 'Ocultar' : 'Mostrar'}>
+                        <button type="button" onClick={() => setShowPin((v) => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 text-sky-100/30" tabIndex={-1}>
                           {showPin ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                         </button>
                       </div>
@@ -426,20 +420,16 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                     </div>
 
                     {error && (
-                      <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300/90 bg-red-500/10 border border-red-400/15">
-                        {error}
-                      </p>
+                      <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300/90 bg-red-500/10 border border-red-400/15">{error}</p>
                     )}
 
                     <button
                       type="button"
                       onClick={submitPin}
                       disabled={loading || pin.length < 4}
-                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium disabled:opacity-40 text-white transition-opacity"
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-medium disabled:opacity-40 text-white"
                       style={{
-                        background: selectedHasFace
-                          ? 'rgba(255,255,255,0.05)'
-                          : 'linear-gradient(90deg,#0c5ebd,#2a9ae0)',
+                        background: selectedHasFace ? 'rgba(255,255,255,0.05)' : 'linear-gradient(90deg,#0c5ebd,#2a9ae0)',
                         border: selectedHasFace ? '1px solid rgba(255,255,255,0.08)' : undefined,
                       }}
                     >
@@ -472,9 +462,6 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                       }}
                       onCancel={() => finishLogin(pendingUser)}
                     />
-                    <p className="text-[10px] text-center text-sky-100/28">
-                      Cancelar omite el registro facial y entra con contraseña.
-                    </p>
                   </motion.div>
                 )}
 
@@ -487,36 +474,12 @@ export function LoginGate({ onAuthenticated }: LoginGateProps) {
                     <p className="text-[12px] text-sky-100/45">
                       Hola <strong className="text-white">{pendingUser.displayName}</strong>. Cambie la contraseña temporal.
                     </p>
-                    <input
-                      type={showNew ? 'text' : 'password'}
-                      inputMode="numeric"
-                      value={newPin}
-                      onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                      className="w-full rounded-xl px-4 py-2.5 text-center tracking-[0.28em] bg-white/[0.04] border border-sky-400/15 text-white outline-none text-[13px]"
-                      placeholder="Nueva ····"
-                      autoFocus
-                    />
-                    <input
-                      type={showNew ? 'text' : 'password'}
-                      inputMode="numeric"
-                      value={newPin2}
-                      onChange={(e) => setNewPin2(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                      onKeyDown={(e) => e.key === 'Enter' && !loading && submitChange()}
-                      className="w-full rounded-xl px-4 py-2.5 text-center tracking-[0.28em] bg-white/[0.04] border border-sky-400/15 text-white outline-none text-[13px]"
-                      placeholder="Confirmar ····"
-                    />
-                    <button type="button" onClick={() => setShowNew((v) => !v)} className="text-[10px] text-sky-300/50">
-                      {showNew ? 'Ocultar' : 'Mostrar'} dígitos
-                    </button>
-                    {error && (
-                      <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300/90 bg-red-500/10 border border-red-400/15">{error}</p>
-                    )}
-                    <button type="button" onClick={submitChange} disabled={loading} className="w-full py-2.5 rounded-xl text-[13px] font-medium text-white disabled:opacity-50" style={{ background: 'linear-gradient(90deg,#0c5ebd,#2a9ae0)' }}>
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Guardar y continuar'}
-                    </button>
-                    <button type="button" onClick={changeLater} className="w-full py-2 rounded-xl text-[12px] text-sky-100/40 border border-white/8">
-                      Cambiar en otro momento
-                    </button>
+                    <input type={showNew ? 'text' : 'password'} inputMode="numeric" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 12))} className="w-full rounded-xl px-4 py-2.5 text-center tracking-[0.28em] bg-white/[0.04] border border-sky-400/15 text-white outline-none text-[13px]" placeholder="Nueva ····" autoFocus />
+                    <input type={showNew ? 'text' : 'password'} inputMode="numeric" value={newPin2} onChange={(e) => setNewPin2(e.target.value.replace(/\D/g, '').slice(0, 12))} onKeyDown={(e) => e.key === 'Enter' && !loading && submitChange()} className="w-full rounded-xl px-4 py-2.5 text-center tracking-[0.28em] bg-white/[0.04] border border-sky-400/15 text-white outline-none text-[13px]" placeholder="Confirmar ····" />
+                    <button type="button" onClick={() => setShowNew((v) => !v)} className="text-[10px] text-sky-300/50">{showNew ? 'Ocultar' : 'Mostrar'} dígitos</button>
+                    {error && <p role="alert" className="text-[12px] rounded-xl px-3 py-2 text-center text-red-300/90 bg-red-500/10 border border-red-400/15">{error}</p>}
+                    <button type="button" onClick={submitChange} disabled={loading} className="w-full py-2.5 rounded-xl text-[13px] font-medium text-white disabled:opacity-50" style={{ background: 'linear-gradient(90deg,#0c5ebd,#2a9ae0)' }}>{loading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Guardar y continuar'}</button>
+                    <button type="button" onClick={changeLater} className="w-full py-2 rounded-xl text-[12px] text-sky-100/40 border border-white/8">Cambiar en otro momento</button>
                   </motion.div>
                 )}
               </AnimatePresence>
