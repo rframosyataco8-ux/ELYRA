@@ -1,4 +1,5 @@
 import type { Transition, Variants } from 'framer-motion';
+import type { AppPage } from '@/lib/users';
 
 /** Transiciones reutilizables (Material-like) */
 export const elyTransition = {
@@ -9,7 +10,7 @@ export const elyTransition = {
   fast: { duration: 0.16, ease: [0.2, 0, 0, 1] } as Transition,
 };
 
-/** Entrada de página completa */
+/** Entrada vertical + blur (Inicio / Conversación) */
 export const pageVariants: Variants = {
   initial: { opacity: 0, y: 14, filter: 'blur(4px)' },
   animate: {
@@ -26,8 +27,9 @@ export const pageVariants: Variants = {
   },
 };
 
+/** Entrada lateral (Laboratorio) */
 export const pageSideVariants: Variants = {
-  initial: { opacity: 0, x: 20, filter: 'blur(3px)' },
+  initial: { opacity: 0, x: 22, filter: 'blur(3px)' },
   animate: {
     opacity: 1,
     x: 0,
@@ -36,13 +38,15 @@ export const pageSideVariants: Variants = {
   },
   exit: {
     opacity: 0,
-    x: -12,
+    x: -14,
+    filter: 'blur(2px)',
     transition: elyTransition.fast,
   },
 };
 
+/** Entrada con escala (Configuración) */
 export const pageScaleVariants: Variants = {
-  initial: { opacity: 0, scale: 0.97, filter: 'blur(3px)' },
+  initial: { opacity: 0, scale: 0.96, filter: 'blur(3px)' },
   animate: {
     opacity: 1,
     scale: 1,
@@ -52,9 +56,72 @@ export const pageScaleVariants: Variants = {
   exit: {
     opacity: 0,
     scale: 0.98,
+    filter: 'blur(2px)',
     transition: elyTransition.fast,
   },
 };
+
+/** Solo fade (suave, poco movimiento) */
+export const pageFadeVariants: Variants = {
+  initial: { opacity: 0 },
+  animate: {
+    opacity: 1,
+    transition: { duration: 0.32, ease: [0.2, 0, 0, 1] },
+  },
+  exit: {
+    opacity: 0,
+    transition: { duration: 0.18 },
+  },
+};
+
+/** Fade + scale muy sutil */
+export const pageSoftVariants: Variants = {
+  initial: { opacity: 0, scale: 0.985, y: 6 },
+  animate: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: elyTransition.emphasized,
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.99,
+    y: -4,
+    transition: elyTransition.fast,
+  },
+};
+
+export type PageMotionKind = 'default' | 'side' | 'scale' | 'fade' | 'soft';
+
+/** Elige variante según la página de la app */
+export function pageMotionKind(page: AppPage): PageMotionKind {
+  if (
+    page === 'productos' ||
+    page === 'afq' ||
+    page === 'registro-prensa' ||
+    page === 'cronograma'
+  ) {
+    return 'side';
+  }
+  if (page === 'config') return 'scale';
+  if (page === 'asistente') return 'soft';
+  return 'default';
+}
+
+export function getPageVariants(kind: PageMotionKind): Variants {
+  switch (kind) {
+    case 'side':
+      return pageSideVariants;
+    case 'scale':
+      return pageScaleVariants;
+    case 'fade':
+      return pageFadeVariants;
+    case 'soft':
+      return pageSoftVariants;
+    default:
+      return pageVariants;
+  }
+}
 
 /** Stagger de lista / nav */
 export const staggerContainer: Variants = {
