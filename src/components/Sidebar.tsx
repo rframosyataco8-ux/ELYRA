@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Home,
   MessageSquare,
@@ -29,11 +29,40 @@ interface SidebarProps {
   onLogout?: () => void;
 }
 
-function navClass(active: boolean, collapsed: boolean, nested = false) {
-  const base = `ely-nav-item ${active ? 'active' : ''}`;
-  if (collapsed) return `${base} justify-center px-0 py-2.5`;
-  if (nested) return `${base} gap-2.5 px-3 py-2 text-[13px]`;
-  return `${base} gap-3 px-3.5 py-2.5`;
+function NavItem({
+  active,
+  collapsed,
+  nested,
+  onClick,
+  title,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  collapsed: boolean;
+  nested?: boolean;
+  onClick: () => void;
+  title?: string;
+  icon: typeof Home;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={collapsed ? label : title}
+      className={`ely-nav-item group ${
+        active ? 'active' : ''
+      } ${collapsed ? 'justify-center px-0 py-2.5' : nested ? 'gap-2.5 px-3 py-2 text-[13px]' : 'gap-3 px-3.5 py-2.5'}`}
+    >
+      {/* Indicador lateral activo */}
+      <span className="ely-nav-indicator" aria-hidden />
+      <span className={`ely-nav-icon ${active ? 'is-active' : ''}`}>
+        <Icon className={nested ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+      </span>
+      {!collapsed && <span className="truncate flex-1 text-left">{label}</span>}
+    </button>
+  );
 }
 
 export function Sidebar({
@@ -57,19 +86,33 @@ export function Sidebar({
   const labPages: AppPage[] = ['productos', 'registro-prensa', 'afq', 'cronograma'];
   const labActive = labPages.includes(active);
 
-  // Abrir automáticamente el grupo Laboratorio si la página activa pertenece a él
   const [labOpen, setLabOpen] = useState(labActive);
+  const labListRef = useRef<HTMLDivElement>(null);
+  const [labHeight, setLabHeight] = useState<number | 'auto'>(labActive ? 'auto' : 0);
 
   useEffect(() => {
     if (labActive) setLabOpen(true);
   }, [labActive]);
+
+  // Animación suave de altura al abrir/cerrar laboratorio
+  useEffect(() => {
+    const el = labListRef.current;
+    if (!el) return;
+    if (labOpen) {
+      const h = el.scrollHeight;
+      setLabHeight(h);
+      const t = setTimeout(() => setLabHeight('auto'), 280);
+      return () => clearTimeout(t);
+    }
+    setLabHeight(el.scrollHeight);
+    requestAnimationFrame(() => setLabHeight(0));
+  }, [labOpen, showProductos, showRegistro, showAfq, showCronograma]);
 
   const topItems = [
     { id: 'inicio' as const, label: 'Inicio', icon: Home },
     { id: 'asistente' as const, label: 'Conversación', icon: MessageSquare },
   ].filter((item) => allow(item.id));
 
-  // Items de laboratorio en orden lógico de uso (sin subgrupo "Datos")
   const labItems = [
     showProductos && {
       id: 'productos' as const,
@@ -103,31 +146,30 @@ export function Sidebar({
 
   return (
     <aside
-      className={`flex-shrink-0 flex flex-col h-full relative overflow-hidden transition-all duration-250 ease-out ${
-        collapsed ? 'w-[72px]' : 'w-[248px]'
+      className={`ely-sidebar flex-shrink-0 flex flex-col h-full relative overflow-hidden ${
+        collapsed ? 'is-collapsed' : ''
       }`}
       style={{
+        width: collapsed ? 72 : 256,
         background: 'var(--ely-bg-elevated)',
         borderRight: '1px solid var(--ely-border)',
+        transition: 'width 0.28s var(--ely-ease)',
       }}
     >
-      {/* ── Brand ── */}
+      {/* Brand */}
       <div
-        className={`pt-5 pb-3 flex items-center ${
+        className={`pt-5 pb-2 flex items-center ${
           collapsed ? 'flex-col gap-3 px-2' : 'gap-3 px-4'
         }`}
       >
-        <div
-          className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: 'var(--ely-accent-soft)' }}
-        >
-          <svg viewBox="0 0 40 40" className="w-5 h-5" aria-hidden>
+        <div className="ely-brand-mark shrink-0" aria-hidden>
+          <svg viewBox="0 0 40 40" className="w-5 h-5">
             <circle cx="20" cy="20" r="7" fill="none" stroke="var(--ely-accent)" strokeWidth="2" />
             <circle cx="20" cy="20" r="2.5" fill="var(--ely-accent)" />
           </svg>
         </div>
         {!collapsed && (
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 animate-fade-in">
             <h1
               className="font-medium text-[15px] tracking-tight leading-tight"
               style={{ color: 'var(--ely-text)' }}
@@ -142,7 +184,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={onToggleCollapse}
-          className="no-drag shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-colors hover:opacity-80"
+          className="ely-icon-btn no-drag shrink-0"
           style={{ color: 'var(--ely-text-muted)' }}
           title={collapsed ? 'Expandir menú' : 'Retraer menú'}
         >
@@ -150,137 +192,111 @@ export function Sidebar({
         </button>
       </div>
 
-      {/* ── Navigation ── */}
-      <nav className={`flex-1 overflow-y-auto ${collapsed ? 'px-2' : 'px-3'} pb-2`}>
-        {/* Sección: Principal */}
+      {/* Navigation */}
+      <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${collapsed ? 'px-2' : 'px-3'} pb-3 pt-1`}>
+        {/* Principal */}
         {!collapsed && (
-          <p
-            className="px-3.5 pt-2 pb-1.5 text-[10px] font-medium tracking-[0.12em] uppercase"
-            style={{ color: 'var(--ely-text-dim)' }}
-          >
-            Principal
-          </p>
+          <p className="ely-nav-section-label">Principal</p>
         )}
-
-        <div className="space-y-1">
-          {topItems.map((item) => {
-            const isActive = active === item.id;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onNavigate(item.id)}
-                title={collapsed ? item.label : undefined}
-                className={navClass(isActive, collapsed)}
-              >
-                <item.icon className="w-4 h-4 shrink-0" />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </button>
-            );
-          })}
+        <div className="space-y-0.5">
+          {topItems.map((item) => (
+            <NavItem
+              key={item.id}
+              active={active === item.id}
+              collapsed={collapsed}
+              onClick={() => onNavigate(item.id)}
+              icon={item.icon}
+              label={item.label}
+            />
+          ))}
         </div>
 
-        {/* Sección: Laboratorio (lista plana, sin sub-grupo "Datos") */}
+        {/* Laboratorio */}
         {showLab && (
-          <div className={collapsed ? 'mt-2' : 'mt-3'}>
-            {!collapsed && (
-              <p
-                className="px-3.5 pt-1 pb-1.5 text-[10px] font-medium tracking-[0.12em] uppercase"
-                style={{ color: 'var(--ely-text-dim)' }}
-              >
-                Laboratorio
-              </p>
-            )}
+          <div className={collapsed ? 'mt-3' : 'mt-4'}>
+            {!collapsed && <p className="ely-nav-section-label">Laboratorio</p>}
 
             {collapsed ? (
-              <button
-                type="button"
+              <NavItem
+                active={labActive}
+                collapsed
                 onClick={goToFirstLab}
-                title="Laboratorio"
-                className={navClass(labActive, true)}
-              >
-                <FlaskConical className="w-4 h-4 shrink-0" />
-              </button>
+                icon={FlaskConical}
+                label="Laboratorio"
+              />
             ) : (
-              <div className="space-y-1">
-                {labItems.length > 1 ? (
+              <div className="space-y-0.5">
+                {labItems.length > 1 && (
                   <button
                     type="button"
                     onClick={() => setLabOpen((v) => !v)}
-                    className={navClass(false, false)}
-                    style={labActive ? { color: 'var(--ely-accent)' } : undefined}
+                    className={`ely-nav-item gap-3 px-3.5 py-2.5 ${labActive ? 'has-active-child' : ''}`}
                   >
-                    <FlaskConical className="w-4 h-4 shrink-0" />
+                    <span className="ely-nav-icon">
+                      <FlaskConical className="w-4 h-4" />
+                    </span>
                     <span className="flex-1 text-left truncate">Secciones</span>
                     <ChevronDown
-                      className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
-                        labOpen ? 'rotate-180' : ''
-                      }`}
-                      style={{ color: 'var(--ely-text-dim)' }}
+                      className="w-3.5 h-3.5 shrink-0 ely-chevron"
+                      style={{
+                        color: 'var(--ely-text-dim)',
+                        transform: labOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      }}
                     />
                   </button>
-                ) : null}
-
-                {(labOpen || labItems.length === 1) && (
-                  <div className={labItems.length > 1 ? 'ml-1 pl-2 space-y-0.5' : 'space-y-0.5'}>
-                    {labItems.map((item) => {
-                      const isActive = active === item.id;
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => onNavigate(item.id)}
-                          className={navClass(isActive, false, true)}
-                          title={item.label}
-                        >
-                          <item.icon className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
                 )}
+
+                <div
+                  ref={labListRef}
+                  className="ely-nav-collapse"
+                  style={{
+                    height: labItems.length === 1 ? 'auto' : labHeight,
+                    opacity: labOpen || labItems.length === 1 ? 1 : 0,
+                  }}
+                >
+                  <div className={labItems.length > 1 ? 'ml-1 pl-2 border-l border-[var(--ely-border)] space-y-0.5' : 'space-y-0.5'}>
+                    {labItems.map((item) => (
+                      <NavItem
+                        key={item.id}
+                        active={active === item.id}
+                        collapsed={false}
+                        nested
+                        onClick={() => onNavigate(item.id)}
+                        icon={item.icon}
+                        label={item.label}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Sección: Sistema */}
+        {/* Sistema */}
         {allow('config') && (
-          <div className={collapsed ? 'mt-2' : 'mt-3'}>
-            {!collapsed && (
-              <p
-                className="px-3.5 pt-1 pb-1.5 text-[10px] font-medium tracking-[0.12em] uppercase"
-                style={{ color: 'var(--ely-text-dim)' }}
-              >
-                Sistema
-              </p>
-            )}
-            <button
-              type="button"
+          <div className={collapsed ? 'mt-3' : 'mt-4'}>
+            {!collapsed && <p className="ely-nav-section-label">Sistema</p>}
+            <NavItem
+              active={active === 'config'}
+              collapsed={collapsed}
               onClick={() => onNavigate('config')}
-              title={collapsed ? 'Configuración' : undefined}
-              className={navClass(active === 'config', collapsed)}
-            >
-              <Settings className="w-4 h-4 shrink-0" />
-              {!collapsed && <span className="truncate">Configuración</span>}
-            </button>
+              icon={Settings}
+              label="Configuración"
+            />
           </div>
         )}
       </nav>
 
-      {/* ── User footer ── */}
+      {/* User footer */}
       <div
-        className={`${collapsed ? 'px-2 py-4' : 'px-4 pb-5 pt-3 space-y-2.5'}`}
+        className={`${collapsed ? 'px-2 py-4' : 'px-4 pb-5 pt-3 space-y-2'}`}
         style={{ borderTop: '1px solid var(--ely-border)' }}
       >
         {!collapsed ? (
           <>
-            <div className="flex items-center gap-3 px-1">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium shrink-0"
-                style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
-              >
+            <div className="flex items-center gap-3 px-1.5 py-1 rounded-2xl transition-colors">
+              <div className="ely-avatar shrink-0">
                 {(operator || 'O').charAt(0).toUpperCase()}
               </div>
               <div className="min-w-0">
@@ -293,23 +309,16 @@ export function Sidebar({
               </div>
             </div>
             {onLogout && (
-              <button
-                type="button"
-                onClick={onLogout}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-full text-[13px] transition-colors"
-                style={{ color: 'var(--ely-text-muted)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ely-nav-hover)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
+              <button type="button" onClick={onLogout} className="ely-logout-btn">
                 <LogOut className="w-3.5 h-3.5" />
                 Cerrar sesión
               </button>
             )}
           </>
         ) : (
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-2.5">
             <span
-              className="w-2 h-2 rounded-full"
+              className="w-2 h-2 rounded-full transition-colors"
               style={{ background: hasApiKey ? 'var(--ely-success)' : 'var(--ely-warning)' }}
               title={hasApiKey ? 'IA conectada' : 'Sin API key'}
             />
@@ -317,7 +326,7 @@ export function Sidebar({
               <button
                 type="button"
                 onClick={onLogout}
-                className="w-8 h-8 rounded-full flex items-center justify-center"
+                className="ely-icon-btn"
                 style={{ color: 'var(--ely-text-dim)' }}
                 title="Cerrar sesión"
               >
