@@ -1,0 +1,264 @@
+/* ═══════════════════════════════════════════════════════════
+   ELYRA Advanced Transitions
+   Page · Surface · Reveal · Crossfade · Motion tokens
+   ═══════════════════════════════════════════════════════════ */
+
+:root,
+[data-theme='dark'],
+[data-theme='light'],
+[data-theme='transparent'] {
+  --ely-motion-fast: 0.16s;
+  --ely-motion: 0.28s;
+  --ely-motion-med: 0.38s;
+  --ely-motion-slow: 0.52s;
+  --ely-ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ely-ease-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ely-ease-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ely-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ely-ease-bounce: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/* ── Page shell: content region ── */
+.ely-page-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Enter animations keyed by route */
+.ely-page-view {
+  animation: ely-page-in var(--ely-motion-med) var(--ely-ease-decelerate) both;
+  will-change: opacity, transform, filter;
+}
+
+.ely-page-view[data-from='side'] {
+  animation-name: ely-page-in-side;
+}
+
+.ely-page-view[data-from='scale'] {
+  animation-name: ely-page-in-scale;
+}
+
+@keyframes ely-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+    filter: blur(4px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes ely-page-in-side {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes ely-page-in-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+/* ── Surface lift (cards / panels) ── */
+.ely-surface-lift {
+  transition:
+    transform var(--ely-motion) var(--ely-ease-standard),
+    box-shadow var(--ely-motion) var(--ely-ease-standard),
+    border-color var(--ely-motion-fast) ease,
+    background var(--ely-motion) ease;
+}
+
+.ely-surface-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--ely-shadow);
+}
+
+.ely-surface-lift:active {
+  transform: translateY(0) scale(0.99);
+  transition-duration: 0.1s;
+}
+
+/* ── Reveal on scroll / mount (stagger-friendly) ── */
+.ely-reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  animation: ely-reveal-up var(--ely-motion-med) var(--ely-ease-decelerate) forwards;
+}
+
+.ely-reveal-delay-1 { animation-delay: 40ms; }
+.ely-reveal-delay-2 { animation-delay: 80ms; }
+.ely-reveal-delay-3 { animation-delay: 120ms; }
+.ely-reveal-delay-4 { animation-delay: 160ms; }
+.ely-reveal-delay-5 { animation-delay: 200ms; }
+.ely-reveal-delay-6 { animation-delay: 240ms; }
+
+@keyframes ely-reveal-up {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Crossfade helper ── */
+.ely-crossfade {
+  animation: ely-crossfade var(--ely-motion) var(--ely-ease-standard) both;
+}
+
+@keyframes ely-crossfade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── Soft expand (height + fade) ── */
+.ely-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--ely-motion-med) var(--ely-ease-emphasized);
+}
+
+.ely-expand.is-open {
+  grid-template-rows: 1fr;
+}
+
+.ely-expand > .ely-expand-inner {
+  overflow: hidden;
+  min-height: 0;
+  opacity: 0;
+  transition: opacity var(--ely-motion) ease;
+}
+
+.ely-expand.is-open > .ely-expand-inner {
+  opacity: 1;
+}
+
+/* ── Focus ring motion ── */
+.ely-focus-ring {
+  transition: box-shadow var(--ely-motion-fast) var(--ely-ease-standard),
+              border-color var(--ely-motion-fast) ease;
+}
+
+.ely-focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ely-accent-soft);
+  border-color: var(--ely-accent);
+}
+
+/* ── Toggle switch thumb ── */
+.ely-switch-thumb {
+  transition:
+    transform 0.28s var(--ely-ease-bounce),
+    background 0.2s ease;
+}
+
+/* ── Chat bar appear ── */
+.ely-chatbar-enter {
+  animation: ely-chatbar-in var(--ely-motion-med) var(--ely-ease-decelerate) both;
+}
+
+@keyframes ely-chatbar-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Status chip pulse on change ── */
+.ely-status-pop {
+  animation: ely-status-pop 0.45s var(--ely-ease-bounce) both;
+}
+
+@keyframes ely-status-pop {
+  0% { transform: scale(0.92); opacity: 0.7; }
+  60% { transform: scale(1.04); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Sidebar width already transitioned; content fade ── */
+.ely-sidebar .ely-nav-section-label {
+  transition: opacity var(--ely-motion-fast) ease;
+}
+
+.ely-sidebar.is-collapsed .ely-nav-section-label {
+  opacity: 0;
+}
+
+/* ── Hud glass hover polish ── */
+.hud-glass,
+.hud-glass-strong {
+  transition:
+    background 0.35s var(--ely-ease-standard),
+    border-color 0.35s ease,
+    box-shadow 0.35s var(--ely-ease-standard),
+    transform 0.28s var(--ely-ease-standard);
+}
+
+/* ── Input underline grow (optional accent) ── */
+.ely-input-grow {
+  position: relative;
+}
+
+.ely-input-grow::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 0;
+  height: 2px;
+  background: var(--ely-accent);
+  border-radius: 2px;
+  transition: width 0.28s var(--ely-ease-emphasized), left 0.28s var(--ely-ease-emphasized);
+}
+
+.ely-input-grow:focus-within::after {
+  left: 0;
+  width: 100%;
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .ely-page-view,
+  .ely-reveal,
+  .ely-crossfade,
+  .ely-chatbar-enter,
+  .ely-status-pop,
+  .ely-expand,
+  .ely-expand > .ely-expand-inner {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+  }
+
+  .ely-expand {
+    grid-template-rows: 1fr;
+  }
+}
