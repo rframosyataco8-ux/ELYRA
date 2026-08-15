@@ -9,7 +9,7 @@ interface UserSelectorProps {
 
 export function UserSelector({ users, selectedId, onSelect }: UserSelectorProps) {
   return (
-    <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-0.5">
+    <div className="space-y-1.5 max-h-[36vh] overflow-y-auto pr-0.5">
       {users.map((u) => (
         <UserCard
           key={u.id}
