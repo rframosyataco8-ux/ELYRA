@@ -31,7 +31,14 @@ interface ElyraAPI {
   memoryClear: () => Promise<{ ok: boolean }>;
   ttsSpeak: (text: string) => Promise<{ ok: boolean; dataUrl?: string; error?: string; fallback?: boolean }>;
   ttsStatus: () => Promise<{ edgeTts: boolean | string; voice: string }>;
-  sttTranscribe: (payload: { base64: string; mimeType: string }) => Promise<{ ok: boolean; text?: string; error?: string }>;
+  sttTranscribe: (payload: { base64: string; mimeType: string }) => Promise<{
+    ok: boolean;
+    text?: string;
+    error?: string;
+    /** Si no hay clave STT, el main puede pedir fallback a Web Speech */
+    fallback?: 'webspeech' | string;
+    code?: 'NO_STT_KEY' | string;
+  }>;
   sttListenPython: (seconds?: number) => Promise<{ ok: boolean; text?: string; error?: string }>;
   pcVolume: (action: string, value?: number | string) => Promise<{ ok: boolean; result?: string }>;
   pcMedia: (action: string) => Promise<{ ok: boolean; result?: string }>;
