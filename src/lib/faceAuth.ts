@@ -1,31 +1,50 @@
-/** Biometría facial local profesional — detección + plantilla multi-muestra. */
+/**
+ * Biometría facial local avanzada (estilo Face ID, sin hardware TrueDepth).
+ * - Descriptor normalizado + gradientes (textura)
+ * - Liveness por micro-movimiento entre fotogramas
+ * - Control de calidad (nitidez, tamaño, centrado)
+ * - Plantilla multi-muestra + matching híbrido L2/coseno
+ */
 
 export type FaceTemplate = {
   userId: string;
   descriptor: number[];
+  /** Variantes adicionales para robustez ante ángulo/luz */
+  variants?: number[][];
   thumb?: string;
   registeredAt: string;
   samples: number;
+  version: 3;
 };
 
 type FaceStore = Record<string, FaceTemplate>;
 
-const STORAGE_KEY = 'elyra_face_templates_v2';
-const GRID = 24;
-const MATCH_THRESHOLD = 0.095;
+const STORAGE_KEY = 'elyra_face_templates_v3';
+const LEGACY_KEYS = ['elyra_face_templates_v2', 'elyra_face_templates_v1'];
+const GRID = 28;
+/** Umbral L2 normalizado (más bajo = más estricto) */
+const MATCH_THRESHOLD = 0.088;
+/** Similitud coseno mínima */
+const COSINE_MIN = 0.82;
 
 function loadStore(): FaceStore {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      const legacy = localStorage.getItem('elyra_face_templates_v1');
+    if (raw) return JSON.parse(raw) as FaceStore;
+    for (const key of LEGACY_KEYS) {
+      const legacy = localStorage.getItem(key);
       if (legacy) {
-        localStorage.setItem(STORAGE_KEY, legacy);
-        return JSON.parse(legacy) as FaceStore;
+        const parsed = JSON.parse(legacy) as FaceStore;
+        // migrar suavemente
+        const migrated: FaceStore = {};
+        for (const [id, t] of Object.entries(parsed)) {
+          migrated[id] = { ...t, version: 3, variants: t.variants ?? [] };
+        }
+        saveStore(migrated);
+        return migrated;
       }
-      return {};
     }
-    return JSON.parse(raw) as FaceStore;
+    return {};
   } catch {
     return {};
   }
@@ -64,6 +83,7 @@ export async function requestCameraStream(): Promise<MediaStream> {
         facingMode: 'user',
         width: { ideal: 1280 },
         height: { ideal: 720 },
+        frameRate: { ideal: 30 },
       },
       audio: false,
     });
@@ -83,6 +103,14 @@ export function stopStream(stream: MediaStream | null) {
 
 export type FaceBox = { x: number; y: number; width: number; height: number };
 
+export type QualityReport = {
+  ok: boolean;
+  sharpness: number;
+  faceRatio: number;
+  centered: number;
+  message?: string;
+};
+
 async function detectFaceBox(video: HTMLVideoElement): Promise<FaceBox> {
   const w = video.videoWidth || 640;
   const h = video.videoHeight || 480;
@@ -91,30 +119,30 @@ async function detectFaceBox(video: HTMLVideoElement): Promise<FaceBox> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const FD = (window as any).FaceDetector;
     if (typeof FD === 'function') {
-      const detector = new FD({ fastMode: true, maxDetectedFaces: 1 });
+      const detector = new FD({ fastMode: false, maxDetectedFaces: 1 });
       const faces = await detector.detect(video);
       if (faces?.length) {
         const b = faces[0].boundingBox;
-        const pad = Math.min(b.width, b.height) * 0.12;
+        const pad = Math.min(b.width, b.height) * 0.14;
         return {
           x: Math.max(0, b.x - pad),
           y: Math.max(0, b.y - pad),
-          width: Math.min(w, b.width + pad * 2),
-          height: Math.min(h, b.height + pad * 2),
+          width: Math.min(w - Math.max(0, b.x - pad), b.width + pad * 2),
+          height: Math.min(h - Math.max(0, b.y - pad), b.height + pad * 2),
         };
       }
       throw new Error('NO_FACE');
     }
   } catch (e) {
     if (e instanceof Error && e.message === 'NO_FACE') {
-      throw new Error('No se detectó un rostro. Centre la cara en el óvalo.');
+      throw new Error('No se detectó un rostro. Centre la cara en el círculo.');
     }
   }
 
-  const side = Math.min(w, h) * 0.62;
+  const side = Math.min(w, h) * 0.58;
   return {
     x: (w - side) / 2,
-    y: ((h - side) / 2) * 0.75,
+    y: ((h - side) / 2) * 0.72,
     width: side,
     height: side,
   };
@@ -133,14 +161,90 @@ function luminanceVariance(data: Uint8ClampedArray): number {
   return sum2 / n - mean * mean;
 }
 
+/** Gradiente medio ≈ nitidez (Laplacian aproximado) */
+function sharpnessScore(data: Uint8ClampedArray, size: number): number {
+  let acc = 0;
+  let n = 0;
+  for (let y = 1; y < size - 1; y += 2) {
+    for (let x = 1; x < size - 1; x += 2) {
+      const i = (y * size + x) * 4;
+      const c = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      const r = 0.299 * data[i + 4] + 0.587 * data[i + 5] + 0.114 * data[i + 6];
+      const d = 0.299 * data[i + size * 4] + 0.587 * data[i + size * 4 + 1] + 0.114 * data[i + size * 4 + 2];
+      acc += Math.abs(c - r) + Math.abs(c - d);
+      n++;
+    }
+  }
+  return n ? acc / n : 0;
+}
+
+export function assessFraming(box: FaceBox, videoW: number, videoH: number): QualityReport {
+  const faceRatio = (box.width * box.height) / (videoW * videoH);
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  const centered =
+    1 -
+    Math.min(
+      1,
+      Math.hypot(cx / videoW - 0.5, cy / videoH - 0.48) / 0.35,
+    );
+
+  if (faceRatio < 0.06) {
+    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Acérquese a la cámara' };
+  }
+  if (faceRatio > 0.55) {
+    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Aléjese un poco' };
+  }
+  if (centered < 0.35) {
+    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Centre el rostro' };
+  }
+  return { ok: true, sharpness: 0, faceRatio, centered };
+}
+
+/** Buffer de frames previos para liveness (micro-movimiento). */
+let prevFrameGray: Float32Array | null = null;
+
+export function resetLivenessState() {
+  prevFrameGray = null;
+}
+
+function frameMotionEnergy(data: Uint8ClampedArray, size: number): number {
+  const gray = new Float32Array(size * size);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  if (!prevFrameGray || prevFrameGray.length !== gray.length) {
+    prevFrameGray = gray;
+    return 0;
+  }
+  let sum = 0;
+  const step = 3;
+  let n = 0;
+  for (let i = 0; i < gray.length; i += step) {
+    sum += Math.abs(gray[i] - prevFrameGray[i]);
+    n++;
+  }
+  prevFrameGray = gray;
+  return n ? sum / n : 0;
+}
+
+export type ExtractResult = {
+  descriptor: number[];
+  quality: number;
+  box: FaceBox;
+  motion: number;
+  framing: QualityReport;
+};
+
 export async function extractDescriptorFromVideo(
   video: HTMLVideoElement,
-): Promise<{ descriptor: number[]; quality: number; box: FaceBox }> {
+  opts?: { requireMotion?: boolean; minMotion?: number },
+): Promise<ExtractResult> {
   const w = video.videoWidth || 640;
   const h = video.videoHeight || 480;
   if (w < 64 || h < 64) throw new Error('Imagen de cámara inválida.');
 
-  const size = 160;
+  const size = 168;
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -148,13 +252,24 @@ export async function extractDescriptorFromVideo(
   if (!ctx) throw new Error('Canvas no disponible.');
 
   const box = await detectFaceBox(video);
+  const framing = assessFraming(box, w, h);
+  if (!framing.ok) {
+    throw new Error(framing.message || 'Ajuste la posición del rostro.');
+  }
+
   ctx.drawImage(video, box.x, box.y, box.width, box.height, 0, 0, size, size);
-
   const { data } = ctx.getImageData(0, 0, size, size);
-  const variance = luminanceVariance(data);
 
-  if (variance < 180) {
-    throw new Error('Rostro no nítido. Mejore la luz y mire a la cámara.');
+  const variance = luminanceVariance(data);
+  const sharp = sharpnessScore(data, size);
+  const motion = frameMotionEnergy(data, size);
+
+  if (variance < 160 || sharp < 4.5) {
+    throw new Error('Rostro poco nítido. Mejore la iluminación.');
+  }
+
+  if (opts?.requireMotion && motion < (opts.minMotion ?? 1.2)) {
+    throw new Error('Mueva ligeramente la cabeza (prueba de vida).');
   }
 
   const cell = size / GRID;
@@ -196,10 +311,33 @@ export async function extractDescriptorFromVideo(
     }
   }
 
+  // Histograma local de bordes (4 cuadrantes) — más robustez a luz
+  const hist: number[] = [0, 0, 0, 0];
+  for (let gy = 0; gy < GRID - 1; gy++) {
+    for (let gx = 0; gx < GRID - 1; gx++) {
+      const g =
+        Math.abs(norm[gy * GRID + gx + 1] - norm[gy * GRID + gx]) +
+        Math.abs(norm[(gy + 1) * GRID + gx] - norm[gy * GRID + gx]);
+      const q = (gy < GRID / 2 ? 0 : 2) + (gx < GRID / 2 ? 0 : 1);
+      hist[q] += g;
+    }
+  }
+  const hSum = hist.reduce((a, b) => a + b, 0) || 1;
+  const histN = hist.map((v) => v / hSum);
+
+  const quality = Math.min(
+    1,
+    (Math.min(variance, 2500) / 2500) * 0.45 +
+      (Math.min(sharp, 40) / 40) * 0.35 +
+      framing.centered * 0.2,
+  );
+
   return {
-    descriptor: [...norm, ...grads],
-    quality: Math.min(1, variance / 2000),
+    descriptor: [...norm, ...grads, ...histN],
+    quality,
     box,
+    motion,
+    framing: { ...framing, sharpness: sharp },
   };
 }
 
@@ -214,13 +352,13 @@ export function captureThumbFromVideo(video: HTMLVideoElement, box?: FaceBox): s
   if (box) {
     ctx.drawImage(video, box.x, box.y, box.width, box.height, 0, 0, 112, 112);
   } else {
-    const side = Math.min(w, h) * 0.62;
-    ctx.drawImage(video, (w - side) / 2, ((h - side) / 2) * 0.75, side, side, 0, 0, 112, 112);
+    const side = Math.min(w, h) * 0.58;
+    ctx.drawImage(video, (w - side) / 2, ((h - side) / 2) * 0.72, side, side, 0, 0, 112, 112);
   }
   return canvas.toDataURL('image/jpeg', 0.75);
 }
 
-function distance(a: number[], b: number[]): number {
+function l2(a: number[], b: number[]): number {
   const len = Math.min(a.length, b.length);
   if (!len) return 1;
   let sum = 0;
@@ -229,6 +367,21 @@ function distance(a: number[], b: number[]): number {
     sum += d * d;
   }
   return Math.sqrt(sum / len);
+}
+
+function cosine(a: number[], b: number[]): number {
+  const len = Math.min(a.length, b.length);
+  if (!len) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < len; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  const d = Math.sqrt(na) * Math.sqrt(nb);
+  return d ? dot / d : 0;
 }
 
 function averageDescriptors(list: number[][]): number[] {
@@ -244,10 +397,11 @@ function averageDescriptors(list: number[][]): number[] {
 
 export function samplesAreDiverse(list: number[][]): boolean {
   if (list.length < 2) return true;
+  let maxD = 0;
   for (let i = 1; i < list.length; i++) {
-    if (distance(list[0], list[i]) < 0.02) return false;
+    maxD = Math.max(maxD, l2(list[0], list[i]));
   }
-  return true;
+  return maxD >= 0.018;
 }
 
 export function registerFace(
@@ -257,41 +411,72 @@ export function registerFace(
 ): FaceTemplate {
   if (descriptors.length < 3) throw new Error('Se requieren al menos 3 muestras del rostro.');
   if (!samplesAreDiverse(descriptors)) {
-    throw new Error('Mueva ligeramente la cabeza entre capturas.');
+    throw new Error('Mueva ligeramente la cabeza entre capturas (prueba de vida).');
   }
+  const primary = averageDescriptors(descriptors);
+  // Guardar hasta 3 variantes (primera, media, última) para matching robusto
+  const variants = [
+    descriptors[0],
+    descriptors[Math.floor(descriptors.length / 2)],
+    descriptors[descriptors.length - 1],
+  ].filter(Boolean);
+
   const template: FaceTemplate = {
     userId,
-    descriptor: averageDescriptors(descriptors),
+    descriptor: primary,
+    variants,
     thumb,
     registeredAt: new Date().toISOString(),
     samples: descriptors.length,
+    version: 3,
   };
   const store = loadStore();
   store[userId] = template;
   saveStore(store);
+  resetLivenessState();
   return template;
 }
 
 export type FaceMatchResult = {
   ok: boolean;
   distance: number;
+  cosine: number;
   confidence: number;
   threshold: number;
 };
 
+function bestAgainstTemplate(stored: FaceTemplate, live: number[]): { dist: number; cos: number } {
+  const candidates = [stored.descriptor, ...(stored.variants ?? [])];
+  let bestDist = 1;
+  let bestCos = 0;
+  for (const c of candidates) {
+    if (!c?.length) continue;
+    const d = l2(c, live);
+    const co = cosine(c, live);
+    if (d < bestDist) bestDist = d;
+    if (co > bestCos) bestCos = co;
+  }
+  return { dist: bestDist, cos: bestCos };
+}
+
 export function verifyFace(userId: string, liveDescriptor: number[]): FaceMatchResult {
   const stored = loadStore()[userId];
   if (!stored?.descriptor?.length) {
-    return { ok: false, distance: 1, confidence: 0, threshold: MATCH_THRESHOLD };
+    return { ok: false, distance: 1, cosine: 0, confidence: 0, threshold: MATCH_THRESHOLD };
   }
-  const dist = distance(stored.descriptor, liveDescriptor);
-  const confidence = Math.max(
-    0,
-    Math.min(99, Math.round((1 - dist / (MATCH_THRESHOLD * 2.2)) * 100)),
-  );
+  const { dist, cos } = bestAgainstTemplate(stored, liveDescriptor);
+  const l2Ok = dist <= MATCH_THRESHOLD;
+  const cosOk = cos >= COSINE_MIN;
+  const ok = l2Ok && cosOk;
+
+  const confL2 = Math.max(0, Math.min(100, (1 - dist / (MATCH_THRESHOLD * 2.1)) * 100));
+  const confCos = Math.max(0, Math.min(100, ((cos - 0.5) / 0.5) * 100));
+  const confidence = Math.round(confL2 * 0.55 + confCos * 0.45);
+
   return {
-    ok: dist <= MATCH_THRESHOLD,
+    ok,
     distance: dist,
+    cosine: cos,
     confidence,
     threshold: MATCH_THRESHOLD,
   };
@@ -305,17 +490,19 @@ export async function verifyFaceMulti(
   const results: FaceMatchResult[] = [];
   let qualitySum = 0;
   for (let i = 0; i < shots; i++) {
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 180));
     const { descriptor, quality } = await extractDescriptorFromVideo(video);
     qualitySum += quality;
     results.push(verifyFace(userId, descriptor));
   }
   const okCount = results.filter((r) => r.ok).length;
   const avgDist = results.reduce((a, r) => a + r.distance, 0) / results.length;
+  const avgCos = results.reduce((a, r) => a + r.cosine, 0) / results.length;
   const confidence = Math.round(results.reduce((a, r) => a + r.confidence, 0) / results.length);
   return {
     ok: okCount >= Math.ceil(shots * 0.66),
     distance: avgDist,
+    cosine: avgCos,
     confidence,
     threshold: MATCH_THRESHOLD,
     avgQuality: qualitySum / shots,
