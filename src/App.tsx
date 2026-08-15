@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVoice } from '@/hooks/useVoice';
 import { useWakeWord } from '@/hooks/useWakeWord';
 import { NetworkGlobe } from '@/components/NetworkGlobe';
@@ -17,6 +17,7 @@ import { PageTransition } from '@/components/PageTransition';
 import type { LabUser } from '@/lib/users';
 import { canAccessPage } from '@/lib/users';
 import { validateAiConfig } from '@/lib/validateConfig';
+import { captureError } from '@/lib/errors';
 import {
   detectFromKey,
   PROVIDER_PRESETS,
@@ -33,6 +34,11 @@ function greetingFor(operator: string) {
   const h = new Date().getHours();
   const saludo = h < 12 ? 'Buenos días' : h < 19 ? 'Buenas tardes' : 'Buenas noches';
   return `${saludo}, ${operator}. Lista.`;
+}
+
+function fieldBorder(ok: boolean, touched: boolean): string {
+  if (!touched) return 'var(--ely-border)';
+  return ok ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.6)';
 }
 
 export default function App() {
@@ -59,6 +65,7 @@ export default function App() {
   const [cfgLoaded, setCfgLoaded] = useState(false);
   const [cfgTesting, setCfgTesting] = useState(false);
   const [cfgTestMsg, setCfgTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [cfgTouched, setCfgTouched] = useState(false);
   const [detectedProvider, setDetectedProvider] = useState<string | null>(null);
 
   const speakRef = useRef<(text: string) => void | Promise<void>>(() => {});
@@ -76,6 +83,18 @@ export default function App() {
   const isAdmin = !!currentUser?.isAdmin;
   const isGemini = detectedProvider === 'gemini' || isGeminiUrl(cfgBaseUrl);
   const isNvidia = detectedProvider === 'nvidia' || isNvidiaUrl(cfgBaseUrl);
+
+  /** Validación en tiempo real del formulario de IA */
+  const liveValidation = useMemo(
+    () =>
+      validateAiConfig({
+        baseUrl: cfgBaseUrl,
+        model: cfgModel,
+        apiKey: cfgApiKey,
+        hasStoredKey: hasApiKey,
+      }),
+    [cfgBaseUrl, cfgModel, cfgApiKey, hasApiKey],
+  );
 
   const navigate = useCallback((p: AppPage) => {
     if (canAccessPage(currentUser, p)) setPage(p);
@@ -116,8 +135,8 @@ export default function App() {
         addMessage('elyra', msg);
         await speakRef.current(msg);
       }
-    } catch {
-      const msg = 'No pude completar la solicitud. Reintente en unos segundos.';
+    } catch (err) {
+      const msg = captureError(err, 'No pude completar la solicitud. Reintente en unos segundos.');
       addMessage('elyra', msg);
       await speakRef.current(msg);
     } finally {
@@ -199,7 +218,8 @@ export default function App() {
       if (c.baseUrl) setCfgBaseUrl(c.baseUrl);
       if (c.model) setCfgModel(c.model);
       setCfgLoaded(true);
-    }).catch(() => {
+    }).catch((err) => {
+      console.warn('[elyra] agentConfigGet', captureError(err, 'config load failed'));
       setCfgLoaded(true);
     });
   }, [booted]);
@@ -280,7 +300,10 @@ export default function App() {
     }
   };
 
+  const touchConfig = () => setCfgTouched(true);
+
   const onApiKeyChange = (value: string) => {
+    touchConfig();
     setCfgApiKey(value);
     setCfgTestMsg(null);
     const det = detectFromKey(value);
@@ -293,19 +316,11 @@ export default function App() {
     }
   };
 
-  const runConfigValidation = () =>
-    validateAiConfig({
-      baseUrl: cfgBaseUrl,
-      model: cfgModel,
-      apiKey: cfgApiKey,
-      hasStoredKey: hasApiKey,
-    });
-
   const handleSaveConfig = async () => {
     if (!isDesktop || !window.elyra || !isAdmin || !cfgLoaded) return;
-    const v = runConfigValidation();
-    if (!v.ok) {
-      setCfgTestMsg({ ok: false, text: v.firstError || 'Revise el formulario.' });
+    touchConfig();
+    if (!liveValidation.ok) {
+      setCfgTestMsg({ ok: false, text: liveValidation.firstError || 'Revise el formulario.' });
       return;
     }
     setCfgSaving(true); setCfgSaved(false); setCfgTestMsg(null);
@@ -321,8 +336,8 @@ export default function App() {
       setCfgSaved(true);
       setTimeout(() => setCfgSaved(false), 2500);
       if (cfgApiKey.trim()) setCfgApiKey('');
-    } catch {
-      setCfgTestMsg({ ok: false, text: 'No se pudo guardar.' });
+    } catch (err) {
+      setCfgTestMsg({ ok: false, text: captureError(err, 'No se pudo guardar.') });
     } finally {
       setCfgSaving(false);
     }
@@ -330,9 +345,9 @@ export default function App() {
 
   const handleTestConfig = async () => {
     if (!isDesktop || !window.elyra || !isAdmin || !cfgLoaded) return;
-    const v = runConfigValidation();
-    if (!v.ok) {
-      setCfgTestMsg({ ok: false, text: v.firstError || 'Revise el formulario.' });
+    touchConfig();
+    if (!liveValidation.ok) {
+      setCfgTestMsg({ ok: false, text: liveValidation.firstError || 'Revise el formulario.' });
       return;
     }
     setCfgTesting(true); setCfgTestMsg(null);
@@ -357,8 +372,8 @@ export default function App() {
       const c = await window.elyra.agentConfigGet();
       setHasApiKey(c.hasKey);
       setCfgTestMsg({ ok: test.ok, text: test.message });
-    } catch {
-      setCfgTestMsg({ ok: false, text: 'Error al probar la conexión.' });
+    } catch (err) {
+      setCfgTestMsg({ ok: false, text: captureError(err, 'Error al probar la conexión.') });
     } finally {
       setCfgTesting(false);
     }
@@ -366,8 +381,12 @@ export default function App() {
 
   const handleClearMemory = async () => {
     if (!isDesktop || !window.elyra) return;
-    await window.elyra.memoryClear();
-    addMessage('elyra', 'Memoria local borrada.');
+    try {
+      await window.elyra.memoryClear();
+      addMessage('elyra', 'Memoria local borrada.');
+    } catch (err) {
+      addMessage('elyra', captureError(err, 'No se pudo borrar la memoria.'));
+    }
   };
 
   const formatUptime = (s: number) => {
@@ -514,6 +533,7 @@ export default function App() {
                                 key={p.id}
                                 type="button"
                                 onClick={() => {
+                                  touchConfig();
                                   setCfgBaseUrl(p.url);
                                   setCfgModel(p.model);
                                   setCfgTestMsg(null);
@@ -538,7 +558,7 @@ export default function App() {
                           <p>Pegue la clave <code className="text-[11px]">nvapi-…</code> de{' '}<a href="https://build.nvidia.com/settings/api-keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5" style={{ color: 'var(--ely-accent)' }}>NVIDIA API Keys <ExternalLink className="w-3 h-3" /></a>.</p>
                           <div className="flex flex-wrap gap-1 pt-1">
                             {NVIDIA_MODELS.map((m) => (
-                              <button key={m} type="button" onClick={() => setCfgModel(m)} className="text-[10px] px-2 py-1 rounded-full border transition-all ely-chip-btn" style={{ background: cfgModel === m ? 'var(--ely-accent)' : 'transparent', borderColor: cfgModel === m ? 'var(--ely-accent)' : 'var(--ely-border)', color: cfgModel === m ? '#fff' : 'var(--ely-text-muted)' }}>{m.split('/').pop()}</button>
+                              <button key={m} type="button" onClick={() => { touchConfig(); setCfgModel(m); }} className="text-[10px] px-2 py-1 rounded-full border transition-all ely-chip-btn" style={{ background: cfgModel === m ? 'var(--ely-accent)' : 'transparent', borderColor: cfgModel === m ? 'var(--ely-accent)' : 'var(--ely-border)', color: cfgModel === m ? '#fff' : 'var(--ely-text-muted)' }}>{m.split('/').pop()}</button>
                             ))}
                           </div>
                         </div>
@@ -549,23 +569,63 @@ export default function App() {
                           <p>Pegue la clave de{' '}<a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5" style={{ color: 'var(--ely-accent)' }}>AI Studio <ExternalLink className="w-3 h-3" /></a>.</p>
                           <div className="flex flex-wrap gap-1 pt-1">
                             {GEMINI_MODELS.map((m) => (
-                              <button key={m} type="button" onClick={() => setCfgModel(m)} className="text-[10px] px-2 py-1 rounded-full border transition-all ely-chip-btn" style={{ background: cfgModel === m ? 'var(--ely-accent)' : 'transparent', borderColor: cfgModel === m ? 'var(--ely-accent)' : 'var(--ely-border)', color: cfgModel === m ? '#fff' : 'var(--ely-text-muted)' }}>{m}</button>
+                              <button key={m} type="button" onClick={() => { touchConfig(); setCfgModel(m); }} className="text-[10px] px-2 py-1 rounded-full border transition-all ely-chip-btn" style={{ background: cfgModel === m ? 'var(--ely-accent)' : 'transparent', borderColor: cfgModel === m ? 'var(--ely-accent)' : 'var(--ely-border)', color: cfgModel === m ? '#fff' : 'var(--ely-text-muted)' }}>{m}</button>
                             ))}
                           </div>
                         </div>
                       )}
                       <div className="space-y-1.5">
                         <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>API Key</label>
-                        <input type="password" value={cfgApiKey} onChange={(e) => onApiKeyChange(e.target.value)} placeholder={keyPlaceholder} className="w-full rounded-xl px-3.5 py-2.5 text-sm outline-none ely-focus-ring" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} autoComplete="off" spellCheck={false} />
+                        <input
+                          type="password"
+                          value={cfgApiKey}
+                          onChange={(e) => onApiKeyChange(e.target.value)}
+                          placeholder={keyPlaceholder}
+                          className="w-full rounded-xl px-3.5 py-2.5 text-sm outline-none ely-focus-ring"
+                          style={{
+                            background: 'var(--ely-input-bg)',
+                            border: `1px solid ${fieldBorder(liveValidation.fields.apiKey.ok, cfgTouched)}`,
+                            color: 'var(--ely-text)',
+                          }}
+                          autoComplete="off"
+                          spellCheck={false}
+                        />
+                        {cfgTouched && !liveValidation.fields.apiKey.ok && (
+                          <p className="text-[11px]" style={{ color: 'var(--ely-danger)' }}>{liveValidation.fields.apiKey.message}</p>
+                        )}
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                           <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Base URL</label>
-                          <input value={cfgBaseUrl} onChange={(e) => setCfgBaseUrl(e.target.value)} className="w-full rounded-xl px-3 py-2 text-xs outline-none ely-focus-ring" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
+                          <input
+                            value={cfgBaseUrl}
+                            onChange={(e) => { touchConfig(); setCfgBaseUrl(e.target.value); setCfgTestMsg(null); }}
+                            className="w-full rounded-xl px-3 py-2 text-xs outline-none ely-focus-ring"
+                            style={{
+                              background: 'var(--ely-input-bg)',
+                              border: `1px solid ${fieldBorder(liveValidation.fields.baseUrl.ok, cfgTouched)}`,
+                              color: 'var(--ely-text)',
+                            }}
+                          />
+                          {cfgTouched && !liveValidation.fields.baseUrl.ok && (
+                            <p className="text-[11px]" style={{ color: 'var(--ely-danger)' }}>{liveValidation.fields.baseUrl.message}</p>
+                          )}
                         </div>
                         <div className="space-y-1.5">
                           <label className="text-[11px] font-medium" style={{ color: 'var(--ely-text-muted)' }}>Modelo</label>
-                          <input value={cfgModel} onChange={(e) => setCfgModel(e.target.value)} className="w-full rounded-xl px-3 py-2 text-xs outline-none ely-focus-ring" style={{ background: 'var(--ely-input-bg)', border: '1px solid var(--ely-border)', color: 'var(--ely-text)' }} />
+                          <input
+                            value={cfgModel}
+                            onChange={(e) => { touchConfig(); setCfgModel(e.target.value); setCfgTestMsg(null); }}
+                            className="w-full rounded-xl px-3 py-2 text-xs outline-none ely-focus-ring"
+                            style={{
+                              background: 'var(--ely-input-bg)',
+                              border: `1px solid ${fieldBorder(liveValidation.fields.model.ok, cfgTouched)}`,
+                              color: 'var(--ely-text)',
+                            }}
+                          />
+                          {cfgTouched && !liveValidation.fields.model.ok && (
+                            <p className="text-[11px]" style={{ color: 'var(--ely-danger)' }}>{liveValidation.fields.model.message}</p>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2">
