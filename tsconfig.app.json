@@ -20,6 +20,9 @@
       "@/*": ["src/*"]
     },
 
+    /* TS 6.x: baseUrl sigue soportado; silenciar aviso hasta migración a TS 7 */
+    "ignoreDeprecations": "6.0",
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": false,
