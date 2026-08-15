@@ -16,6 +16,7 @@ import { ChatImageButton } from '@/components/ChatImageButton';
 import { PageTransition } from '@/components/PageTransition';
 import type { LabUser } from '@/lib/users';
 import { canAccessPage } from '@/lib/users';
+import { validateAiConfig } from '@/lib/validateConfig';
 import {
   detectFromKey,
   PROVIDER_PRESETS,
@@ -198,6 +199,8 @@ export default function App() {
       if (c.baseUrl) setCfgBaseUrl(c.baseUrl);
       if (c.model) setCfgModel(c.model);
       setCfgLoaded(true);
+    }).catch(() => {
+      setCfgLoaded(true);
     });
   }, [booted]);
 
@@ -290,8 +293,21 @@ export default function App() {
     }
   };
 
+  const runConfigValidation = () =>
+    validateAiConfig({
+      baseUrl: cfgBaseUrl,
+      model: cfgModel,
+      apiKey: cfgApiKey,
+      hasStoredKey: hasApiKey,
+    });
+
   const handleSaveConfig = async () => {
-    if (!isDesktop || !window.elyra || !isAdmin) return;
+    if (!isDesktop || !window.elyra || !isAdmin || !cfgLoaded) return;
+    const v = runConfigValidation();
+    if (!v.ok) {
+      setCfgTestMsg({ ok: false, text: v.firstError || 'Revise el formulario.' });
+      return;
+    }
     setCfgSaving(true); setCfgSaved(false); setCfgTestMsg(null);
     try {
       const result = await window.elyra.agentConfigSet({
@@ -313,7 +329,12 @@ export default function App() {
   };
 
   const handleTestConfig = async () => {
-    if (!isDesktop || !window.elyra || !isAdmin) return;
+    if (!isDesktop || !window.elyra || !isAdmin || !cfgLoaded) return;
+    const v = runConfigValidation();
+    if (!v.ok) {
+      setCfgTestMsg({ ok: false, text: v.firstError || 'Revise el formulario.' });
+      return;
+    }
     setCfgTesting(true); setCfgTestMsg(null);
     try {
       if (cfgApiKey.trim()) {
@@ -425,7 +446,6 @@ export default function App() {
         </header>
         <div className="flex-1 flex min-h-0">
           <main className={`flex-1 flex flex-col min-w-0 ${page === 'productos' ? 'px-0 py-0' : 'px-6 py-5'}`}>
-            {/* Transiciones de página con Framer Motion */}
             <PageTransition page={page}>
               {page === 'inicio' && (
                 <>
@@ -474,7 +494,9 @@ export default function App() {
                     <div className="hud-glass-strong p-5 space-y-4">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <h3 className="text-sm font-medium" style={{ color: 'var(--ely-text)' }}>Proveedor de IA</h3>
-                        {hasApiKey ? (
+                        {!cfgLoaded ? (
+                          <span className="text-[11px]" style={{ color: 'var(--ely-text-dim)' }}>Cargando…</span>
+                        ) : hasApiKey ? (
                           <span className="text-[11px] flex items-center gap-1" style={{ color: 'var(--ely-success)' }}>
                             <Check className="w-3 h-3" /> Conectada
                           </span>
@@ -547,8 +569,8 @@ export default function App() {
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button type="button" onClick={handleSaveConfig} disabled={cfgSaving || !isDesktop} className="ely-btn-primary flex-1 disabled:opacity-40">{cfgSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : cfgSaved ? <><Check className="w-4 h-4" /> Guardado</> : <><Save className="w-4 h-4" /> Guardar</>}</button>
-                        <button type="button" onClick={handleTestConfig} disabled={cfgTesting || !isDesktop} className="ely-btn-secondary flex-1 disabled:opacity-40">{cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar</>}</button>
+                        <button type="button" onClick={handleSaveConfig} disabled={cfgSaving || !isDesktop || !cfgLoaded} className="ely-btn-primary flex-1 disabled:opacity-40">{cfgSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : cfgSaved ? <><Check className="w-4 h-4" /> Guardado</> : <><Save className="w-4 h-4" /> Guardar</>}</button>
+                        <button type="button" onClick={handleTestConfig} disabled={cfgTesting || !isDesktop || !cfgLoaded} className="ely-btn-secondary flex-1 disabled:opacity-40">{cfgTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Wifi className="w-4 h-4" /> Probar</>}</button>
                       </div>
                       {cfgTestMsg && (
                         <div className="flex items-start gap-2 text-[12px] rounded-xl px-3 py-2.5" style={{ background: cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.1)' : 'rgba(248, 81, 73, 0.1)', border: `1px solid ${cfgTestMsg.ok ? 'rgba(63, 185, 80, 0.25)' : 'rgba(248, 81, 73, 0.25)'}`, color: cfgTestMsg.ok ? 'var(--ely-success)' : 'var(--ely-danger)' }}>{cfgTestMsg.ok ? <Check className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}<span>{cfgTestMsg.text}</span></div>
