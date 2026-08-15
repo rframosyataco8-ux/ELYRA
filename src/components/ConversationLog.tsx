@@ -1,4 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { MessageSquare } from 'lucide-react';
+import { EmptyState } from '@/components/EmptyState';
 
 export interface Message {
   id: string;
@@ -16,25 +18,28 @@ export function ConversationLog({ messages, compact }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+    const el = ref.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
   if (!messages.length) {
-    return (
-      <div
-        className="flex-1 flex items-center justify-center text-sm animate-fade-in"
-        style={{ color: 'var(--ely-text-dim)' }}
-      >
-        <div className="text-center space-y-2">
-          <div
-            className="w-10 h-10 mx-auto rounded-full flex items-center justify-center animate-soft-pulse"
-            style={{ background: 'var(--ely-accent-soft)', color: 'var(--ely-accent)' }}
-          >
-            <span className="text-lg">◈</span>
-          </div>
-          <p>La conversación aparecerá aquí</p>
+    if (compact) {
+      return (
+        <div
+          className="flex items-center justify-center text-[12px] py-4"
+          style={{ color: 'var(--ely-text-dim)' }}
+        >
+          La conversación aparecerá aquí
         </div>
-      </div>
+      );
+    }
+    return (
+      <EmptyState
+        icon={MessageSquare}
+        title="Sin mensajes aún"
+        description="Escribe o habla con ELYRA. La conversación se mostrará aquí."
+      />
     );
   }
 
@@ -42,6 +47,9 @@ export function ConversationLog({ messages, compact }: Props) {
     <div
       ref={ref}
       className={`flex-1 overflow-y-auto space-y-3 pr-1 ${compact ? 'max-h-28' : ''}`}
+      role="log"
+      aria-live="polite"
+      aria-relevant="additions"
     >
       {messages.map((m) => (
         <div
@@ -57,6 +65,7 @@ export function ConversationLog({ messages, compact }: Props) {
               color: 'var(--ely-text)',
               border: `1px solid ${m.role === 'user' ? 'transparent' : 'var(--ely-border)'}`,
             }}
+            data-role={m.role}
           >
             {m.role === 'elyra' && (
               <span
@@ -67,10 +76,7 @@ export function ConversationLog({ messages, compact }: Props) {
               </span>
             )}
             <p className="whitespace-pre-wrap">{m.text}</p>
-            <span
-              className="block text-[10px] mt-1.5"
-              style={{ color: 'var(--ely-text-dim)' }}
-            >
+            <span className="block text-[10px] mt-1.5" style={{ color: 'var(--ely-text-dim)' }}>
               {new Date(m.timestamp).toLocaleTimeString('es-ES', {
                 hour: '2-digit',
                 minute: '2-digit',
