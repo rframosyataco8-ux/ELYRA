@@ -15,9 +15,11 @@
     "jsx": "react-jsx",
 
     /*
-     * Alias @ → src (sin baseUrl: deprecado en TS 6 / 7).
-     * Vite resuelve lo mismo en vite.config.ts.
+     * baseUrl + paths: necesarios para que el language service del IDE
+     * resuelva @/* (sin esto VS Code/Cursor puede reportar cientos de
+     * "Cannot find module '@/…'" aunque `npm run typecheck` esté limpio).
      */
+    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     },
@@ -28,5 +30,6 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "src/vite-env.d.ts"]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "electron", "release"]
 }

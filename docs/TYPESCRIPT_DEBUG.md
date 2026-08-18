@@ -1,24 +1,35 @@
 # Depuración de errores TypeScript — ELYRA
 
-## 1. Comprobar tipos sin arrancar la app
+## Diagnóstico rápido (agosto 2026)
 
-En la raíz del proyecto:
+En CI / CLI el proyecto está **limpio**:
+
+```bash
+npm run typecheck   # 0 errores
+npm run lint        # 0 errores (solo warnings menores)
+npm run build       # OK
+```
+
+Si el **editor** muestra cientos o miles de errores (`Cannot find module '@/…'`, tipos rotos, etc.):
+
+1. Abre la **raíz del repo** (donde está `package.json`), no un subcarpeta.
+2. `npm install`
+3. `Ctrl+Shift+P` → **TypeScript: Select TypeScript Version** → **Use Workspace Version**
+4. `Ctrl+Shift+P` → **TypeScript: Restart TS Server**
+5. Confirma que `tsconfig.app.json` tiene `"baseUrl": "."` y `paths` `@/*`
+
+Sin `baseUrl`, algunos language services no resuelven el alias `@/` y cada import genera un error (eso multiplica el contador).
+
+## 1. Comprobar tipos sin arrancar la app
 
 ```powershell
 npm run typecheck
-```
-
-Modo continuo (se re-ejecuta al guardar):
-
-```powershell
 npm run typecheck:watch
 ```
 
-Esto usa `tsconfig.app.json` (`strict: true`, sin emitir archivos).
+Usa `tsconfig.app.json` (`strict: true`, sin emitir archivos). Solo incluye `src/` (no `electron/`).
 
 ## 2. Leer el mensaje de error
-
-Ejemplo típico:
 
 ```text
 src/components/PageTransition.tsx:12:5 - error TS2322:
@@ -26,45 +37,44 @@ src/components/PageTransition.tsx:12:5 - error TS2322:
 ```
 
 - **Archivo y línea**: dónde mirar primero.
-- **TS####**: código de error (búscalo en la doc de TypeScript si hace falta).
-- **Type 'X' is not assignable to type 'Y'**: el valor no coincide con el tipo esperado.
+- **TS####**: código de error.
+- **Type 'X' is not assignable to type 'Y'**: valor vs tipo esperado.
 
 ## 3. Errores frecuentes en este repo
 
 | Síntoma | Causa habitual | Qué hacer |
 |--------|----------------|-----------|
-| `Cannot find module '@/…'` | Alias `@` / Vite | Revisa `tsconfig.app.json` → `paths` y `vite.config` |
-| `Property 'elyra' does not exist on Window` | Tipos del preload | Revisa `src/vite-env.d.ts` o declaraciones de `window.elyra` |
-| `Module '"framer-motion"' has no exported member '…'` | Versión o import | `npm install` y usa imports oficiales de FM 11 |
-| `"@react-spring/web"` no encontrado | Dependencia no instalada | `npm install` tras `git pull` |
-| Error en `motion` con LazyMotion strict | `strict` exige componente `m` | En ELYRA `strict` está **desactivado** a propósito |
-| Tipos de React rotos tras actualizar | Cache / lock | Borra `node_modules` y reinstala (ver abajo) |
+| `Cannot find module '@/…'` | Alias `@` / IDE sin baseUrl o sin `npm install` | `baseUrl` + paths en tsconfig; reinicia TS Server |
+| `Property 'elyra' does not exist on Window` | Tipos del preload | `src/vite-env.d.ts` |
+| Miles de errores en Problems | node_modules / carpeta mal abierta | Abre raíz del repo; excluye node_modules |
+| `Module '"framer-motion"' has no exported member` | Dependencia | `npm install` |
+| Tipos React rotos tras actualizar | Cache | Borra `node_modules` y reinstala |
 
 ## 4. En VS Code / Cursor
 
-1. Abre la paleta: `Ctrl+Shift+P`.
-2. Ejecuta **“TypeScript: Select TypeScript Version”** → **Use Workspace Version**.
-3. Si el editor se queda con errores fantasma: **“TypeScript: Restart TS Server”**.
-4. Asegúrate de abrir la **carpeta raíz** del repo (donde está `package.json`), no un subdirectorio.
+1. `Ctrl+Shift+P` → **TypeScript: Select TypeScript Version** → Workspace.
+2. Si hay errores fantasma: **TypeScript: Restart TS Server**.
+3. Carpeta raíz del repo (con `package.json`).
 
-## 5. Reinstalación limpia (si todo falla)
+## 5. Reinstalación limpia
 
 ```powershell
-cd C:\ASISTENTE\ELYRA-nuevo
+cd C:\ruta\a\ELYRA
 Remove-Item -Recurse -Force node_modules
 Remove-Item -Force package-lock.json -ErrorAction SilentlyContinue
 npm install
 npm run typecheck
+npm run lint
 npm run dev:electron
 ```
 
 ## 6. Qué no hacer
 
-- No uses `// @ts-ignore` ni `any` por sistema salvo un caso puntual y comentado.
-- No ejecutes `npm audit fix --force`: puede romper Electron.
-- No cambies `strict: false` en `tsconfig` para “ocultar” errores; corrígelos.
+- No uses `// @ts-ignore` ni `any` por sistema.
+- No ejecutes `npm audit fix --force` (rompe Electron).
+- No pongas `strict: false` para ocultar errores.
 
-## 7. Flujo recomendado al tocar UI / motion
+## 7. Flujo recomendado
 
 ```powershell
 git pull origin main
@@ -73,4 +83,4 @@ npm run typecheck
 npm run dev:electron
 ```
 
-Si `typecheck` pasa y la app arranca, los tipos están bien aunque el editor aún no se haya actualizado (reinicia el TS Server).
+Si `typecheck` pasa y la app arranca, los tipos están bien aunque el editor aún no se haya actualizado.
