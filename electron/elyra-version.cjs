@@ -1,11 +1,11 @@
 module.exports = {
   name: 'ELYRA',
   product: '2.0.0',
-  platform: '1.11.0',
-  codename: 'ContextAware',
-  phase: '1.11',
-  label: 'ELYRA 1.11 — Contexto conversacional + conocimiento ampliado',
-  releasedAt: '2026-08-10',
+  platform: '1.12.0',
+  codename: 'FaceSecure',
+  phase: '1.12',
+  label: 'ELYRA 1.12 — Biometría Face ID + anti-spoofing 3D + código limpio',
+  releasedAt: '2026-08-18',
   capabilities: {
     conversation: true,
     conversationContext: true,
@@ -21,5 +21,10 @@ module.exports = {
     rag: true,
     tools: true,
     agent: true,
+    multiAgent: true,
+    vision: true,
+    faceAuth: true,
+    faceLiveness: true,
+    faceAntiSpoof: true,
   },
 };
