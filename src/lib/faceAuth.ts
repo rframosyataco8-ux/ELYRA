@@ -121,8 +121,7 @@ async function detectFaceBox(video: HTMLVideoElement): Promise<FaceBox> {
   const h = video.videoHeight || 480;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const FD = (window as any).FaceDetector;
+    const FD = window.FaceDetector;
     if (typeof FD === 'function') {
       const detector = new FD({ fastMode: false, maxDetectedFaces: 1 });
       const faces = await detector.detect(video);
