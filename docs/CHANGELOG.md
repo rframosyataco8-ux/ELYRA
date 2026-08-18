@@ -1,5 +1,15 @@
 # ELYRA Changelog
 
+## [1.12.1] — 2026-08-18 — Build stable
+
+### Fixed
+- `electron-builder` ya no exige `public/icon.*` (evita fallo de empaquetado sin assets)
+- SystemPanel: valores iniciales en 0; sin simulación aleatoria de red/CPU en desktop
+- Versión de producto alineada (2.0.1 / platform 1.12.1)
+
+### Note
+Para iconos de instalador, añada `public/icon.ico` (Windows), `public/icon.png` (Linux) y `public/icon.icns` (macOS) y vuelva a declarar las rutas en `package.json` → `build`.
+
 ## [1.12.0] — 2026-08-18 — FaceSecure + cleanup
 
 ### Added

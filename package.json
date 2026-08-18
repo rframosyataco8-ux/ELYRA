@@ -1,7 +1,7 @@
 {
   "name": "elyra",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "ELYRA — Asistente inteligente de escritorio holographic",
   "author": "Fabricio Ramos",
   "main": "electron/main.cjs",
@@ -59,16 +59,13 @@
       "electron/**/*"
     ],
     "win": {
-      "target": ["nsis"],
-      "icon": "public/icon.ico"
+      "target": ["nsis"]
     },
     "linux": {
-      "target": ["AppImage"],
-      "icon": "public/icon.png"
+      "target": ["AppImage"]
     },
     "mac": {
-      "target": ["dmg"],
-      "icon": "public/icon.icns"
+      "target": ["dmg"]
     }
   }
 }

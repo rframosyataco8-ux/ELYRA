@@ -5,8 +5,9 @@ import { Shield, ShieldCheck, Cpu, HardDrive, Keyboard } from 'lucide-react';
 const isDesktop = typeof window !== 'undefined' && !!window.elyra?.isDesktop;
 
 export function SystemPanel() {
-  const [stats, setStats] = useState({ cpu: 18, ram: 42, disk: 55, net: 12 });
+  const [stats, setStats] = useState({ cpu: 0, ram: 0, disk: 0, net: 0 });
   const [hostname, setHostname] = useState('');
+  const [live, setLive] = useState(false);
 
   useEffect(() => {
     const update = async () => {
@@ -17,24 +18,24 @@ export function SystemPanel() {
             cpu: Math.round(s.cpu),
             ram: Math.round(s.ram),
             disk: Math.round(s.disk),
-            net: Math.round(s.net),
+            // Sin contador de red fiable → 0 (no inventar)
+            net: Math.round(s.net ?? 0),
           });
           if (s.hostname) setHostname(s.hostname);
+          setLive(true);
         } catch {
-          /* silent */
+          setLive(false);
         }
       } else {
-        setStats((prev) => ({
-          cpu: Math.min(95, Math.max(8, prev.cpu + (Math.random() - 0.5) * 6)),
-          ram: Math.min(90, Math.max(30, prev.ram + (Math.random() - 0.5) * 3)),
-          disk: prev.disk,
-          net: Math.min(80, Math.max(5, prev.net + (Math.random() - 0.5) * 8)),
-        }));
+        // Solo en navegador (sin Electron): valores estáticos de demostración
+        setStats({ cpu: 12, ram: 38, disk: 54, net: 0 });
+        setHostname('');
+        setLive(false);
       }
     };
 
     update();
-    const interval = setInterval(update, isDesktop ? 3000 : 2500);
+    const interval = setInterval(update, isDesktop ? 3000 : 8000);
     return () => clearInterval(interval);
   }, []);
 
@@ -67,9 +68,12 @@ export function SystemPanel() {
         </div>
 
         <div className="flex items-center gap-1.5 mb-4">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--ely-success)' }} />
+          <span
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: live ? 'var(--ely-success)' : 'var(--ely-text-dim)' }}
+          />
           <span className="text-[12px]" style={{ color: 'var(--ely-text-muted)' }}>
-            {isDesktop ? 'Telemetría en vivo' : 'Simulación activa'}
+            {live ? 'Telemetría en vivo' : isDesktop ? 'Esperando datos…' : 'Modo vista previa'}
           </span>
         </div>
 
