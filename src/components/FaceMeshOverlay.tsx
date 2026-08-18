@@ -31,12 +31,10 @@ export function FaceMeshOverlay({
     if (!active) return;
     let raf = 0;
     let cancelled = false;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let detector: any = null;
+    let detector: FaceDetector | null = null;
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const FD = (window as any).FaceDetector;
+      const FD = window.FaceDetector;
       if (typeof FD === 'function') {
         detector = new FD({ fastMode: true, maxDetectedFaces: 1 });
       }
