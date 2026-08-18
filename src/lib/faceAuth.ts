@@ -1,5 +1,6 @@
 /**
- * Biometría facial local avanzada (estilo Face ID, sin hardware TrueDepth).
+ * Biometría facial local para escritorio (Electron / Windows).
+ * Webcam del PC — sin hardware TrueDepth ni iOS.
  * - Descriptor normalizado + gradientes (textura)
  * - Liveness por micro-movimiento entre fotogramas
  * - Anti-spoofing 3D (pantalla, foto, movimiento rígido)
@@ -14,6 +15,7 @@ import {
   hasEnoughSpoofHistory,
   type SpoofSignals,
 } from '@/lib/faceAntiSpoof';
+import { detectFaceMesh, initFaceMesh } from '@/lib/faceMesh';
 
 export type FaceTemplate = {
   userId: string;
@@ -30,8 +32,17 @@ type FaceStore = Record<string, FaceTemplate>;
 const STORAGE_KEY = 'elyra_face_templates_v3';
 const LEGACY_KEYS = ['elyra_face_templates_v2', 'elyra_face_templates_v1'];
 const GRID = 28;
-const MATCH_THRESHOLD = 0.088;
-const COSINE_MIN = 0.82;
+/** Umbrales calibrados para webcam de escritorio (distancia / luz variable) */
+const MATCH_THRESHOLD = 0.098;
+const COSINE_MIN = 0.78;
+
+let meshInitStarted = false;
+
+function ensureMeshWarm() {
+  if (meshInitStarted) return;
+  meshInitStarted = true;
+  void initFaceMesh();
+}
 
 function loadStore(): FaceStore {
   try {
@@ -80,25 +91,31 @@ export function removeFace(userId: string) {
 
 export async function requestCameraStream(): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error('Este equipo no permite acceso a la cámara.');
+    throw new Error('Este equipo no permite acceso a la webcam.');
   }
+  ensureMeshWarm();
   try {
     return await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: 'user',
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 30 },
+        width: { ideal: 1280, min: 640 },
+        height: { ideal: 720, min: 480 },
+        frameRate: { ideal: 30, min: 15 },
       },
       audio: false,
     });
   } catch (e: unknown) {
     const name = e && typeof e === 'object' && 'name' in e ? String((e as { name: string }).name) : '';
     if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-      throw new Error('Permiso de cámara denegado. Actívelo en Windows → Privacidad → Cámara.');
+      throw new Error('Permiso de cámara denegado. Windows → Privacidad → Cámara → permitir ELYRA.');
     }
-    if (name === 'NotFoundError') throw new Error('No se detectó ninguna cámara.');
-    throw new Error('No se pudo abrir la cámara.');
+    if (name === 'NotFoundError') throw new Error('No se detectó ninguna webcam.');
+    // Reintento sin constraints estrictas (webcams USB / drivers raros)
+    try {
+      return await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch {
+      throw new Error('No se pudo abrir la webcam.');
+    }
   }
 }
 
@@ -120,6 +137,7 @@ async function detectFaceBox(video: HTMLVideoElement): Promise<FaceBox> {
   const w = video.videoWidth || 640;
   const h = video.videoHeight || 480;
 
+  // 1) API nativa (Chrome/Edge)
   try {
     const FD = window.FaceDetector;
     if (typeof FD === 'function') {
@@ -127,7 +145,7 @@ async function detectFaceBox(video: HTMLVideoElement): Promise<FaceBox> {
       const faces = await detector.detect(video);
       if (faces?.length) {
         const b = faces[0].boundingBox;
-        const pad = Math.min(b.width, b.height) * 0.14;
+        const pad = Math.min(b.width, b.height) * 0.16;
         return {
           x: Math.max(0, b.x - pad),
           y: Math.max(0, b.y - pad),
@@ -135,18 +153,36 @@ async function detectFaceBox(video: HTMLVideoElement): Promise<FaceBox> {
           height: Math.min(h - Math.max(0, b.y - pad), b.height + pad * 2),
         };
       }
-      throw new Error('NO_FACE');
     }
-  } catch (e) {
-    if (e instanceof Error && e.message === 'NO_FACE') {
-      throw new Error('No se detectó un rostro. Centre la cara en el círculo.');
-    }
+  } catch {
+    /* continuar con MediaPipe */
   }
 
-  const side = Math.min(w, h) * 0.58;
+  // 2) MediaPipe FaceLandmarker (mejor en escritorio sin FaceDetector)
+  try {
+    const mesh = await detectFaceMesh(video);
+    if (mesh?.boxNorm) {
+      const { x, y, w: bw, h: bh } = mesh.boxNorm;
+      const padX = bw * 0.12;
+      const padY = bh * 0.14;
+      const bx = Math.max(0, (x - padX) * w);
+      const by = Math.max(0, (y - padY) * h);
+      return {
+        x: bx,
+        y: by,
+        width: Math.min(w - bx, (bw + padX * 2) * w),
+        height: Math.min(h - by, (bh + padY * 2) * h),
+      };
+    }
+  } catch {
+    /* fallback centro */
+  }
+
+  // 3) Sin detector: ROI central (última opción)
+  const side = Math.min(w, h) * 0.55;
   return {
     x: (w - side) / 2,
-    y: ((h - side) / 2) * 0.72,
+    y: ((h - side) / 2) * 0.78,
     width: side,
     height: side,
   };
@@ -187,16 +223,17 @@ export function assessFraming(box: FaceBox, videoW: number, videoH: number): Qua
   const cy = box.y + box.height / 2;
   const centered =
     1 -
-    Math.min(1, Math.hypot(cx / videoW - 0.5, cy / videoH - 0.48) / 0.35);
+    Math.min(1, Math.hypot(cx / videoW - 0.5, cy / videoH - 0.45) / 0.42);
 
-  if (faceRatio < 0.06) {
-    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Acérquese a la cámara' };
+  // Escritorio: el usuario suele estar más lejos que en un móvil
+  if (faceRatio < 0.035) {
+    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Acérquese un poco a la webcam' };
   }
-  if (faceRatio > 0.55) {
-    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Aléjese un poco' };
+  if (faceRatio > 0.62) {
+    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Aléjese un poco de la webcam' };
   }
-  if (centered < 0.35) {
-    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Centre el rostro' };
+  if (centered < 0.28) {
+    return { ok: false, sharpness: 0, faceRatio, centered, message: 'Centre el rostro frente a la webcam' };
   }
   return { ok: true, sharpness: 0, faceRatio, centered };
 }
@@ -243,13 +280,12 @@ export async function extractDescriptorFromVideo(
   opts?: {
     requireMotion?: boolean;
     minMotion?: number;
-    /** Si true, exige pasar anti-spoof cuando hay historial suficiente */
     enforceSpoof?: boolean;
   },
 ): Promise<ExtractResult> {
   const w = video.videoWidth || 640;
   const h = video.videoHeight || 480;
-  if (w < 64 || h < 64) throw new Error('Imagen de cámara inválida.');
+  if (w < 64 || h < 64) throw new Error('Imagen de webcam inválida. Espere un momento…');
 
   const size = 168;
   const canvas = document.createElement('canvas');
@@ -272,16 +308,17 @@ export async function extractDescriptorFromVideo(
   const motion = frameMotionEnergy(data, size);
   const spoof = analyzeSpoofFrame(data, size, box, motion);
 
-  if (variance < 160 || sharp < 4.5) {
-    throw new Error('Rostro poco nítido. Mejore la iluminación.');
+  // Umbrales más permisivos para webcams de PC (luz de oficina)
+  if (variance < 120 || sharp < 3.2) {
+    throw new Error('Rostro poco nítido. Mejore la iluminación o acerque la webcam.');
   }
 
-  if (opts?.requireMotion && motion < (opts.minMotion ?? 1.2)) {
+  if (opts?.requireMotion && motion < (opts.minMotion ?? 0.9)) {
     throw new Error('Mueva ligeramente la cabeza (prueba de vida).');
   }
 
   if (opts?.enforceSpoof && hasEnoughSpoofHistory() && !spoof.ok) {
-    throw new Error(spoof.reason || 'Detección anti-spoofing: gire la cabeza (3D).');
+    throw new Error(spoof.reason || 'Gire un poco la cabeza para validar profundidad.');
   }
 
   const cell = size / GRID;
@@ -365,8 +402,8 @@ export function captureThumbFromVideo(video: HTMLVideoElement, box?: FaceBox): s
   if (box) {
     ctx.drawImage(video, box.x, box.y, box.width, box.height, 0, 0, 112, 112);
   } else {
-    const side = Math.min(w, h) * 0.58;
-    ctx.drawImage(video, (w - side) / 2, ((h - side) / 2) * 0.72, side, side, 0, 0, 112, 112);
+    const side = Math.min(w, h) * 0.55;
+    ctx.drawImage(video, (w - side) / 2, ((h - side) / 2) * 0.78, side, side, 0, 0, 112, 112);
   }
   return canvas.toDataURL('image/jpeg', 0.75);
 }
@@ -414,7 +451,7 @@ export function samplesAreDiverse(list: number[][]): boolean {
   for (let i = 1; i < list.length; i++) {
     maxD = Math.max(maxD, l2(list[0], list[i]));
   }
-  return maxD >= 0.018;
+  return maxD >= 0.014;
 }
 
 export function registerFace(
@@ -424,7 +461,7 @@ export function registerFace(
 ): FaceTemplate {
   if (descriptors.length < 3) throw new Error('Se requieren al menos 3 muestras del rostro.');
   if (!samplesAreDiverse(descriptors)) {
-    throw new Error('Mueva ligeramente la cabeza entre capturas (prueba de vida 3D).');
+    throw new Error('Mueva ligeramente la cabeza entre capturas (prueba de vida).');
   }
   const primary = averageDescriptors(descriptors);
   const variants = [
@@ -477,12 +514,14 @@ export function verifyFace(userId: string, liveDescriptor: number[]): FaceMatchR
     return { ok: false, distance: 1, cosine: 0, confidence: 0, threshold: MATCH_THRESHOLD };
   }
   const { dist, cos } = bestAgainstTemplate(stored, liveDescriptor);
+  // Matching híbrido: basta L2 bueno O coseno alto + L2 cercano (webcams variables)
   const l2Ok = dist <= MATCH_THRESHOLD;
   const cosOk = cos >= COSINE_MIN;
-  const ok = l2Ok && cosOk;
+  const softOk = dist <= MATCH_THRESHOLD * 1.15 && cos >= COSINE_MIN - 0.04;
+  const ok = (l2Ok && cosOk) || softOk;
 
-  const confL2 = Math.max(0, Math.min(100, (1 - dist / (MATCH_THRESHOLD * 2.1)) * 100));
-  const confCos = Math.max(0, Math.min(100, ((cos - 0.5) / 0.5) * 100));
+  const confL2 = Math.max(0, Math.min(100, (1 - dist / (MATCH_THRESHOLD * 2.2)) * 100));
+  const confCos = Math.max(0, Math.min(100, ((cos - 0.45) / 0.55) * 100));
   const confidence = Math.round(confL2 * 0.55 + confCos * 0.45);
 
   return {

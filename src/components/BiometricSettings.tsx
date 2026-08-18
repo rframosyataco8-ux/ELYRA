@@ -18,7 +18,7 @@ export function BiometricSettings({ userId, userName }: Props) {
   const reset = () => {
     removeFace(userId);
     setConfirm(false);
-    setOk('Biometría facial eliminada. En el próximo acceso podrá registrarla de nuevo.');
+    setOk('Biometría eliminada. En el próximo acceso podrá registrarla de nuevo.');
     setTick((t) => t + 1);
     window.setTimeout(() => setOk(''), 3200);
   };
@@ -34,7 +34,7 @@ export function BiometricSettings({ userId, userName }: Props) {
 
       <p className="text-[13px] leading-relaxed" style={{ color: 'var(--ely-text-muted)' }}>
         El rostro de <strong style={{ color: 'var(--ely-text)' }}>{userName}</strong> se guarda solo en este
-        equipo. El escaneo usa varios fotogramas y una malla facial en vivo.
+        PC. Usa la webcam del equipo; el preview no se muestra durante el desbloqueo.
       </p>
 
       <div
@@ -45,7 +45,10 @@ export function BiometricSettings({ userId, userName }: Props) {
         }}
       >
         <div className="flex items-center gap-2.5 min-w-0">
-          <Shield className="w-4 h-4 shrink-0" style={{ color: registered ? 'var(--ely-success)' : 'var(--ely-text-dim)' }} />
+          <Shield
+            className="w-4 h-4 shrink-0"
+            style={{ color: registered ? 'var(--ely-success)' : 'var(--ely-text-dim)' }}
+          />
           <div className="min-w-0">
             <p className="text-[13px] font-medium" style={{ color: 'var(--ely-text)' }}>
               {registered ? 'Rostro registrado' : 'Sin biometría'}

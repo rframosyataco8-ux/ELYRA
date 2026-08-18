@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
-  product: '2.0.3',
-  platform: '1.12.3',
+  product: '2.0.4',
+  platform: '1.12.4',
   codename: 'FaceSecure',
   phase: '1.12',
-  label: 'ELYRA 1.12.3 — Desbloqueo facial de escritorio (Electron) + anti-spoof',
+  label: 'ELYRA 1.12.4 — Biometría escritorio: MediaPipe box + umbrales webcam PC',
   releasedAt: '2026-08-18',
   capabilities: {
     conversation: true,
