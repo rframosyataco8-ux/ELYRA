@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Key,
   Check,
@@ -27,6 +27,8 @@ function fieldBorder(ok: boolean, touched: boolean): string {
 export interface AiConfigPanelProps {
   hasApiKey: boolean;
   onHasApiKeyChange: (v: boolean) => void;
+  initialBaseUrl?: string;
+  initialModel?: string;
   cfgLoaded: boolean;
   isDesktop: boolean;
 }
@@ -34,19 +36,26 @@ export interface AiConfigPanelProps {
 export function AiConfigPanel({
   hasApiKey,
   onHasApiKeyChange,
+  initialBaseUrl,
+  initialModel,
   cfgLoaded,
   isDesktop,
 }: AiConfigPanelProps) {
   const [cfgApiKey, setCfgApiKey] = useState('');
-  const [cfgBaseUrl, setCfgBaseUrl] = useState('https://api.groq.com/openai/v1');
-  const [cfgModel, setCfgModel] = useState('llama-3.3-70b-versatile');
+  const [cfgBaseUrl, setCfgBaseUrl] = useState(initialBaseUrl || 'https://api.groq.com/openai/v1');
+  const [cfgModel, setCfgModel] = useState(initialModel || 'llama-3.3-70b-versatile');
   const [cfgSaving, setCfgSaving] = useState(false);
   const [cfgSaved, setCfgSaved] = useState(false);
   const [cfgTesting, setCfgTesting] = useState(false);
   const [cfgTestMsg, setCfgTestMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [cfgTouched, setCfgTouched] = useState(false);
   const [detectedProvider, setDetectedProvider] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (!cfgLoaded) return;
+    if (initialBaseUrl) setCfgBaseUrl(initialBaseUrl);
+    if (initialModel) setCfgModel(initialModel);
+  }, [cfgLoaded, initialBaseUrl, initialModel]);
 
   const isGemini = detectedProvider === 'gemini' || isGeminiUrl(cfgBaseUrl);
   const isNvidia = detectedProvider === 'nvidia' || isNvidiaUrl(cfgBaseUrl);
@@ -61,19 +70,6 @@ export function AiConfigPanel({
       }),
     [cfgBaseUrl, cfgModel, cfgApiKey, hasApiKey],
   );
-
-  // Hidratar desde Electron una sola vez cuando cfgLoaded
-  if (cfgLoaded && !hydrated && isDesktop && typeof window !== 'undefined' && window.elyra) {
-    setHydrated(true);
-    window.elyra
-      .agentConfigGet()
-      .then((c) => {
-        onHasApiKeyChange(c.hasKey);
-        if (c.baseUrl) setCfgBaseUrl(c.baseUrl);
-        if (c.model) setCfgModel(c.model);
-      })
-      .catch(() => {});
-  }
 
   const touchConfig = () => setCfgTouched(true);
 
@@ -173,13 +169,17 @@ export function AiConfigPanel({
           Proveedor de IA
         </h3>
         {!cfgLoaded ? (
-          <span className="text-[11px]" style={{ color: 'var(--ely-text-dim)' }}>Cargando…</span>
+          <span className="text-[11px]" style={{ color: 'var(--ely-text-dim)' }}>
+            Cargando…
+          </span>
         ) : hasApiKey ? (
           <span className="text-[11px] flex items-center gap-1" style={{ color: 'var(--ely-success)' }}>
             <Check className="w-3 h-3" /> Conectada
           </span>
         ) : (
-          <span className="text-[11px]" style={{ color: 'var(--ely-warning)' }}>Sin clave</span>
+          <span className="text-[11px]" style={{ color: 'var(--ely-warning)' }}>
+            Sin clave
+          </span>
         )}
       </div>
 

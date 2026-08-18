@@ -322,15 +322,19 @@ async function getSystemStats() {
   try {
     const totalMem = os.totalmem();
     const freeMem = os.freemem();
-    let cpuUsage = 15;
+    let cpuUsage = 0;
     try {
       if (process.platform === 'win32') {
         const { stdout } = await execAsync('wmic cpu get loadpercentage /value');
         const match = stdout.match(/LoadPercentage=(\d+)/);
         if (match) cpuUsage = parseInt(match[1], 10);
+      } else {
+        const load = os.loadavg()[0];
+        const cores = os.cpus().length || 1;
+        cpuUsage = Math.min(100, Math.round((load / cores) * 100));
       }
     } catch {}
-    let diskUsage = 50;
+    let diskUsage = 0;
     try {
       if (process.platform === 'win32') {
         const { stdout } = await execAsync(
@@ -341,11 +345,12 @@ async function getSystemStats() {
         if (size > 0) diskUsage = Math.round(((size - free) / size) * 100);
       }
     } catch {}
+    // Red: sin contador de interfaz fiable cross-platform → 0 (no inventar)
     return {
       cpu: cpuUsage,
       ram: Math.round(((totalMem - freeMem) / totalMem) * 100),
       disk: diskUsage,
-      net: Math.round(Math.random() * 20 + 5),
+      net: 0,
       platform: process.platform,
       hostname: os.hostname(),
       uptime: os.uptime(),
@@ -353,7 +358,7 @@ async function getSystemStats() {
       freeMemGB: +(freeMem / 1e9).toFixed(1),
     };
   } catch {
-    return { cpu: 15, ram: 45, disk: 50, net: 10, hostname: os.hostname() };
+    return { cpu: 0, ram: 0, disk: 0, net: 0, hostname: os.hostname() };
   }
 }
 
