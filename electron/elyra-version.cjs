@@ -4,7 +4,7 @@ module.exports = {
   platform: '1.12.3',
   codename: 'FaceSecure',
   phase: '1.12',
-  label: 'ELYRA 1.12.3 — Face ID estable + sin circular getConfig',
+  label: 'ELYRA 1.12.3 — Desbloqueo facial de escritorio (Electron) + anti-spoof',
   releasedAt: '2026-08-18',
   capabilities: {
     conversation: true,
@@ -27,5 +27,6 @@ module.exports = {
     faceLiveness: true,
     faceAntiSpoof: true,
     faceIdHiddenCamera: true,
+    desktop: true,
   },
 };

@@ -1,15 +1,26 @@
 # ELYRA Changelog
 
-## [1.12.2] — 2026-08-18 — Face ID móvil
+## [1.12.3] — 2026-08-18 — Face unlock de escritorio (estable)
 
-### Changed
-- Face ID ya **no muestra la cámara**: captura en segundo plano (como iPhone/Android)
-- UI abstracta: anillo de progreso, icono ScanFace, línea de escaneo, feedback de profundidad
-- Colores y botones alineados al design system (`--ely-*`, `ely-btn-primary`)
-- Eliminado el overlay de malla sobre el preview (ya no hay preview)
+### Fixed
+- Escaneo facial ya no se reinicia en cada re-render (efecto de cámara solo por `mode`/`userId`)
+- Video de captura oculto pero con tamaño real (Electron decodifica frames de forma fiable)
+- Dependencia circular `getConfig` en `agent-hooks` (carga diferida)
+- Referencia TypeScript a tests Vitest en el workspace
 
 ### Note
-La cámara sigue activa de forma invisible para descriptor + anti-spoof 3D.
+ELYRA es **app de escritorio** (Electron). El desbloqueo facial es local en el PC:
+cámara del equipo + descriptor + anti-spoof. No es Face ID de Apple ni app iOS/móvil.
+
+## [1.12.2] — 2026-08-18 — Desbloqueo facial sin preview
+
+### Changed
+- El desbloqueo facial **no muestra la cámara**: captura en segundo plano
+- UI abstracta de escritorio: anillo de progreso, icono ScanFace, línea de escaneo
+- Colores y botones alineados al design system (`--ely-*`, `ely-btn-primary`)
+
+### Note
+La webcam del PC sigue activa de forma invisible para descriptor + anti-spoof 3D.
 
 ## [1.12.1] — 2026-08-18 — Build stable
 
@@ -24,11 +35,11 @@ Para iconos de instalador, añada `public/icon.ico` (Windows), `public/icon.png`
 ## [1.12.0] — 2026-08-18 — FaceSecure + cleanup
 
 ### Added
-- Biometría facial avanzada (MediaPipe FaceLandmarker)
+- Biometría facial avanzada en escritorio (MediaPipe FaceLandmarker)
 - Anti-spoofing 3D (textura, parallax, flujo regional)
 - Liveness pasivo obligatorio al verificar
-- UI Face ID premium con feedback de calidad en vivo
-- Desbloqueo facial continuo al elegir usuario con rostro
+- UI de desbloqueo facial con feedback en vivo
+- Desbloqueo facial al elegir usuario con rostro registrado
 
 ### Changed
 - Panel de configuración de IA extraído a componente propio (`AiConfigPanel`)

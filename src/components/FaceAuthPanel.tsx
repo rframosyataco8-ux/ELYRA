@@ -26,8 +26,9 @@ interface FaceAuthPanelProps {
 type Phase = 'permission' | 'looking' | 'scanning' | 'done' | 'fail' | 'error';
 
 /**
- * Face ID estilo móvil: cámara en segundo plano (no visible).
- * El efecto de cámara solo depende de mode/userId para no reiniciarse en cada render.
+ * Desbloqueo facial de escritorio (Electron / Windows).
+ * Webcam del PC en segundo plano (no se muestra el preview).
+ * No es Face ID de iOS ni app móvil.
  */
 export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: FaceAuthPanelProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -42,7 +43,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
   onCancelRef.current = onCancel;
 
   const [phase, setPhase] = useState<Phase>('permission');
-  const [message, setMessage] = useState('Activando sensor…');
+  const [message, setMessage] = useState('Activando webcam…');
   const [hint, setHint] = useState('');
   const [progress, setProgress] = useState(0);
   const [confidence, setConfidence] = useState<number | null>(null);
@@ -89,8 +90,8 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     loopRef.current = true;
     resetLivenessState();
     setPhase('looking');
-    setMessage('Face ID');
-    setHint('Mire al sensor · gire un poco la cabeza');
+    setMessage('Desbloqueo facial');
+    setHint('Mire a la webcam · gire un poco la cabeza');
     setProgress(6);
     setError('');
     setConfidence(null);
@@ -153,7 +154,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
             setHint('Mantenga el rostro de frente');
           } else {
             setMessage('Buscando rostro');
-            setHint('Acérquese · buena luz');
+            setHint('Acérquese a la webcam · buena luz');
           }
         }
       } catch (e) {
@@ -181,7 +182,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     samplesRef.current = [];
     resetLivenessState();
     setPhase('scanning');
-    setMessage('Registrar Face ID');
+    setMessage('Registrar rostro');
     setHint('Gire la cabeza con naturalidad');
     setError('');
     setConfidence(null);
@@ -240,7 +241,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       const video = videoRef.current;
       const thumb = video ? captureThumbFromVideo(video, lastBoxRef.current) : undefined;
       registerFace(userId, samplesRef.current, thumb);
-      finishOk('Face ID listo');
+      finishOk('Rostro registrado');
     } catch (e) {
       loopRef.current = false;
       setPhase('fail');
@@ -250,7 +251,6 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     }
   }, [userId, finishOk]);
 
-  // Solo reinicia cámara al cambiar mode o userId (no en cada re-render del padre)
   useEffect(() => {
     aliveRef.current = true;
     loopRef.current = false;
@@ -259,7 +259,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     (async () => {
       try {
         setPhase('permission');
-        setMessage('Activando sensor…');
+        setMessage('Activando webcam…');
         setError('');
         setProgress(0);
 
@@ -271,7 +271,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         streamRef.current = stream;
 
         const video = videoRef.current;
-        if (!video) throw new Error('Sensor no inicializado');
+        if (!video) throw new Error('Webcam no inicializada');
 
         video.srcObject = stream;
         video.muted = true;
@@ -285,7 +285,6 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         const ready = await waitVideoReady(video);
         if (cancelled || !aliveRef.current) return;
         if (!ready) {
-          // Aún así intentar: algunos drivers reportan late metadata
           await new Promise((r) => setTimeout(r, 400));
         }
 
@@ -299,8 +298,8 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       } catch (e) {
         if (cancelled) return;
         setPhase('error');
-        setError(captureError(e, 'No se pudo acceder a la cámara.'));
-        setMessage('Sensor no disponible');
+        setError(captureError(e, 'No se pudo acceder a la webcam.'));
+        setMessage('Webcam no disponible');
       }
     })();
 
@@ -308,7 +307,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       cancelled = true;
       cleanup();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loops estables vía userId/mode
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, userId, cleanup]);
 
   const retry = () => {
@@ -330,10 +329,6 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
 
   return (
     <div className="space-y-5 relative">
-      {/*
-        Video oculto pero con tamaño real en layout (Electron/Chromium
-        a veces no decodifica frames si está en left:-9999).
-      */}
       <div
         aria-hidden
         style={{
@@ -368,7 +363,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           style={{ color: 'var(--ely-text-dim)' }}
         >
           <ShieldCheck className="w-3 h-3" style={{ color: 'var(--ely-accent)' }} />
-          {mode === 'register' ? 'Registrar Face ID' : 'Face ID'}
+          {mode === 'register' ? 'Registrar rostro' : 'Desbloqueo facial'}
         </div>
         <p className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--ely-text)' }}>
           {userName}
@@ -559,7 +554,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       </div>
 
       <p className="text-[10px] text-center leading-relaxed" style={{ color: 'var(--ely-text-dim)' }}>
-        Sensor oculto · anti-spoof 3D · solo en este equipo
+        Webcam del PC · anti-spoof 3D · solo en este equipo
       </p>
     </div>
   );
