@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Check, Lock, ShieldCheck } from 'lucide-react';
+import { Loader2, Check, Lock, ShieldCheck, ScanFace } from 'lucide-react';
 import {
   requestCameraStream,
   stopStream,
@@ -11,7 +11,6 @@ import {
   resetLivenessState,
   hasEnoughSpoofHistory,
 } from '@/lib/faceAuth';
-import { FaceMeshOverlay } from '@/components/FaceMeshOverlay';
 import { captureError } from '@/lib/errors';
 
 type Mode = 'register' | 'verify';
@@ -26,7 +25,10 @@ interface FaceAuthPanelProps {
 
 type Phase = 'permission' | 'looking' | 'scanning' | 'done' | 'fail' | 'error';
 
-/** Desbloqueo facial con liveness + anti-spoofing 3D. */
+/**
+ * Face ID estilo móvil: la cámara trabaja en segundo plano (oculta).
+ * El usuario solo ve animación abstracta + feedback, como en iPhone/Android.
+ */
 export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: FaceAuthPanelProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -36,7 +38,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
   const loopRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>('permission');
-  const [message, setMessage] = useState('Activando cámara…');
+  const [message, setMessage] = useState('Activando sensor…');
   const [hint, setHint] = useState('');
   const [progress, setProgress] = useState(0);
   const [confidence, setConfidence] = useState<number | null>(null);
@@ -62,7 +64,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       streamRef.current = null;
       window.setTimeout(() => {
         if (aliveRef.current) onSuccess();
-      }, 520);
+      }, 560);
     },
     [onSuccess],
   );
@@ -72,8 +74,8 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     loopRef.current = true;
     resetLivenessState();
     setPhase('looking');
-    setMessage('Mire a la cámara');
-    setHint('Gire un poco la cabeza para validar profundidad 3D');
+    setMessage('Face ID');
+    setHint('Mire al sensor · gire un poco la cabeza');
     setProgress(6);
     setError('');
     setConfidence(null);
@@ -119,29 +121,29 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         if (result.ok && quality > 0.35 && spoofPasses >= needSpoof) {
           matched++;
           setProgress(Math.min(99, 55 + matched * 20));
-          setMessage(matched >= needMatch ? 'Identidad confirmada' : 'Validando…');
-          setHint('Rostro 3D verificado');
+          setMessage(matched >= needMatch ? 'Identidad confirmada' : 'Reconociendo…');
+          setHint('Rostro verificado');
           if (matched >= needMatch) {
             finishOk('Desbloqueado');
             loopRef.current = false;
             return;
           }
         } else if (result.ok && quality > 0.35) {
-          setMessage('Comprobando que es real…');
+          setMessage('Comprobando que es usted…');
           setHint('Mueva un poco la cabeza');
         } else {
           if (matched > 0 && result.confidence < 42) matched = 0;
           if (result.confidence > 50) {
             setMessage('Casi…');
-            setHint('Centre el rostro de frente');
+            setHint('Mantenga el rostro de frente');
           } else {
             setMessage('Buscando rostro');
-            setHint('Acérquese · buena luz · leve movimiento');
+            setHint('Acérquese · buena luz');
           }
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : 'Ajuste la posición';
-        setMessage('Anti-spoofing');
+        setMessage('Ajuste');
         setHint(msg);
       }
 
@@ -152,7 +154,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       loopRef.current = false;
       setPhase('fail');
       setProgress(0);
-      setError('No se pudo verificar (identidad o profundidad 3D). Use el PIN.');
+      setError('No se pudo verificar. Use el PIN.');
       setMessage('No reconocido');
       setHint('');
     }
@@ -164,8 +166,8 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     samplesRef.current = [];
     resetLivenessState();
     setPhase('scanning');
-    setMessage('Registre su rostro');
-    setHint('Gire la cabeza — se valida profundidad 3D');
+    setMessage('Registrar Face ID');
+    setHint('Gire la cabeza con naturalidad');
     setError('');
     setConfidence(null);
     setDepthPct(null);
@@ -201,7 +203,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         samplesRef.current.push(descriptor);
         const n = samplesRef.current.length;
         setProgress(Math.round((n / need) * 100));
-        setMessage(n < need ? `Escaneando 3D ${n}/${need}` : 'Guardando plantilla…');
+        setMessage(n < need ? `Capturando ${n}/${need}` : 'Guardando…');
         setHint(
           n === 1
             ? 'Gire un poco a la izquierda'
@@ -223,7 +225,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       const video = videoRef.current;
       const thumb = video ? captureThumbFromVideo(video, lastBoxRef.current) : undefined;
       registerFace(userId, samplesRef.current, thumb);
-      finishOk('Rostro registrado');
+      finishOk('Face ID listo');
     } catch (e) {
       loopRef.current = false;
       setPhase('fail');
@@ -261,7 +263,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       } catch (e) {
         setPhase('error');
         setError(captureError(e, 'No se pudo acceder a la cámara.'));
-        setMessage('Cámara no disponible');
+        setMessage('Sensor no disponible');
       }
     })();
 
@@ -282,158 +284,231 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     else void runRegisterLoop();
   };
 
-  const ringColor =
-    phase === 'done'
-      ? '#3fb950'
-      : phase === 'fail' || phase === 'error'
-        ? 'rgba(248,81,73,0.85)'
-        : '#38bdf8';
+  const isActive = phase === 'looking' || phase === 'scanning';
+  const isDone = phase === 'done';
+  const isFail = phase === 'fail' || phase === 'error';
+  const ringColor = isDone ? '#3fb950' : isFail ? 'rgba(248,81,73,0.9)' : '#5b9fff';
 
   return (
     <div className="space-y-5">
-      <div className="text-center space-y-0.5">
-        <div className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-sky-300/50 font-medium">
-          <ShieldCheck className="w-3 h-3" />
-          {mode === 'register' ? 'Registro 3D' : 'Face Unlock · Anti-spoof'}
+      {/* Video oculto: captura real sin mostrar preview (estilo móvil) */}
+      <video
+        ref={videoRef}
+        playsInline
+        muted
+        autoPlay
+        aria-hidden
+        tabIndex={-1}
+        style={{
+          position: 'fixed',
+          left: -9999,
+          top: 0,
+          width: 640,
+          height: 480,
+          opacity: 0,
+          pointerEvents: 'none',
+          zIndex: -1,
+        }}
+      />
+
+      <div className="text-center space-y-1">
+        <div
+          className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em] font-medium"
+          style={{ color: 'var(--ely-text-dim)' }}
+        >
+          <ShieldCheck className="w-3 h-3" style={{ color: 'var(--ely-accent)' }} />
+          {mode === 'register' ? 'Registrar Face ID' : 'Face ID'}
         </div>
-        <p className="text-[15px] font-semibold text-white tracking-tight">{userName}</p>
+        <p className="text-[15px] font-semibold tracking-tight" style={{ color: 'var(--ely-text)' }}>
+          {userName}
+        </p>
       </div>
 
-      <div className="relative mx-auto" style={{ width: 236, height: 236 }}>
+      {/* Anillo abstracto — sin cámara visible */}
+      <div className="relative mx-auto" style={{ width: 200, height: 200 }}>
+        {/* Glow */}
         <div
-          className="absolute inset-[-6px] rounded-full pointer-events-none"
+          className="absolute inset-[-12px] rounded-full pointer-events-none"
           style={{
-            background:
-              phase === 'done'
-                ? 'radial-gradient(circle, rgba(63,185,80,0.2) 0%, transparent 70%)'
-                : 'radial-gradient(circle, rgba(56,189,248,0.14) 0%, transparent 70%)',
+            background: isDone
+              ? 'radial-gradient(circle, rgba(63,185,80,0.18) 0%, transparent 70%)'
+              : isFail
+                ? 'radial-gradient(circle, rgba(248,81,73,0.12) 0%, transparent 70%)'
+                : 'radial-gradient(circle, rgba(91,159,255,0.14) 0%, transparent 70%)',
           }}
         />
 
+        {/* Anillos orbitando */}
+        {isActive && (
+          <>
+            <motion.div
+              className="absolute inset-[-4px] rounded-full border border-dashed"
+              style={{ borderColor: 'color-mix(in srgb, var(--ely-accent) 28%, transparent)' }}
+              animate={{ rotate: 360 }}
+              transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+            />
+            <motion.div
+              className="absolute inset-[-14px] rounded-full border"
+              style={{ borderColor: 'color-mix(in srgb, var(--ely-accent) 12%, transparent)' }}
+              animate={{ rotate: -360 }}
+              transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}
+            />
+          </>
+        )}
+
+        {/* Progreso circular */}
+        <svg
+          className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none"
+          viewBox="0 0 100 100"
+        >
+          <circle
+            cx="50"
+            cy="50"
+            r="46"
+            fill="none"
+            stroke="var(--ely-track)"
+            strokeWidth="2.5"
+          />
+          <circle
+            cx="50"
+            cy="50"
+            r="46"
+            fill="none"
+            stroke={ringColor}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeDasharray={`${(progress / 100) * 289} 289`}
+            style={{ transition: 'stroke-dasharray 0.3s ease, stroke 0.3s ease' }}
+          />
+        </svg>
+
+        {/* Núcleo */}
         <div
-          className="absolute inset-0 rounded-full overflow-hidden"
+          className="absolute inset-[14px] rounded-full flex items-center justify-center"
           style={{
-            border: `2px solid ${ringColor}`,
-            boxShadow:
-              phase === 'done'
-                ? '0 0 40px rgba(63,185,80,0.35), inset 0 0 20px rgba(0,0,0,0.35)'
-                : '0 0 36px rgba(56,180,255,0.22), inset 0 0 20px rgba(0,0,0,0.4)',
+            background: 'var(--ely-surface)',
+            border: `1.5px solid ${isDone || isFail ? ringColor : 'var(--ely-border)'}`,
+            boxShadow: isDone
+              ? '0 0 28px rgba(63,185,80,0.25)'
+              : isActive
+                ? '0 0 24px color-mix(in srgb, var(--ely-accent) 20%, transparent)'
+                : 'var(--ely-shadow-sm)',
           }}
         >
-          <video
-            ref={videoRef}
-            className="w-full h-full object-cover"
-            playsInline
-            muted
-            style={{ transform: 'scaleX(-1)' }}
-          />
-
-          {(phase === 'looking' || phase === 'scanning') && (
-            <FaceMeshOverlay videoRef={videoRef} active mirrored />
-          )}
-
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background:
-                'radial-gradient(circle at center, transparent 42%, rgba(0,0,0,0.45) 100%)',
-            }}
-          />
-
-          {phase === 'permission' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/80">
-              <Loader2 className="w-7 h-7 animate-spin text-sky-400" />
-            </div>
-          )}
-
-          <AnimatePresence>
-            {phase === 'done' && (
+          <AnimatePresence mode="wait">
+            {phase === 'permission' && (
               <motion.div
+                key="perm"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="absolute inset-0 flex items-center justify-center bg-black/50"
+                exit={{ opacity: 0 }}
               >
+                <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--ely-accent)' }} />
+              </motion.div>
+            )}
+
+            {isActive && (
+              <motion.div
+                key="scan"
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="relative flex items-center justify-center"
+              >
+                <ScanFace
+                  className="w-14 h-14"
+                  strokeWidth={1.25}
+                  style={{ color: 'var(--ely-accent)' }}
+                />
+                {/* Línea de escaneo */}
                 <motion.div
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 280, damping: 16 }}
-                  className="w-16 h-16 rounded-full flex items-center justify-center"
+                  className="absolute left-[18%] right-[18%] h-[2px] rounded-full"
                   style={{
-                    background: 'linear-gradient(145deg,#3fb950,#2ea043)',
-                    boxShadow: '0 0 28px rgba(63,185,80,0.55)',
+                    background:
+                      'linear-gradient(90deg, transparent, var(--ely-accent), transparent)',
+                    boxShadow: '0 0 10px var(--ely-accent)',
                   }}
-                >
-                  <Check className="w-9 h-9 text-white" strokeWidth={2.5} />
-                </motion.div>
+                  animate={{ top: ['22%', '72%', '22%'] }}
+                  transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                />
+              </motion.div>
+            )}
+
+            {isDone && (
+              <motion.div
+                key="ok"
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 320, damping: 18 }}
+                className="w-16 h-16 rounded-full flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(145deg,#3fb950,#2ea043)',
+                  boxShadow: '0 0 24px rgba(63,185,80,0.45)',
+                }}
+              >
+                <Check className="w-9 h-9 text-white" strokeWidth={2.5} />
+              </motion.div>
+            )}
+
+            {isFail && (
+              <motion.div
+                key="fail"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex flex-col items-center gap-1"
+              >
+                <Lock className="w-9 h-9" style={{ color: 'var(--ely-danger)' }} strokeWidth={1.5} />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {(phase === 'scanning' || phase === 'looking') && (
-          <svg
-            className="absolute inset-[-4px] w-[calc(100%+8px)] h-[calc(100%+8px)] -rotate-90 pointer-events-none"
-            viewBox="0 0 100 100"
-          >
-            <circle cx="50" cy="50" r="47" fill="none" stroke="rgba(56,180,255,0.1)" strokeWidth="1.2" />
-            <circle
-              cx="50"
-              cy="50"
-              r="47"
-              fill="none"
-              stroke="url(#elyFaceGrad)"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeDasharray={`${(progress / 100) * 295} 295`}
-              style={{ transition: 'stroke-dasharray 0.28s ease' }}
-            />
-            <defs>
-              <linearGradient id="elyFaceGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#0369a1" />
-                <stop offset="100%" stopColor="#7dd3fc" />
-              </linearGradient>
-            </defs>
-          </svg>
-        )}
-
-        {phase === 'looking' && (
+        {/* Pulso exterior al escanear */}
+        {isActive && (
           <motion.div
-            className="absolute inset-0 rounded-full border border-sky-400/30 pointer-events-none"
-            animate={{ scale: [1, 1.06, 1], opacity: [0.5, 0, 0.5] }}
-            transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+            className="absolute inset-0 rounded-full pointer-events-none"
+            style={{ border: '1px solid color-mix(in srgb, var(--ely-accent) 35%, transparent)' }}
+            animate={{ scale: [1, 1.08, 1], opacity: [0.5, 0, 0.5] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
           />
         )}
       </div>
 
-      <div className="text-center space-y-1 min-h-[3rem]">
-        <p className="text-[15px] font-medium text-white tracking-tight">{message}</p>
-        {hint && <p className="text-[12px] text-sky-100/45">{hint}</p>}
-        <div className="flex items-center justify-center gap-3 text-[11px] text-sky-200/45 tabular-nums pt-0.5">
-          {confidence != null && phase === 'scanning' && <span>ID {confidence}%</span>}
-          {depthPct != null && phase === 'scanning' && <span>Profundidad {depthPct}%</span>}
+      <div className="text-center space-y-1 min-h-[3.25rem]">
+        <p className="text-[15px] font-medium tracking-tight" style={{ color: 'var(--ely-text)' }}>
+          {message}
+        </p>
+        {hint && (
+          <p className="text-[12px]" style={{ color: 'var(--ely-text-muted)' }}>
+            {hint}
+          </p>
+        )}
+        <div
+          className="flex items-center justify-center gap-3 text-[11px] tabular-nums pt-0.5"
+          style={{ color: 'var(--ely-text-dim)' }}
+        >
+          {confidence != null && isActive && <span>Coincidencia {confidence}%</span>}
+          {depthPct != null && isActive && <span>Profundidad {depthPct}%</span>}
         </div>
       </div>
 
       {error && (
         <p
           role="alert"
-          className="text-[12px] rounded-xl px-3 py-2.5 text-center text-red-300/90 bg-red-500/10 border border-red-400/15"
+          className="text-[12px] rounded-xl px-3 py-2.5 text-center"
+          style={{
+            color: 'var(--ely-danger)',
+            background: 'color-mix(in srgb, var(--ely-danger) 10%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--ely-danger) 18%, transparent)',
+          }}
         >
           {error}
         </p>
       )}
 
       <div className="flex flex-col gap-2">
-        {(phase === 'fail' || phase === 'error') && (
-          <button
-            type="button"
-            onClick={retry}
-            className="w-full py-2.5 rounded-full text-[13px] font-medium text-white"
-            style={{
-              background: 'linear-gradient(90deg,#0c5ebd,#2a9ae0)',
-              boxShadow: '0 0 20px rgba(56,180,255,0.2)',
-            }}
-          >
+        {isFail && (
+          <button type="button" onClick={retry} className="ely-btn-primary w-full">
             Reintentar
           </button>
         )}
@@ -444,7 +519,12 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
             cleanup();
             onCancel();
           }}
-          className="w-full py-2.5 rounded-full text-[13px] font-medium flex items-center justify-center gap-1.5 text-sky-100/50 border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.05] transition-colors"
+          className="w-full py-2.5 rounded-full text-[13px] font-medium flex items-center justify-center gap-1.5 transition-colors"
+          style={{
+            color: 'var(--ely-text-muted)',
+            border: '1px solid var(--ely-border)',
+            background: 'var(--ely-bg-soft)',
+          }}
         >
           {mode === 'verify' ? (
             <>
@@ -456,8 +536,8 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         </button>
       </div>
 
-      <p className="text-[10px] text-center text-sky-100/22 leading-relaxed">
-        Anti-spoof 3D · textura · parallax · flujo regional · solo en este equipo
+      <p className="text-[10px] text-center leading-relaxed" style={{ color: 'var(--ely-text-dim)' }}>
+        Sensor oculto · anti-spoof 3D · solo en este equipo
       </p>
     </div>
   );

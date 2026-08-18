@@ -1,5 +1,16 @@
 # ELYRA Changelog
 
+## [1.12.2] — 2026-08-18 — Face ID móvil
+
+### Changed
+- Face ID ya **no muestra la cámara**: captura en segundo plano (como iPhone/Android)
+- UI abstracta: anillo de progreso, icono ScanFace, línea de escaneo, feedback de profundidad
+- Colores y botones alineados al design system (`--ely-*`, `ely-btn-primary`)
+- Eliminado el overlay de malla sobre el preview (ya no hay preview)
+
+### Note
+La cámara sigue activa de forma invisible para descriptor + anti-spoof 3D.
+
 ## [1.12.1] — 2026-08-18 — Build stable
 
 ### Fixed
