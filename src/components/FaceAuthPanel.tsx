@@ -26,8 +26,8 @@ interface FaceAuthPanelProps {
 type Phase = 'permission' | 'looking' | 'scanning' | 'done' | 'fail' | 'error';
 
 /**
- * Face ID estilo móvil: la cámara trabaja en segundo plano (oculta).
- * El usuario solo ve animación abstracta + feedback, como en iPhone/Android.
+ * Face ID estilo móvil: cámara en segundo plano (no visible).
+ * El efecto de cámara solo depende de mode/userId para no reiniciarse en cada render.
  */
 export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: FaceAuthPanelProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -36,6 +36,10 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
   const lastBoxRef = useRef<{ x: number; y: number; width: number; height: number } | undefined>();
   const aliveRef = useRef(true);
   const loopRef = useRef(false);
+  const onSuccessRef = useRef(onSuccess);
+  const onCancelRef = useRef(onCancel);
+  onSuccessRef.current = onSuccess;
+  onCancelRef.current = onCancel;
 
   const [phase, setPhase] = useState<Phase>('permission');
   const [message, setMessage] = useState('Activando sensor…');
@@ -54,20 +58,31 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     resetLivenessState();
   }, []);
 
-  const finishOk = useCallback(
-    (msg: string) => {
-      setPhase('done');
-      setMessage(msg);
-      setHint('');
-      setProgress(100);
-      stopStream(streamRef.current);
-      streamRef.current = null;
-      window.setTimeout(() => {
-        if (aliveRef.current) onSuccess();
-      }, 560);
-    },
-    [onSuccess],
-  );
+  const finishOk = useCallback((msg: string) => {
+    setPhase('done');
+    setMessage(msg);
+    setHint('');
+    setProgress(100);
+    stopStream(streamRef.current);
+    streamRef.current = null;
+    window.setTimeout(() => {
+      if (aliveRef.current) onSuccessRef.current();
+    }, 560);
+  }, []);
+
+  const waitVideoReady = async (video: HTMLVideoElement, timeoutMs = 4000) => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (video.readyState >= 2 && (video.videoWidth > 16 || video.videoHeight > 16)) return true;
+      try {
+        await video.play();
+      } catch {
+        /* autoplay policy */
+      }
+      await new Promise((r) => setTimeout(r, 80));
+    }
+    return video.readyState >= 2;
+  };
 
   const runVerifyLoop = useCallback(async () => {
     if (loopRef.current) return;
@@ -81,7 +96,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     setConfidence(null);
     setDepthPct(null);
 
-    const maxAttempts = 36;
+    const maxAttempts = 48;
     let matched = 0;
     let spoofPasses = 0;
     let attempts = 0;
@@ -92,12 +107,12 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       attempts++;
       const video = videoRef.current;
       if (!video || video.readyState < 2) {
-        await new Promise((r) => setTimeout(r, 180));
+        await new Promise((r) => setTimeout(r, 120));
         continue;
       }
 
       setPhase('scanning');
-      setProgress(Math.min(90, 8 + attempts * 2.2));
+      setProgress(Math.min(90, 8 + attempts * 1.8));
 
       try {
         const { descriptor, quality, spoof } = await extractDescriptorFromVideo(video, {
@@ -114,11 +129,11 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           matched = 0;
           setMessage('Verificando profundidad');
           setHint(spoof.reason || 'Gire ligeramente la cabeza');
-          await new Promise((r) => setTimeout(r, 200));
+          await new Promise((r) => setTimeout(r, 160));
           continue;
         }
 
-        if (result.ok && quality > 0.35 && spoofPasses >= needSpoof) {
+        if (result.ok && quality > 0.32 && spoofPasses >= needSpoof) {
           matched++;
           setProgress(Math.min(99, 55 + matched * 20));
           setMessage(matched >= needMatch ? 'Identidad confirmada' : 'Reconociendo…');
@@ -128,7 +143,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
             loopRef.current = false;
             return;
           }
-        } else if (result.ok && quality > 0.35) {
+        } else if (result.ok && quality > 0.32) {
           setMessage('Comprobando que es usted…');
           setHint('Mueva un poco la cabeza');
         } else {
@@ -147,7 +162,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         setHint(msg);
       }
 
-      await new Promise((r) => setTimeout(r, 200));
+      await new Promise((r) => setTimeout(r, 160));
     }
 
     if (aliveRef.current && loopRef.current) {
@@ -175,11 +190,11 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     const need = 5;
     let tries = 0;
 
-    while (aliveRef.current && loopRef.current && samplesRef.current.length < need && tries < 52) {
+    while (aliveRef.current && loopRef.current && samplesRef.current.length < need && tries < 60) {
       tries++;
       const video = videoRef.current;
       if (!video || video.readyState < 2) {
-        await new Promise((r) => setTimeout(r, 180));
+        await new Promise((r) => setTimeout(r, 120));
         continue;
       }
 
@@ -187,15 +202,15 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         const requireMotion = samplesRef.current.length >= 1;
         const { descriptor, box, quality, spoof } = await extractDescriptorFromVideo(video, {
           requireMotion: requireMotion && samplesRef.current.length < need - 1,
-          minMotion: 1.05,
+          minMotion: 1.0,
           enforceSpoof: samplesRef.current.length >= 2,
         });
 
         setDepthPct(Math.round(spoof.depthProxy * 100));
 
-        if (quality < 0.28) {
+        if (quality < 0.26) {
           setHint('Mejore la iluminación');
-          await new Promise((r) => setTimeout(r, 200));
+          await new Promise((r) => setTimeout(r, 160));
           continue;
         }
 
@@ -216,7 +231,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         setHint(msg);
       }
 
-      await new Promise((r) => setTimeout(r, 260));
+      await new Promise((r) => setTimeout(r, 220));
     }
 
     if (!aliveRef.current || !loopRef.current) return;
@@ -235,32 +250,54 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     }
   }, [userId, finishOk]);
 
+  // Solo reinicia cámara al cambiar mode o userId (no en cada re-render del padre)
   useEffect(() => {
     aliveRef.current = true;
+    loopRef.current = false;
     let cancelled = false;
 
     (async () => {
       try {
+        setPhase('permission');
+        setMessage('Activando sensor…');
+        setError('');
+        setProgress(0);
+
         const stream = await requestCameraStream();
         if (cancelled) {
           stopStream(stream);
           return;
         }
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-        await new Promise((r) => setTimeout(r, 320));
-        if (cancelled || !aliveRef.current) return;
 
-        if (mode === 'verify') void runVerifyLoop();
-        else {
+        const video = videoRef.current;
+        if (!video) throw new Error('Sensor no inicializado');
+
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        try {
+          await video.play();
+        } catch {
+          /* ignore */
+        }
+
+        const ready = await waitVideoReady(video);
+        if (cancelled || !aliveRef.current) return;
+        if (!ready) {
+          // Aún así intentar: algunos drivers reportan late metadata
+          await new Promise((r) => setTimeout(r, 400));
+        }
+
+        if (mode === 'verify') {
+          void runVerifyLoop();
+        } else {
           setPhase('looking');
           setMessage('Prepare su rostro');
           void runRegisterLoop();
         }
       } catch (e) {
+        if (cancelled) return;
         setPhase('error');
         setError(captureError(e, 'No se pudo acceder a la cámara.'));
         setMessage('Sensor no disponible');
@@ -271,7 +308,8 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
       cancelled = true;
       cleanup();
     };
-  }, [mode, cleanup, runVerifyLoop, runRegisterLoop]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loops estables vía userId/mode
+  }, [mode, userId, cleanup]);
 
   const retry = () => {
     setError('');
@@ -280,6 +318,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
     setDepthPct(null);
     samplesRef.current = [];
     resetLivenessState();
+    loopRef.current = false;
     if (mode === 'verify') void runVerifyLoop();
     else void runRegisterLoop();
   };
@@ -290,26 +329,38 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
   const ringColor = isDone ? '#3fb950' : isFail ? 'rgba(248,81,73,0.9)' : '#5b9fff';
 
   return (
-    <div className="space-y-5">
-      {/* Video oculto: captura real sin mostrar preview (estilo móvil) */}
-      <video
-        ref={videoRef}
-        playsInline
-        muted
-        autoPlay
+    <div className="space-y-5 relative">
+      {/*
+        Video oculto pero con tamaño real en layout (Electron/Chromium
+        a veces no decodifica frames si está en left:-9999).
+      */}
+      <div
         aria-hidden
-        tabIndex={-1}
         style={{
-          position: 'fixed',
-          left: -9999,
-          top: 0,
-          width: 640,
-          height: 480,
+          position: 'absolute',
+          width: 320,
+          height: 240,
           opacity: 0,
           pointerEvents: 'none',
+          overflow: 'hidden',
           zIndex: -1,
+          left: 0,
+          top: 0,
         }}
-      />
+      >
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          autoPlay
+          tabIndex={-1}
+          style={{
+            width: 320,
+            height: 240,
+            objectFit: 'cover',
+          }}
+        />
+      </div>
 
       <div className="text-center space-y-1">
         <div
@@ -324,9 +375,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         </p>
       </div>
 
-      {/* Anillo abstracto — sin cámara visible */}
       <div className="relative mx-auto" style={{ width: 200, height: 200 }}>
-        {/* Glow */}
         <div
           className="absolute inset-[-12px] rounded-full pointer-events-none"
           style={{
@@ -338,7 +387,6 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           }}
         />
 
-        {/* Anillos orbitando */}
         {isActive && (
           <>
             <motion.div
@@ -356,19 +404,11 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           </>
         )}
 
-        {/* Progreso circular */}
         <svg
           className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none"
           viewBox="0 0 100 100"
         >
-          <circle
-            cx="50"
-            cy="50"
-            r="46"
-            fill="none"
-            stroke="var(--ely-track)"
-            strokeWidth="2.5"
-          />
+          <circle cx="50" cy="50" r="46" fill="none" stroke="var(--ely-track)" strokeWidth="2.5" />
           <circle
             cx="50"
             cy="50"
@@ -382,7 +422,6 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           />
         </svg>
 
-        {/* Núcleo */}
         <div
           className="absolute inset-[14px] rounded-full flex items-center justify-center"
           style={{
@@ -397,12 +436,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
         >
           <AnimatePresence mode="wait">
             {phase === 'permission' && (
-              <motion.div
-                key="perm"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
+              <motion.div key="perm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--ely-accent)' }} />
               </motion.div>
             )}
@@ -415,17 +449,11 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
                 exit={{ opacity: 0, scale: 0.9 }}
                 className="relative flex items-center justify-center"
               >
-                <ScanFace
-                  className="w-14 h-14"
-                  strokeWidth={1.25}
-                  style={{ color: 'var(--ely-accent)' }}
-                />
-                {/* Línea de escaneo */}
+                <ScanFace className="w-14 h-14" strokeWidth={1.25} style={{ color: 'var(--ely-accent)' }} />
                 <motion.div
                   className="absolute left-[18%] right-[18%] h-[2px] rounded-full"
                   style={{
-                    background:
-                      'linear-gradient(90deg, transparent, var(--ely-accent), transparent)',
+                    background: 'linear-gradient(90deg, transparent, var(--ely-accent), transparent)',
                     boxShadow: '0 0 10px var(--ely-accent)',
                   }}
                   animate={{ top: ['22%', '72%', '22%'] }}
@@ -451,19 +479,13 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
             )}
 
             {isFail && (
-              <motion.div
-                key="fail"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center gap-1"
-              >
+              <motion.div key="fail" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                 <Lock className="w-9 h-9" style={{ color: 'var(--ely-danger)' }} strokeWidth={1.5} />
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Pulso exterior al escanear */}
         {isActive && (
           <motion.div
             className="absolute inset-0 rounded-full pointer-events-none"
@@ -517,7 +539,7 @@ export function FaceAuthPanel({ userId, userName, mode, onSuccess, onCancel }: F
           type="button"
           onClick={() => {
             cleanup();
-            onCancel();
+            onCancelRef.current();
           }}
           className="w-full py-2.5 rounded-full text-[13px] font-medium flex items-center justify-center gap-1.5 transition-colors"
           style={{

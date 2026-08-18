@@ -1,10 +1,10 @@
 module.exports = {
   name: 'ELYRA',
-  product: '2.0.2',
-  platform: '1.12.2',
+  product: '2.0.3',
+  platform: '1.12.3',
   codename: 'FaceSecure',
   phase: '1.12',
-  label: 'ELYRA 1.12.2 — Face ID estilo móvil (sin preview de cámara)',
+  label: 'ELYRA 1.12.3 — Face ID estable + sin circular getConfig',
   releasedAt: '2026-08-18',
   capabilities: {
     conversation: true,

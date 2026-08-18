@@ -1,7 +1,7 @@
 {
   "name": "elyra",
   "private": true,
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "ELYRA — Asistente inteligente de escritorio holographic",
   "author": "Fabricio Ramos",
   "main": "electron/main.cjs",

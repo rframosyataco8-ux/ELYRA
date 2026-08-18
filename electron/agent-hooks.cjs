@@ -1,5 +1,6 @@
 /**
  * Hooks cognitivos — memoria + RAG + files + vision + OCR + training + lab 1.6 + DB
+ * getConfig se carga de forma diferida para evitar dependencia circular con agent.cjs
  */
 const mem = require('./memory-cognitive.cjs');
 const { runPythonTool } = require('./python-bridge.cjs');
@@ -10,7 +11,14 @@ const vision = require('./vision-engine.cjs');
 const ocr = require('./ocr-engine.cjs');
 const train = require('./training-pipeline.cjs');
 const lab = require('./lab-templates.cjs');
-const { getConfig } = require('./agent.cjs');
+
+function getAgentConfig() {
+  try {
+    return require('./agent.cjs').getConfig();
+  } catch {
+    return { apiKey: '', baseUrl: '', model: '' };
+  }
+}
 
 let db;
 try {
@@ -116,7 +124,7 @@ async function extendExecute(name, params, helpers, baseExecute) {
           body: params.body || params.data,
         });
       case 'analyze_image': {
-        const cfg = getConfig();
+        const cfg = getAgentConfig();
         return vision.analyzeImage(
           {
             path: params.path || params.file || params.image,
@@ -128,7 +136,7 @@ async function extendExecute(name, params, helpers, baseExecute) {
         );
       }
       case 'analyze_screenshot': {
-        const cfg = getConfig();
+        const cfg = getAgentConfig();
         return vision.analyzeScreenshot(
           params.prompt || params.question || 'Describe esta captura de pantalla en español.',
           helpers,
